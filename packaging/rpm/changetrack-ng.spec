@@ -52,17 +52,17 @@ hooks (apt, pacman, dnf).
 
 # Install scheduler integration files for packaged deployments.
 install -d %{buildroot}%{_unitdir}
-sed -e "s|@BINDIR@|%{_bindir}|g" systemd/%{name}.service > %{buildroot}%{_unitdir}/%{name}.service
-install -m 644 systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
+sed -e "s|@BINDIR@|%{_bindir}|g" packaging/systemd/%{name}.service > %{buildroot}%{_unitdir}/%{name}.service
+install -m 644 packaging/systemd/%{name}.timer %{buildroot}%{_unitdir}/%{name}.timer
 
 install -d %{buildroot}%{_sysconfdir}/cron.hourly
-sed -e "s|@BINDIR@|%{_bindir}|g" cron/%{name} > %{buildroot}%{_sysconfdir}/cron.hourly/%{name}
+sed -e "s|@BINDIR@|%{_bindir}|g" packaging/cron/%{name} > %{buildroot}%{_sysconfdir}/cron.hourly/%{name}
 chmod 755 %{buildroot}%{_sysconfdir}/cron.hourly/%{name}
 
 install -d %{buildroot}%{_sysconfdir}/dnf/plugins
-sed -e "s|@BINDIR@|%{_bindir}|g" hooks/dnf/changetrack_ng.py > %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.py
+sed -e "s|@BINDIR@|%{_bindir}|g" packaging/hooks/dnf/changetrack_ng.py > %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.py
 chmod 644 %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.py
-install -m 644 hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.conf
+install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.conf
 
 
 %post

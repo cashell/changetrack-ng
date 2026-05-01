@@ -93,23 +93,29 @@ changetrack-ng/
 │   ├── changetrack-ng.8             (main manpage)
 │   └── changetrack-ng.conf.5        (config format manpage)
 │
-├── hooks/
-│   ├── apt-pre                      (Debian/Ubuntu)
-│   ├── apt-post
-│   ├── dnf/
-│   │   ├── changetrack_ng.py        (Fedora/RHEL dnf plugin)
-│   │   └── changetrack_ng.conf
-│   ├── pacman-pre                   (Arch)
-│   ├── pacman-post
-│   ├── zypper-pre                   (openSUSE)
-│   └── zypper-post
-│
-├── systemd/
-│   ├── changetrack-ng.service
-│   └── changetrack-ng.timer
-│
-├── cron/
-│   └── changetrack-ng.cron          (cron.hourly script)
+├── packaging/
+│   ├── hooks/
+│   │   ├── apt-pre                  (Debian/Ubuntu)
+│   │   ├── apt-post
+│   │   ├── dnf/
+│   │   │   ├── changetrack_ng.py    (Fedora/RHEL dnf plugin)
+│   │   │   └── changetrack_ng.conf
+│   │   ├── pacman-pre               (Arch)
+│   │   ├── pacman-post
+│   │   ├── zypper-pre               (openSUSE)
+│   │   └── zypper-post
+│   ├── systemd/
+│   │   ├── changetrack-ng.service
+│   │   └── changetrack-ng.timer
+│   ├── cron/
+│   │   └── changetrack-ng.cron      (cron.hourly script)
+│   ├── rpm/
+│   │   └── changetrack-ng.spec
+│   └── debian/
+│       ├── control
+│       ├── rules
+│       ├── changelog
+│       └── source/format
 │
 └── t/                               (test suite, prove-runnable)
     ├── 00-load.t
@@ -812,7 +818,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 **Sub-tasks:**
 
 **10a. Package manager hooks**
-- Hook files in `hooks/` directory (apt/pacman shell hook formats, plus dnf Python plugin)
+- Hook files in `packaging/hooks/` directory (apt/pacman shell hook formats, plus dnf Python plugin)
 - `make install-hooks`: detects active package manager from `/etc/os-release` or presence of binaries (`apt`, `dnf`, `pacman`, `zypper`), installs into the appropriate location:
   - apt: `/etc/apt/apt.conf.d/80changetrack-ng`
   - dnf: `/etc/dnf/plugins/changetrack_ng.py` + `/etc/dnf/plugins/changetrack_ng.conf`
@@ -821,12 +827,12 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - Each hook just calls `changetrack-ng run -m "pre-install: $PACKAGE"` (or post-)
 
 **10b. Systemd timer**
-- `systemd/changetrack-ng.service`: oneshot type, runs `/usr/local/bin/changetrack-ng run`
-- `systemd/changetrack-ng.timer`: `OnCalendar=hourly` (or whatever `interval` config says — but the timer file is static; if user changes interval they re-`make install-systemd` or override with a drop-in)
+- `packaging/systemd/changetrack-ng.service`: oneshot type, runs `/usr/local/bin/changetrack-ng run`
+- `packaging/systemd/changetrack-ng.timer`: `OnCalendar=hourly` (or whatever `interval` config says — but the timer file is static; if user changes interval they re-`make install-systemd` or override with a drop-in)
 - `make install-systemd`: copies units, runs `systemctl daemon-reload`, suggests `systemctl enable --now changetrack-ng.timer`
 
 **10c. Cron**
-- `cron/changetrack-ng`: shell script that checks for the systemd timer first (skip if active), then runs the tool
+- `packaging/cron/changetrack-ng`: shell script that checks for the systemd timer first (skip if active), then runs the tool
 - `make install-cron`: installs to `/etc/cron.hourly/changetrack-ng` with mode `0755`
 
 **Exit criteria:**
@@ -852,7 +858,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - POD documentation in every `lib/ChangeTrack/*.pm` (extracted by `perldoc`)
 
 **Optional (deferred to v0.4 or v1.0):**
-- Debian packaging skeleton (`debian/` dir, `debmake`-friendly)
+- Debian packaging skeleton (`packaging/debian/` dir, `debmake`-friendly)
 - RPM spec file
 - AUR PKGBUILD
 

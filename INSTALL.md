@@ -231,12 +231,12 @@ on the target system; they are not bundled.
 
 ### RPM (Fedora / RHEL / openSUSE)
 
-The spec file is at `rpm/changetrack-ng.spec`.  Build with:
+The spec file is at `packaging/rpm/changetrack-ng.spec`.  Build with:
 
 ```sh
 make dist
 cp changetrack-ng-VERSION.tar.gz ~/rpmbuild/SOURCES/
-rpmbuild -ba rpm/changetrack-ng.spec
+rpmbuild -ba packaging/rpm/changetrack-ng.spec
 # Installs to ~/rpmbuild/RPMS/noarch/
 ```
 
@@ -244,14 +244,17 @@ Requires `rpmdevtools` (`dnf install rpmdevtools`).
 
 ### Debian package (Debian / Ubuntu)
 
-The packaging skeleton is in `debian/`.  Build with:
+The packaging skeleton is in `packaging/debian/`.  Build with:
 
 ```sh
 sudo apt-get install debhelper devscripts
 make dist
+# Expose Debian metadata at the project root for dpkg tools:
+ln -sfn packaging/debian debian
 # Extract tarball alongside source, then:
 dpkg-buildpackage -b --no-sign
 # .deb lands in the parent directory
+rm -f debian
 ```
 
 Or from the source tree directly:

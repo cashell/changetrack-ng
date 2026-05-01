@@ -14,11 +14,11 @@ override_dh_auto_install:
 	    PREFIX=/usr
 	# apt hooks
 	install -d $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d
-	install -m 644 hooks/apt-pre  $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-pre
-	install -m 644 hooks/apt-post $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-post
+	install -m 644 packaging/hooks/apt-pre  $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-pre
+	install -m 644 packaging/hooks/apt-post $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-post
 	# cron job
 	install -d $(CURDIR)/debian/changetrack-ng/etc/cron.hourly
-	sed -e "s|@BINDIR@|/usr/bin|g" cron/changetrack-ng \
+	sed -e "s|@BINDIR@|/usr/bin|g" packaging/cron/changetrack-ng \
 	    > $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
 	chmod 755 $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
 

@@ -136,7 +136,7 @@ None currently open.
 
 ### PKG-3: Debian package doesn't run tests during build (Low)
 
-**Issue:** `debian/rules` should invoke `make test` during the build phase.
+**Issue:** `packaging/debian/rules` should invoke `make test` during the build phase.
 
 ---
 

@@ -133,10 +133,10 @@ dist:
 	    --exclude='*.pl' \
 	    --exclude='t/tmp' \
 	    --exclude='man/*.gz' \
-	    --exclude='debian/changetrack-ng' \
-	    --exclude='debian/.debhelper' \
+	    --exclude='packaging/debian/changetrack-ng' \
+	    --exclude='packaging/debian/.debhelper' \
 	    --transform "s,^,$(NAME)-$(VERSION)/," \
-	    bin lib etc man hooks systemd cron rpm debian t Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+	    bin lib etc man packaging t Makefile LICENSE README.md INSTALL.md CHANGELOG.md
 
 clean:
 	find t/ -name '*.tmp' -delete 2>/dev/null; true
@@ -146,38 +146,38 @@ clean:
 install-hooks:
 	@if command -v apt-get >/dev/null 2>&1; then \
 		echo "Detected apt; installing hooks..."; \
-		[ -d hooks ] && install -m 644 hooks/apt-pre  /etc/apt/apt.conf.d/80$(NAME)-pre  || true; \
-		[ -d hooks ] && install -m 644 hooks/apt-post /etc/apt/apt.conf.d/80$(NAME)-post || true; \
+		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-pre  /etc/apt/apt.conf.d/80$(NAME)-pre  || true; \
+		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-post /etc/apt/apt.conf.d/80$(NAME)-post || true; \
 	elif command -v dnf >/dev/null 2>&1; then \
 		echo "Detected dnf; installing plugin hooks..."; \
-		if [ -d hooks/dnf ]; then \
+		if [ -d packaging/hooks/dnf ]; then \
 			install -d /etc/dnf/plugins; \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" hooks/dnf/changetrack_ng.py > /etc/dnf/plugins/changetrack_ng.py; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/dnf/changetrack_ng.py > /etc/dnf/plugins/changetrack_ng.py; \
 			chmod 644 /etc/dnf/plugins/changetrack_ng.py; \
-			install -m 644 hooks/dnf/changetrack_ng.conf /etc/dnf/plugins/changetrack_ng.conf; \
+			install -m 644 packaging/hooks/dnf/changetrack_ng.conf /etc/dnf/plugins/changetrack_ng.conf; \
 		fi; \
 	elif command -v pacman >/dev/null 2>&1; then \
 		echo "Detected pacman; installing hooks..."; \
-		if [ -d hooks ]; then \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" hooks/pacman-pre.hook  > /usr/share/libalpm/hooks/$(NAME)-pre.hook; \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" hooks/pacman-post.hook > /usr/share/libalpm/hooks/$(NAME)-post.hook; \
+		if [ -d packaging/hooks ]; then \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/pacman-pre.hook  > /usr/share/libalpm/hooks/$(NAME)-pre.hook; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/pacman-post.hook > /usr/share/libalpm/hooks/$(NAME)-post.hook; \
 			chmod 644 /usr/share/libalpm/hooks/$(NAME)-pre.hook /usr/share/libalpm/hooks/$(NAME)-post.hook; \
 		fi; \
 	else \
-		echo "No supported package manager detected; install hooks manually from hooks/"; \
+		echo "No supported package manager detected; install hooks manually from packaging/hooks/"; \
 	fi
 
 install-systemd:
 	install -d $(DESTDIR)$(SYSTEMDDIR)
-	sed -e "s|@BINDIR@|$(BINDIR)|g" systemd/$(NAME).service > $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
+	sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/systemd/$(NAME).service > $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
 	chmod 644 $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
-	install -m 644 systemd/$(NAME).timer   $(DESTDIR)$(SYSTEMDDIR)/
+	install -m 644 packaging/systemd/$(NAME).timer   $(DESTDIR)$(SYSTEMDDIR)/
 	systemctl daemon-reload
 	@echo "Enable with: systemctl enable --now $(NAME).timer"
 
 install-cron:
 	install -d $(DESTDIR)$(CRONDIR)
-	sed -e "s|@BINDIR@|$(BINDIR)|g" cron/$(NAME) > $(DESTDIR)$(CRONDIR)/$(NAME)
+	sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/cron/$(NAME) > $(DESTDIR)$(CRONDIR)/$(NAME)
 	chmod 755 $(DESTDIR)$(CRONDIR)/$(NAME)
 	@echo "Installed: $(DESTDIR)$(CRONDIR)/$(NAME)"
 
@@ -233,8 +233,8 @@ install-user-uninstall:
 
 install-user-systemd:
 	install -d $(HOME)/.config/systemd/user
-	sed -e "s|@BINDIR@|$(HOME)/.local/bin|g" systemd/$(NAME).service > $(HOME)/.config/systemd/user/$(NAME).service
-	install -m 644 systemd/$(NAME).timer $(HOME)/.config/systemd/user/$(NAME).timer
+	sed -e "s|@BINDIR@|$(HOME)/.local/bin|g" packaging/systemd/$(NAME).service > $(HOME)/.config/systemd/user/$(NAME).service
+	install -m 644 packaging/systemd/$(NAME).timer $(HOME)/.config/systemd/user/$(NAME).timer
 	@if command -v systemctl >/dev/null 2>&1; then \
 		systemctl --user daemon-reload 2>/dev/null; \
 		echo "Enable with: systemctl --user enable --now $(NAME).timer"; \

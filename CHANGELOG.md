@@ -7,8 +7,8 @@ All notable changes will be documented here.
 ### Added
 
 - dnf package-manager integration via plugin files:
-	- `hooks/dnf/changetrack_ng.py`
-	- `hooks/dnf/changetrack_ng.conf`
+	- `packaging/hooks/dnf/changetrack_ng.py`
+	- `packaging/hooks/dnf/changetrack_ng.conf`
 - `make install-hooks` now installs dnf hooks automatically to `/etc/dnf/plugins/` on dnf systems.
 - RPM packaging now ships dnf plugin files and installs them under `/etc/dnf/plugins/`.
 

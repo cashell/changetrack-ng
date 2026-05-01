@@ -7,7 +7,7 @@ Files: *
 Copyright: 2026 Christopher Cashell <topher@zyp.org>
 License: GPL-3.0-or-later
 
-Files: debian/*
+Files: packaging/debian/*
 Copyright: 2026 Christopher Cashell <topher@zyp.org>
 License: GPL-3.0-or-later
 

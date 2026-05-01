@@ -262,9 +262,9 @@ All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 
 | Mechanism | Files | Notes |
 |-----------|-------|-------|
-| systemd timer | `systemd/changetrack-ng.timer` + `.service` | Hourly, persistent (catches up on boot) |
-| cron | `cron/changetrack-ng` | Placed in `/etc/cron.hourly/` |
-| Package hooks | `hooks/apt-pre`, `apt-post`, `pacman-*.hook`, `hooks/dnf/changetrack_ng.py` | Pre/post transaction with `-m` annotation |
+| systemd timer | `packaging/systemd/changetrack-ng.timer` + `.service` | Hourly, persistent (catches up on boot) |
+| cron | `packaging/cron/changetrack-ng` | Placed in `/etc/cron.hourly/` |
+| Package hooks | `packaging/hooks/apt-pre`, `apt-post`, `pacman-*.hook`, `packaging/hooks/dnf/changetrack_ng.py` | Pre/post transaction with `-m` annotation |
 
 ### 8.2 Installation layout
 
@@ -354,12 +354,12 @@ Values are not type-checked at load time. Invalid values (e.g., `lock_timeout = 
 
 | Target | Files |
 |--------|-------|
-| Debian | `debian/control`, `debian/rules`, `debian/changelog`, `debian/source/format` |
-| RPM | `rpm/changetrack-ng.spec` |
+| Debian | `packaging/debian/control`, `packaging/debian/rules`, `packaging/debian/changelog`, `packaging/debian/source/format` |
+| RPM | `packaging/rpm/changetrack-ng.spec` |
 | Tarball | `make dist` |
 | Standalone | `make fatpack` |
-| systemd | `systemd/changetrack-ng.{service,timer}` (templated at install) |
-| Cron | `cron/changetrack-ng` |
+| systemd | `packaging/systemd/changetrack-ng.{service,timer}` (templated at install) |
+| Cron | `packaging/cron/changetrack-ng` |
 
 ---
 

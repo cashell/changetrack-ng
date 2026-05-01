@@ -138,7 +138,7 @@ All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with 
 **Single-source version:** `lib/ChangeTrack/Version.pm` is the Perl-side authority (`our $VERSION = '...'`).
 All other `lib/` modules use `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`.
 The `Makefile` `VERSION` variable is the build-system authority; keep both in sync on version bumps.
-`rpm/changetrack-ng.spec` `Version:` and the `%changelog` entry must also be updated manually.
+`packaging/rpm/changetrack-ng.spec` `Version:` and the `%changelog` entry must also be updated manually.
 
 ## Copyright and Licensing
 
@@ -146,7 +146,7 @@ All source files carry SPDX tags:
 - `SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>`
 - `SPDX-License-Identifier: GPL-3.0-or-later`
 
-Files that cannot carry inline SPDX tags (markdown, LICENSE, debian/) are covered by `.reuse/dep5`.
+Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) are covered by `.reuse/dep5`.
 
 ## Implementation Boundaries
 
