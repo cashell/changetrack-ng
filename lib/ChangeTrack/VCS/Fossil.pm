@@ -61,6 +61,54 @@ sub _ensure_crlf_setting {
     carp "fossil settings crlf-glob failed: $r->{stderr}" unless $r->{success};
 }
 
+sub _extract_invalid_utf8_path {
+    my ($self, $stderr) = @_;
+    return undef unless defined $stderr && length $stderr;
+    return undef unless $stderr =~ /invalid\s+UTF-8\s+in\s+([^\r\n]+)/i;
+
+    my $path = $1;
+    $path =~ s/^\s+|\s+$//g;
+    $path =~ s/^['"]//;
+    $path =~ s/['"]$//;
+    $path =~ s{^\./}{};
+    return length($path) ? $path : undef;
+}
+
+sub _merge_glob_list {
+    my ($self, $existing, $entry) = @_;
+    my %seen;
+    my @parts = grep { length $_ } map {
+        s/^\s+|\s+$//gr
+    } split /,/, ($existing // '');
+
+    @parts = grep { !$seen{$_}++ } @parts;
+
+    if (defined $entry && length $entry && !$seen{$entry}++) {
+        push @parts, $entry;
+    }
+
+    return join(',', @parts);
+}
+
+sub _set_binary_glob_for_path {
+    my ($self, $rel_path) = @_;
+    return 0 unless defined $rel_path && length $rel_path;
+
+    my $current_r = $self->_run('fossil', 'settings', 'binary-glob');
+    return 0 unless $current_r->{success};
+
+    my $current = $current_r->{stdout} // '';
+    if ($current =~ /^binary-glob(?:\s*[:=])?\s*(.*)$/m) {
+        $current = $1;
+    }
+    $current =~ s/\r//g;
+    $current =~ s/^\s+|\s+$//g;
+
+    my $merged = $self->_merge_glob_list($current, $rel_path);
+    my $set_r = $self->_run('fossil', 'settings', 'binary-glob', $merged);
+    return $set_r->{success} ? 1 : 0;
+}
+
 sub init {
     my ($self) = @_;
     make_path($self->{output_dir}, { mode => 0700 }) unless -d $self->{output_dir};
@@ -114,6 +162,21 @@ sub commit {
     my $r = $self->_run('fossil', 'commit', '--no-prompt', '-m', $msg);
     return if $r->{stdout} =~ /nothing\s+(has\s+)?changed/i
            || $r->{stderr} =~ /nothing\s+(has\s+)?changed/i;
+
+    if (!$r->{success}) {
+        my $bad_path = $self->_extract_invalid_utf8_path($r->{stderr});
+        if (defined $bad_path && length $bad_path) {
+            if ($self->_set_binary_glob_for_path($bad_path)) {
+                my $retry = $self->_run('fossil', 'commit', '--no-prompt', '-m', $msg);
+                return if $retry->{stdout} =~ /nothing\s+(has\s+)?changed/i
+                       || $retry->{stderr} =~ /nothing\s+(has\s+)?changed/i;
+                $r = $retry;
+            } else {
+                carp "fossil settings binary-glob update failed for '$bad_path'";
+            }
+        }
+    }
+
     croak "fossil commit failed: $r->{stderr}" unless $r->{success};
 
     my $push_remote = $self->{options}{push_remote};

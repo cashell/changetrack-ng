@@ -38,6 +38,27 @@ ok($vcs->is_initialized, 'initialized after init');
 ok(-f "$output_dir/.fslckout" || -f "$output_dir/_FOSSIL_", 'fossil checkout marker created');
 ok(-f "$output_dir.fossil",  'fossil repo file created');
 
+is(
+    $vcs->_extract_invalid_utf8_path('Abandoning commit due to invalid UTF-8 in ./etc/epylog/trojans.list'),
+    'etc/epylog/trojans.list',
+    'extracts invalid UTF-8 path from fossil stderr'
+);
+is(
+    $vcs->_extract_invalid_utf8_path('some other error'),
+    undef,
+    'returns undef when stderr does not contain invalid UTF-8 path'
+);
+is(
+    $vcs->_merge_glob_list('*.png,*.jpg', '*.jpg'),
+    '*.png,*.jpg',
+    'merge_glob_list avoids duplicate entries'
+);
+is(
+    $vcs->_merge_glob_list('*.png,*.jpg', 'etc/epylog/trojans.list'),
+    '*.png,*.jpg,etc/epylog/trojans.list',
+    'merge_glob_list appends new entry'
+);
+
 {
     my $partial_dir = tempdir(CLEANUP => 1);
     my $partial_repo = "$partial_dir.fossil";
