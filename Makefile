@@ -18,7 +18,7 @@ DESTDIR    ?=
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist clean install-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall
+.PHONY: all test install uninstall dist clean install-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -37,6 +37,8 @@ all:
 	@echo "  make install-user-uninstall Remove user install files"
 	@echo "  make install-user-systemd Install user systemd timer"
 	@echo "  make install-user-cron    Print crontab entry for user"
+	@echo "  make debian-build-setup   Expose packaging/debian as debian/ (for dpkg-buildpackage)"
+	@echo "  make debian-build-cleanup Remove debian/ symlink"
 
 test:
 	prove -l t/
@@ -142,6 +144,23 @@ clean:
 	find t/ -name '*.tmp' -delete 2>/dev/null; true
 	rm -f $(NAME)-*.tar.gz $(NAME)-*.pl man/*.gz
 	rm -rf fatlib
+
+debian-build-setup:
+	@if [ -e debian ]; then \
+		echo "Error: debian/ already exists"; exit 1; \
+	fi
+	ln -sfn packaging/debian debian
+	@echo "Created debian/ → packaging/debian symlink"
+
+debian-build-cleanup:
+	@if [ -L debian ]; then \
+		rm -f debian; \
+		echo "Removed debian/ symlink"; \
+	elif [ -d debian ]; then \
+		echo "Error: debian/ is a directory, not a symlink; not removing"; exit 1; \
+	else \
+		echo "debian/ symlink not found (nothing to remove)"; \
+	fi
 
 install-hooks:
 	@if command -v apt-get >/dev/null 2>&1; then \

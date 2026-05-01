@@ -249,18 +249,18 @@ The packaging skeleton is in `packaging/debian/`.  Build with:
 ```sh
 sudo apt-get install debhelper devscripts
 make dist
-# Expose Debian metadata at the project root for dpkg tools:
-ln -sfn packaging/debian debian
-# Extract tarball alongside source, then:
+make debian-build-setup
 dpkg-buildpackage -b --no-sign
+make debian-build-cleanup
 # .deb lands in the parent directory
-rm -f debian
 ```
 
 Or from the source tree directly:
 
 ```sh
+make debian-build-setup
 debuild -b --no-sign
+make debian-build-cleanup
 ```
 
 The resulting `.deb` installs to `/usr/bin`, `/usr/lib/changetrack-ng/`,
