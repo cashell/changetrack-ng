@@ -1,0 +1,202 @@
+=pod
+
+=head1 NAME
+
+changetrack-ng - system file change tracker
+
+=head1 SYNOPSIS
+
+  changetrack-ng [options] [subcommand] [args]
+
+=head1 DESCRIPTION
+
+B<changetrack-ng> tracks changes to system files and directories using a
+pluggable VCS backend (RCS, Git, Fossil, SVN, or Mercurial) and notifies
+via one or more channels (email, webhook, OTLP, file log).
+
+On each run it compares file metadata and content against the last recorded
+state, commits any changes to the VCS repository, and dispatches notifications.
+It is designed to run hourly from cron or a systemd timer.
+
+=head1 SUBCOMMANDS
+
+=over 4
+
+=item B<run> (default)
+
+Scan all tracked files, commit detected changes, and send notifications.
+This is the default subcommand when none is specified.
+
+=item B<init>
+
+Explicitly initialize the VCS output repository.  Under normal operation
+this happens automatically on the first run; use this to pre-initialize
+without scanning.
+
+=item B<status>
+
+List files that have changed since the last commit.  Exits 0 if nothing
+has changed, 1 if changes were found.
+
+=item B<diff> [I<path>]
+
+Show a unified diff of pending changes.  If I<path> is given, show the
+diff for that file only; otherwise show all pending diffs.
+
+=item B<log> [I<path>]
+
+Show VCS history.  If I<path> is given, show history for that file only.
+
+=item B<revert> I<path> I<rev>
+
+Restore I<path> to revision I<rev> in the VCS.  Prompts for confirmation
+unless B<--force> is given.
+
+=item B<update-ignore>
+
+Write or refresh the VCS-native ignore file (e.g., C<.gitignore>) using the
+built-in defaults plus any patterns in the config C<ignore> key.
+
+=item B<migrate-config> I<v1-config> [I<v2-output>]
+
+Read a legacy C<changetrack> v1 config file and write an equivalent v2 INI
+file.  If I<v2-output> is omitted it is derived from I<v1-config> with
+C<.ng.conf> suffix.
+
+=back
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-c>, B<--config> I<file>
+
+Config file path.  Default: C</etc/changetrack-ng/changetrack-ng.conf>.
+
+=item B<-m>, B<--message> I<msg>
+
+Annotation string appended to the VCS commit message.  Used by package
+manager hooks to identify the triggering operation, e.g.,
+C<-m 'post-install: apt'>.
+
+=item B<--no-auto-init>
+
+Disable automatic VCS initialization on first run.  The command will abort
+if the repository is not already initialized.
+
+=item B<-f>, B<--force>
+
+Bypass interactive confirmation prompts (e.g., for B<revert>).
+
+=item B<-q>, B<--quiet>
+
+Suppress all progress output.  Warnings and errors are still written to
+stderr.
+
+=item B<-v>, B<--verbose>
+
+Enable verbose debug output showing per-step internal state.
+
+=item B<-V>, B<--version>
+
+Print version number and exit.
+
+=item B<-h>, B<--help>
+
+Print a usage summary and exit.
+
+=back
+
+=head1 EXIT STATUS
+
+=over 4
+
+=item B<0>
+
+Success, or lock held (silent skip).
+
+=item B<1>
+
+Status subcommand: files changed.  Revert: aborted by user.
+
+=item B<2>
+
+Runtime error (VCS failure, unhandled exception).
+
+=item B<64>
+
+Usage error (bad arguments, config parse failure, unknown subcommand).
+
+=item B<75>
+
+Lock timeout exceeded.
+
+=back
+
+=head1 FILES
+
+=over 4
+
+=item F</etc/changetrack-ng/changetrack-ng.conf>
+
+Default configuration file.  See L<changetrack-ng.conf(5)>.
+
+=item F</var/lib/changetrack-ng/>
+
+Default VCS output directory.
+
+=item F</var/run/changetrack-ng.lock>
+
+Default lock file.
+
+=item F</etc/cron.hourly/changetrack-ng>
+
+Installed by C<make install-cron>.  No-ops when the systemd timer is active.
+
+=item F</etc/systemd/system/changetrack-ng.timer>
+
+Installed by C<make install-systemd>.
+
+=back
+
+=head1 EXAMPLES
+
+Track changes hourly via cron:
+
+  sudo make install install-cron
+
+Initialize the repository explicitly and do a first scan:
+
+  sudo changetrack-ng init
+  sudo changetrack-ng run
+
+Check what has changed since the last run:
+
+  sudo changetrack-ng status
+
+View the diff for a specific file:
+
+  sudo changetrack-ng diff /etc/passwd
+
+Revert a file to a specific Git commit:
+
+  sudo changetrack-ng revert /etc/passwd abc1234
+
+Migrate a legacy changetrack config:
+
+  sudo changetrack-ng migrate-config /etc/changetrack.conf
+
+=head1 SEE ALSO
+
+L<changetrack-ng.conf(5)>, L<changetrack(8)>, L<etckeeper(8)>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2026 Christopher Cashell <topher@zyp.org>
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3, or (at your option) any
+later version.
+
+=cut

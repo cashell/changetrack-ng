@@ -1,0 +1,66 @@
+# changetrack-ng user-level configuration
+#
+# For an unprivileged (non-root) install: `make install-user`
+#
+# Defaults here match the paths that install-user sets up under $HOME.
+# Copy to ~/.config/changetrack-ng/changetrack-ng.conf and adjust.
+#
+# For all available options see the system reference config or run:
+#   perldoc changetrack-ng
+
+[global]
+
+# git is the most convenient VCS for a user-level install.
+# History is stored under your home state directory.
+vcs        = git
+output_dir = ~/.local/state/changetrack-ng
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+# Choose one or more of: email  webhook  otlp  file
+# For a desktop/laptop you may prefer no notifications at all; just leave
+# the output_dir above and browse history with git log.
+notify     =
+
+# Email (if notify includes 'email'):
+email_from = changetrack-ng@HOSTNAME
+email_to   = your@email.address
+
+# Webhook (if notify includes 'webhook'):
+# webhook_url = https://your.webhook.endpoint/path
+
+# OTLP / OpenTelemetry (if notify includes 'otlp'):
+# otlp_endpoint = https://your.otel.collector/v1/logs
+
+# Append-only log file (if notify includes 'file'):
+notify_log_path = ~/.local/state/changetrack-ng/changetrack-ng.log
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+# Used by: make install-user-systemd  or  make install-user-cron
+# hourly | daily | <cron-expression>
+interval   = hourly
+
+# ── Lock ─────────────────────────────────────────────────────────────────────
+# Default is auto-selected as $XDG_CACHE_HOME/changetrack-ng.lock
+# Uncomment to override:
+# lock_path = ~/.cache/changetrack-ng.lock
+
+# ── Track list ────────────────────────────────────────────────────────────────
+# Typical things a user might want to version-track.
+# Adjust for your own dotfiles and project directories.
+
+[track]
+# Shell and editor configuration
+~/.bashrc
+~/.bash_profile
+~/.zshrc
+~/.profile
+~/.gitconfig
+~/.vimrc
+~/.tmux.conf
+
+# SSH configuration (treated as sensitive automatically — no diff in notifications)
+DIRECTORY ~/.ssh
+
+# Application config directories (examples — uncomment as needed)
+# DIRECTORY ~/.config/mpv
+# DIRECTORY ~/.config/alacritty

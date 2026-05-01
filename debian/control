@@ -1,0 +1,24 @@
+Source: changetrack-ng
+Section: admin
+Priority: optional
+Maintainer: Christopher Cashell <topher@zyp.org>
+Build-Depends: debhelper-compat (= 13), perl, make
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/changetrack-ng/changetrack-ng
+
+Package: changetrack-ng
+Architecture: all
+Depends: ${misc:Depends}, perl (>= 5.20)
+Recommends: libio-socket-ssl-perl
+Suggests: git | rcs | fossil | subversion | mercurial
+Description: system file change tracker with pluggable VCS and notification support
+ changetrack-ng tracks changes to system files and directories using a
+ pluggable VCS backend (RCS, Git, Fossil, SVN, or Mercurial) and sends
+ notifications via email, HTTP webhook, OpenTelemetry (OTLP), or an
+ append-only JSON log.
+ .
+ It combines the per-file flexibility of the original changetrack (last
+ maintained 2009) with the modern VCS and package-manager integration
+ of etckeeper. Supports systemd timer, cron.hourly, and package manager
+ hooks for apt and pacman.

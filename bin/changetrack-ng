@@ -1,0 +1,444 @@
+#!/usr/bin/perl
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+use strict;
+use warnings;
+use feature qw(say);
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
+use Getopt::Long qw(:config no_ignore_case bundling pass_through);
+use ChangeTrack::Version;
+
+our $VERSION = $ChangeTrack::Version::VERSION;
+
+my %opts = (
+    config      => ($> == 0)
+        ? '/etc/changetrack-ng/changetrack-ng.conf'
+        : (($ENV{HOME} // '') =~ /\S/
+            ? "$ENV{HOME}/.config/changetrack-ng/changetrack-ng.conf"
+            : '/etc/changetrack-ng/changetrack-ng.conf'),
+    quiet       => 0,
+    verbose     => 0,
+    no_auto_init => 0,
+    message     => '',
+    force       => 0,
+);
+
+GetOptions(
+    'config|c=s'     => \$opts{config},
+    'message|m=s'    => \$opts{message},
+    'no-auto-init'   => \$opts{no_auto_init},
+    'quiet|q'        => \$opts{quiet},
+    'verbose|v'      => \$opts{verbose},
+    'force|f'        => \$opts{force},
+    'version|V'      => sub { say "changetrack-ng $VERSION"; exit 0 },
+    'help|h'         => sub { _usage(); exit 0 },
+) or do { _usage(\*STDERR); exit 64 };
+
+my $subcommand = @ARGV ? shift @ARGV : 'run';
+
+my %dispatch = (
+    'run'            => \&cmd_run,
+    'init'           => \&cmd_init,
+    'status'         => \&cmd_status,
+    'diff'           => \&cmd_diff,
+    'log'            => \&cmd_log,
+    'revert'         => \&cmd_revert,
+    'update-ignore'  => \&cmd_update_ignore,
+    'migrate-config' => \&cmd_migrate_config,
+);
+
+unless (exists $dispatch{$subcommand}) {
+    warn "changetrack-ng: unknown subcommand '$subcommand'\n";
+    _usage(\*STDERR);
+    exit 64;
+}
+
+exit($dispatch{$subcommand}->());
+
+# ── subcommand stubs ──────────────────────────────────────────────────────────
+
+sub cmd_run {
+    require ChangeTrack::Runner;
+    my $runner = ChangeTrack::Runner->new(
+        config       => $opts{config},
+        message      => $opts{message},
+        no_auto_init => $opts{no_auto_init},
+        quiet        => $opts{quiet},
+        verbose      => $opts{verbose},
+        force        => $opts{force},
+    );
+    my $report = eval { $runner->run };
+    if ($@) { warn "changetrack-ng: $@\n"; return 2 }
+    return 0;
+}
+
+sub cmd_init {
+    require ChangeTrack::Runner;
+    require ChangeTrack::Config;
+    my $cfg = eval { ChangeTrack::Config->load($opts{config}) };
+    if ($@) { warn "changetrack-ng: cannot read config: $@\n"; return 64 }
+
+    my $vcs_name   = lc($cfg->global('vcs') // 'rcs');
+    my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
+
+    my %vcs_map = (
+        rcs  => 'ChangeTrack::VCS::RCS',
+        git  => 'ChangeTrack::VCS::Git',
+        fossil => 'ChangeTrack::VCS::Fossil',
+        svn  => 'ChangeTrack::VCS::SVN',
+        hg   => 'ChangeTrack::VCS::Mercurial',
+    );
+    my $vcs_class = $vcs_map{$vcs_name}
+        or do { warn "changetrack-ng: unknown VCS '$vcs_name'\n"; return 64 };
+    eval "require $vcs_class; 1"
+        or do { warn "changetrack-ng: cannot load $vcs_class: $@\n"; return 1 };
+
+    my $vcs = $vcs_class->new(output_dir => $output_dir);
+    if ($vcs->is_initialized) {
+        warn "changetrack-ng: already initialized in $output_dir\n" unless $opts{quiet};
+        return 0;
+    }
+    eval { $vcs->init };
+    if ($@) { warn "changetrack-ng: init failed: $@\n"; return 1 }
+    say "Initialized $vcs_name repository in $output_dir" unless $opts{quiet};
+    return 0;
+}
+
+sub cmd_status {
+    require ChangeTrack::Runner;
+    my $runner = ChangeTrack::Runner->new(
+        config  => $opts{config},
+        quiet   => $opts{quiet},
+        verbose => $opts{verbose},
+    );
+    my $changed = eval { $runner->status };
+    if ($@) { warn "changetrack-ng: $@\n"; return 2 }
+
+    unless ($opts{quiet}) {
+        say $_->{path} for @$changed;
+    }
+    return @$changed ? 1 : 0;
+}
+
+sub cmd_diff {
+    require ChangeTrack::Runner;
+    my $path   = @ARGV ? shift @ARGV : undef;
+    my $runner = ChangeTrack::Runner->new(
+        config  => $opts{config},
+        quiet   => $opts{quiet},
+        verbose => $opts{verbose},
+    );
+    my $diffs = eval { $runner->diff_path($path) };
+    if ($@) { warn "changetrack-ng: $@\n"; return 2 }
+
+    for my $p (sort keys %$diffs) {
+        say "=== $p ===" unless defined $path;
+        say $_ for @{ $diffs->{$p} };
+    }
+    return 0;
+}
+
+sub cmd_log {
+    require ChangeTrack::Runner;
+    my $path   = @ARGV ? shift @ARGV : undef;
+    my $runner = ChangeTrack::Runner->new(
+        config  => $opts{config},
+        quiet   => $opts{quiet},
+        verbose => $opts{verbose},
+    );
+    my $logs = eval { $runner->log_path($path) };
+    if ($@) { warn "changetrack-ng: $@\n"; return 2 }
+
+    for my $p (sort keys %$logs) {
+        say "=== $p ===" unless defined $path;
+        say $_ for @{ $logs->{$p} };
+    }
+    return 0;
+}
+
+sub cmd_revert {
+    require ChangeTrack::Runner;
+    my ($path, $rev) = @ARGV;
+    unless (defined $path && defined $rev) {
+        warn "Usage: changetrack-ng revert <path> <rev>\n";
+        return 64;
+    }
+
+    unless ($opts{force}) {
+        print "Revert $path to revision $rev? [y/N] ";
+        my $ans = <STDIN> // '';
+        chomp $ans;
+        unless ($ans =~ /^y$/i) {
+            say 'Aborted.' unless $opts{quiet};
+            return 1;
+        }
+    }
+
+    my $runner = ChangeTrack::Runner->new(
+        config  => $opts{config},
+        quiet   => $opts{quiet},
+        verbose => $opts{verbose},
+    );
+    eval { $runner->revert_path($path, $rev) };
+    if ($@) { warn "changetrack-ng: $@\n"; return 1 }
+    say "Reverted: $path to revision $rev" unless $opts{quiet};
+    return 0;
+}
+
+sub cmd_update_ignore {
+    require ChangeTrack::Config;
+    require ChangeTrack::Runner;
+
+    my $cfg = eval { ChangeTrack::Config->load($opts{config}) };
+    if ($@) { warn "changetrack-ng: cannot read config: $@\n"; return 64 }
+
+    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
+    my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
+
+    my @patterns = ChangeTrack::Runner->builtin_ignore_patterns;
+    push @patterns, @{ $cfg->global('ignore') // [] };
+
+    if ($vcs_name eq 'git') {
+        _update_gitignore($output_dir, \@patterns);
+    } elsif ($vcs_name eq 'rcs') {
+        _info("RCS has no native ignore file; nothing to update");
+    } else {
+        _info("VCS '$vcs_name' ignore-file update not yet supported");
+    }
+
+    return 0;
+}
+
+sub _update_gitignore {
+    my ($dir, $patterns) = @_;
+    my $path         = "$dir/.gitignore";
+    my $begin_marker = '# BEGIN managed by changetrack-ng';
+    my $end_marker   = '# END managed by changetrack-ng';
+
+    my $existing = '';
+    if (open(my $fh, '<', $path)) { local $/; $existing = <$fh> }
+
+    # Transform path-containing patterns to match at any depth in the repo
+    my @gitpats = map { m{/} ? "**/$_" : $_ } @$patterns;
+    my $block = join("\n", $begin_marker, @gitpats, $end_marker) . "\n";
+
+    if ($existing =~ /\Q$begin_marker\E/) {
+        $existing =~ s/\Q$begin_marker\E.*?\Q$end_marker\E\n?/$block/s;
+    } else {
+        $existing .= "\n" if $existing =~ /\S/;
+        $existing .= $block;
+    }
+
+    open(my $fh, '>', $path) or do {
+        warn "changetrack-ng: cannot write $path: $!\n";
+        return;
+    };
+    print $fh $existing;
+    close($fh);
+
+    say "Updated: $path" unless $opts{quiet};
+}
+
+sub cmd_migrate_config {
+    require ChangeTrack::Config;
+
+    my $v1_path = shift @ARGV;
+    unless (defined $v1_path) {
+        warn "Usage: changetrack-ng migrate-config <v1-config> [<v2-output>]\n";
+        return 64;
+    }
+
+    my $v2_path = shift @ARGV // do {
+        (my $base = $v1_path) =~ s/\.conf$//;
+        "$base.ng.conf";
+    };
+
+    eval { ChangeTrack::Config->migrate_v1_to_v2($v1_path, $v2_path) };
+    if ($@) {
+        warn "changetrack-ng: migrate-config failed: $@\n";
+        return 1;
+    }
+
+    say "Migrated: $v1_path → $v2_path" unless $opts{quiet};
+    return 0;
+}
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+sub _info {
+    my ($msg) = @_;
+    return if $opts{quiet};
+    warn "[changetrack-ng] $msg\n";
+}
+
+sub _usage {
+    my ($fh) = @_;
+    $fh //= \*STDOUT;
+    print $fh <<'USAGE';
+Usage: changetrack-ng [options] [subcommand] [args]
+
+Subcommands:
+  run                          Scan tracked files and commit changes (default)
+  init                         Explicitly initialize the output directory
+  status                       Show files that would be committed
+  diff [path]                  Show pending diff for one file or all
+  log [path]                   Show history for one file or all
+  revert <path> <rev>          Restore file from a specific revision
+  update-ignore                Update VCS-native ignore file
+  migrate-config <v1> [<v2>]  Convert v1 config to v2 format
+
+Options:
+    -c, --config <file>    Config file  [default: /etc/changetrack-ng/... for root,
+                                                                                ~/.config/changetrack-ng/... for non-root]
+  -m, --message <msg>    Extra annotation appended to commit message
+      --no-auto-init     Disable implicit VCS initialization on first run
+  -f, --force            Force through lock or confirmation prompts
+  -q, --quiet            Suppress progress output
+  -v, --verbose          Enable verbose debug output
+  -V, --version          Print version and exit
+  -h, --help             Print this help and exit
+USAGE
+}
+
+=pod
+
+=head1 NAME
+
+changetrack-ng - change-tracking CLI for files and directories
+
+=head1 SYNOPSIS
+
+changetrack-ng [options] [subcommand] [args]
+
+    changetrack-ng run
+    changetrack-ng status
+    changetrack-ng diff [path]
+    changetrack-ng log [path]
+    changetrack-ng revert <path> <rev>
+    changetrack-ng migrate-config <v1-config> [<v2-output>]
+
+=head1 DESCRIPTION
+
+Runs changetrack-ng operations from the command line.
+
+By default, C<run> scans configured tracked paths, detects metadata and
+content changes, commits updates to the configured backend repository, and
+sends notifications.
+
+Default config path behavior:
+
+=over 4
+
+=item * root user
+
+C</etc/changetrack-ng/changetrack-ng.conf>
+
+=item * non-root user
+
+C<$HOME/.config/changetrack-ng/changetrack-ng.conf>
+
+=back
+
+=head1 SUBCOMMANDS
+
+=over 4
+
+=item C<run>
+
+Scan tracked files and commit changes (default subcommand).
+
+=item C<init>
+
+Initialize the output repository backend.
+
+=item C<status>
+
+Show files that would be committed. Exit code is C<1> when changes are
+present, C<0> when clean.
+
+=item C<diff [path]>
+
+Show pending diff for a single path or for all tracked files.
+
+=item C<log [path]>
+
+Show version-control history for a single path or all tracked files.
+
+=item C<revert E<lt>pathE<gt> E<lt>revE<gt>>
+
+Restore a file or symlink from a specific revision.
+
+=item C<update-ignore>
+
+Update backend-specific ignore configuration where supported.
+
+=item C<migrate-config E<lt>v1E<gt> [E<lt>v2E<gt>]>
+
+Convert legacy v1 configuration to v2 format.
+
+=back
+
+=head1 OPTIONS
+
+=over 4
+
+=item C<-c, --config E<lt>fileE<gt>>
+
+Configuration file to load.
+
+=item C<-m, --message E<lt>msgE<gt>>
+
+Extra text appended to generated commit messages.
+
+=item C<--no-auto-init>
+
+Disable automatic repository initialization during C<run>.
+
+=item C<-f, --force>
+
+Bypass interactive confirmation prompts (for example, on C<revert>) and force
+through lock prompts.
+
+=item C<-q, --quiet>
+
+Suppress non-essential output.
+
+=item C<-v, --verbose>
+
+Enable verbose output.
+
+=item C<-V, --version>
+
+Print version and exit.
+
+=item C<-h, --help>
+
+Print help and exit.
+
+=back
+
+=head1 EXIT STATUS
+
+=over 4
+
+=item C<0>
+
+Success.
+
+=item C<1>
+
+Operational failure for command execution, or C<status> found pending changes.
+
+=item C<2>
+
+Runtime exception in command execution.
+
+=item C<64>
+
+Command usage error (invalid subcommand/arguments/config parse failure).
+
+=back
+
+=cut

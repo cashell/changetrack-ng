@@ -1,0 +1,11 @@
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = *
+
+[Action]
+Description = changetrack-ng: recording pre-transaction state
+When = PreTransaction
+Exec = @BINDIR@/changetrack-ng run -m "pre-install: pacman"

@@ -1,0 +1,10 @@
+[Unit]
+Description=changetrack-ng hourly file change scan
+Documentation=man:changetrack-ng(8)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

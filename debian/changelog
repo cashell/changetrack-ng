@@ -1,0 +1,9 @@
+changetrack-ng (0.3.0) unstable; urgency=medium
+
+  * Initial Debian packaging.
+  * Clean Perl rewrite of changetrack with modern VCS and notification support.
+  * Supports RCS, Git, Fossil, SVN, Mercurial VCS backends.
+  * Supports Email, Webhook, OTLP, and File notification channels.
+  * Includes systemd timer, cron.hourly script, and apt/pacman hooks.
+
+ -- Christopher Cashell <topher@zyp.org>  Mon, 28 Apr 2026 00:00:00 +0000

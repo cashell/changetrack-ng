@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# pure Perl — nothing to compile
+
+override_dh_auto_install:
+	$(MAKE) install install-man \
+	    DESTDIR=$(CURDIR)/debian/changetrack-ng \
+	    PREFIX=/usr
+	# apt hooks
+	install -d $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d
+	install -m 644 hooks/apt-pre  $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-pre
+	install -m 644 hooks/apt-post $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d/80changetrack-ng-post
+	# cron job
+	install -d $(CURDIR)/debian/changetrack-ng/etc/cron.hourly
+	sed -e "s|@BINDIR@|/usr/bin|g" cron/changetrack-ng \
+	    > $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
+	chmod 755 $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
+
+override_dh_installsystemd:
+	dh_installsystemd --no-enable changetrack-ng.service
+	dh_installsystemd changetrack-ng.timer
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGELOG.md

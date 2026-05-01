@@ -1,0 +1,10 @@
+[Unit]
+Description=changetrack-ng system file change tracker
+Documentation=man:changetrack-ng(8)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=@BINDIR@/changetrack-ng run
+StandardOutput=journal
+StandardError=journal

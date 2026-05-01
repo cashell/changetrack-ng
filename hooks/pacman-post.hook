@@ -1,0 +1,11 @@
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = *
+
+[Action]
+Description = changetrack-ng: recording post-transaction state
+When = PostTransaction
+Exec = @BINDIR@/changetrack-ng run -m "post-install: pacman"
