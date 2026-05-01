@@ -95,18 +95,36 @@ sub _set_binary_glob_for_path {
     return 0 unless defined $rel_path && length $rel_path;
 
     my $current_r = $self->_run('fossil', 'settings', 'binary-glob');
-    return 0 unless $current_r->{success};
-
-    my $current = $current_r->{stdout} // '';
-    if ($current =~ /^binary-glob(?:\s*[:=])?\s*(.*)$/m) {
-        $current = $1;
+    my $current = '';
+    if ($current_r->{success}) {
+        $current = $current_r->{stdout} // '';
+        if ($current =~ /^binary-glob(?:\s*[:=])?\s*(.*)$/m) {
+            $current = $1;
+        }
+    } else {
+        # Some fossil versions return non-zero for unset values. Treat as empty.
+        my $all_r = $self->_run('fossil', 'settings');
+        if ($all_r->{success} && ($all_r->{stdout} // '') =~ /^binary-glob\s+(.+)$/m) {
+            $current = $1;
+        }
     }
     $current =~ s/\r//g;
     $current =~ s/^\s+|\s+$//g;
 
     my $merged = $self->_merge_glob_list($current, $rel_path);
-    my $set_r = $self->_run('fossil', 'settings', 'binary-glob', $merged);
-    return $set_r->{success} ? 1 : 0;
+
+    # Try common syntax variants for better fossil-version compatibility.
+    my @cmds = (
+        ['fossil', 'settings', 'binary-glob', $merged],
+        ['fossil', 'settings', '--local', 'binary-glob', $merged],
+        ['fossil', 'settings', 'binary-glob', $merged, '--local'],
+    );
+    for my $cmd (@cmds) {
+        my $set_r = $self->_run(@$cmd);
+        return 1 if $set_r->{success};
+    }
+
+    return 0;
 }
 
 sub init {
@@ -164,7 +182,8 @@ sub commit {
            || $r->{stderr} =~ /nothing\s+(has\s+)?changed/i;
 
     if (!$r->{success}) {
-        my $bad_path = $self->_extract_invalid_utf8_path($r->{stderr});
+        my $err_text = join("\n", grep { defined && length } ($r->{stderr}, $r->{stdout}));
+        my $bad_path = $self->_extract_invalid_utf8_path($err_text);
         if (defined $bad_path && length $bad_path) {
             if ($self->_set_binary_glob_for_path($bad_path)) {
                 my $retry = $self->_run('fossil', 'commit', '--no-prompt', '-m', $msg);

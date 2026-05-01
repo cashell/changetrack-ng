@@ -9,7 +9,7 @@ Homepage: https://github.com/changetrack-ng/changetrack-ng
 
 Package: changetrack-ng
 Architecture: all
-Depends: ${misc:Depends}, perl (>= 5.20)
+Depends: ${misc:Depends}, ${perl:Depends}, perl (>= 5.20)
 Recommends: libio-socket-ssl-perl
 Suggests: git | rcs | fossil | subversion | mercurial
 Description: system file change tracker with pluggable VCS and notification support
