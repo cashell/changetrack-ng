@@ -235,6 +235,7 @@ sub _validate_global_values {
         next unless defined $val;
 
         if ($PATH_KEYS{$key}) {
+            next if !$val;  # allow empty values; notifier validation will catch required ones
             croak "Config parse error at $src: key '$key' must be an absolute path, got '$val'"
                 unless $val =~ m{^/};
         }
