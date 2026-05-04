@@ -135,9 +135,10 @@ sub update_from_stat {
     $self->{records}{$path} = $rec;
 }
 
-# can_skip_content_diff($path) — true when a regular file has unchanged
-# mtime+size compared to the loaded snapshot, so a VCS content diff can be
-# safely skipped for this run.
+# can_skip_content_diff($path) — true when a regular file's content could not
+# have changed since the loaded snapshot, so a VCS content diff can be skipped.
+# Returns true when mtime+size are both unchanged, OR when both old and current
+# size are 0 (empty files have no content regardless of mtime).
 sub can_skip_content_diff {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
@@ -151,6 +152,10 @@ sub can_skip_content_diff {
 
     my $cur_mtime = $s[9] + 0;
     my $cur_size  = $s[7] + 0;
+
+    # Both empty: no content to diff, mtime is irrelevant.
+    return 1 if $cur_size == 0 && ($orig->{size} + 0) == 0;
+
     return ($cur_mtime == ($orig->{mtime} + 0) && $cur_size == ($orig->{size} + 0)) ? 1 : 0;
 }
 

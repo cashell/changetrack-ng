@@ -101,6 +101,25 @@ use_ok('ChangeTrack::Metadata');
     ok(!$md->can_skip_content_diff($test_file), 'can_skip_content_diff: false when content fingerprint changed');
 }
 
+# ── can_skip_content_diff true for zero-byte → zero-byte ─────────────────────
+
+{
+    my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.log');
+    close($fh);   # leave it empty (0 bytes)
+
+    my $md = ChangeTrack::Metadata->load('/nonexistent/path/that/will/never/exist');
+    $md->update_from_stat($test_file);
+    # Freeze current state as the "loaded" snapshot
+    $md->{original} = { map { $_ => { %{ $md->{records}{$_} } } } keys %{ $md->{records} } };
+
+    ok($md->can_skip_content_diff($test_file), 'can_skip_content_diff: true for zero-byte file with unchanged size=0');
+
+    # Even if mtime advances (e.g. touch), content still cannot have changed
+    sleep 1;
+    utime(time(), time(), $test_file);
+    ok($md->can_skip_content_diff($test_file), 'can_skip_content_diff: true for zero-byte file after mtime bump');
+}
+
 # ── can_skip_content_diff false for legacy records without mtime/size ───────
 
 {

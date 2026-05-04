@@ -342,7 +342,7 @@ sub _process_file {
 
     # Skip binary regular files (archives, blobs, etc.) to avoid VCS backend
     # failures and unreadable diffs. Symlinks are handled by VCS logic.
-    if (-f $real_path) {
+    if (-f $real_path && !-l $real_path) {
         my $was_binary = defined($existing) && (($existing->{skip_reason} // '') eq 'binary');
 
         # Fast path: already known binary with unchanged mtime+size — skip without reading the file.
@@ -659,7 +659,10 @@ sub log_path {
 
 sub _is_binary_file {
     my ($path) = @_;
-    return 0 unless defined $path && -f $path;
+    # -f follows symlinks; exclude them — symlinks are handled by VCS logic.
+    # -z (zero-byte) files are not binary; Perl's -B returns true for empty files.
+    return 0 unless defined $path && -f $path && !-l $path;
+    return 0 if -z $path;
     return (-B $path) ? 1 : 0;
 }
 
