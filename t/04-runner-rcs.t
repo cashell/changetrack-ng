@@ -203,6 +203,12 @@ my $cfg_path = write_config([$file1]);
     is($report->changes->[0]{path}, $textf, 'BINARY: recorded change is text file path');
     ok(grep { /Skipping binary file: \Q$binf\E/ } @{ $report->warnings },
         'BINARY: binary file is skipped with warning');
+
+    my $runner2 = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
+    my $report2 = $runner2->run;
+    ok(!$report2->has_changes, 'BINARY: second run has no content changes');
+    ok(!grep { /Skipping binary file: \Q$binf\E/ } @{ $report2->warnings },
+        'BINARY: unchanged binary file is not warned repeatedly');
 }
 
 done_testing();

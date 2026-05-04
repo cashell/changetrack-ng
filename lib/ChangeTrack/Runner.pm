@@ -271,9 +271,11 @@ sub _process_file {
 
     $report->increment_tracked;
 
+    my $existing = $md->record_for($real_path);
+
     # File no longer on disk
     unless (-e $real_path || -l $real_path) {
-        if (defined $md->record_for($real_path)) {
+        if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
             $self->_info("Removed: $real_path");
@@ -283,10 +285,20 @@ sub _process_file {
 
     # Skip non-regular files (sockets, FIFOs, devices)
     unless (-f $real_path || -l $real_path) {
-        if ($self->{warn_special_files}) {
-            $self->_warn("skipping special file (FIFO/socket/device): $real_path");
+        my $was_special = defined($existing) && (($existing->{skip_reason} // '') eq 'special');
+
+        $md->update_from_stat($real_path);
+        if (my $rec = $md->record_for($real_path)) {
+            $rec->{skip_reason} = 'special';
         }
-        $report->add_warning("Skipping special file: $real_path");
+
+        # Warn only on first detection or when metadata changed.
+        unless ($was_special && !$md->changed_since_load($real_path)) {
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping special file (FIFO/socket/device): $real_path");
+            }
+            $report->add_warning("Skipping special file: $real_path");
+        }
         return;
     }
 
@@ -299,28 +311,70 @@ sub _process_file {
     }
 
     unless (-r $real_path) {
-        $report->add_warning("Skipping unreadable: $real_path");
+        my $was_unreadable = defined($existing) && (($existing->{skip_reason} // '') eq 'unreadable');
+
+        $md->update_from_stat($real_path);
+        if (my $rec = $md->record_for($real_path)) {
+            $rec->{skip_reason} = 'unreadable';
+        }
+
+        # For regular files, mtime+size unchanged means this unreadable skip is unchanged.
+        # For symlinks, changed_since_load already covers relevant metadata/target changes.
+        my $unchanged_skip = $was_unreadable
+            && !$md->changed_since_load($real_path)
+            && (-l $real_path || $md->can_skip_content_diff($real_path));
+
+        $report->add_warning("Skipping unreadable: $real_path") unless $unchanged_skip;
         return;
+    }
+
+    # Unchanged symlinks can be fully skipped without VCS diff probes.
+    if (-l $real_path && defined $existing) {
+        my $skip_reason = $existing->{skip_reason} // '';
+        if ($skip_reason eq '' && !$md->changed_since_load($real_path)) {
+            $md->update_from_stat($real_path);
+            if (my $rec = $md->record_for($real_path)) {
+                delete $rec->{skip_reason};
+            }
+            return;
+        }
     }
 
     # Skip binary regular files (archives, blobs, etc.) to avoid VCS backend
     # failures and unreadable diffs. Symlinks are handled by VCS logic.
-    if (-f $real_path && _is_binary_file($real_path)) {
-        if ($self->{warn_special_files}) {
-            $self->_warn("skipping binary file: $real_path");
+    if (-f $real_path) {
+        my $was_binary = defined($existing) && (($existing->{skip_reason} // '') eq 'binary');
+
+        # Fast path: already known binary with unchanged mtime+size — skip without reading the file.
+        if ($was_binary && $md->can_skip_content_diff($real_path)) {
+            $md->update_from_stat($real_path);
+            if (my $rec = $md->record_for($real_path)) { $rec->{skip_reason} = 'binary'; }
+            return;
         }
-        $report->add_warning("Skipping binary file: $real_path");
-        return;
+
+        # Either newly seen or metadata changed — probe the file content.
+        if (_is_binary_file($real_path)) {
+            $md->update_from_stat($real_path);
+            if (my $rec = $md->record_for($real_path)) {
+                $rec->{skip_reason} = 'binary';
+            }
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping binary file: $real_path");
+            }
+            $report->add_warning("Skipping binary file: $real_path");
+            return;
+        }
     }
 
     # Resolve sensitive flag
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
 
-    my $existing = $md->record_for($real_path);
-
     if (!defined $existing) {
         # ── New file ──────────────────────────────────────────────────────────
         $md->update_from_stat($real_path);
+        if (my $rec = $md->record_for($real_path)) {
+            delete $rec->{skip_reason};
+        }
         $vcs->checkin($real_path, $commit_msg);
         $vcs->add($real_path);
         $report->add_change(
@@ -338,11 +392,19 @@ sub _process_file {
         my $meta_summary = $meta_changed ? $md->diff_summary($real_path) : '';
 
         my $skip_content_diff = $md->can_skip_content_diff($real_path);
+        # Symlink content is the link target; metadata change detection already
+        # captures target/mode/owner/group drift for unchanged links.
+        if (!$skip_content_diff && -l $real_path && !$meta_changed) {
+            $skip_content_diff = 1;
+        }
         my $diff_lines   = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
 
         # Update metadata to current state
         $md->update_from_stat($real_path);
+        if (my $rec = $md->record_for($real_path)) {
+            delete $rec->{skip_reason};
+        }
 
         if ($meta_changed || $content_changed) {
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;

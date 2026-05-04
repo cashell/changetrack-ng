@@ -56,8 +56,8 @@ use_ok('ChangeTrack::Metadata');
         mode  => '0600',          # deliberately different from actual 0644
         uid   => $s[4],
         gid   => $s[5],
-        user  => (getpwuid($s[4]))[0] // $s[4],
-        group => (getgrgid($s[5]))[0] // $s[5],
+        user  => ($^O eq 'MSWin32' ? $s[4] : (getpwuid($s[4]))[0] // $s[4]),
+        group => ($^O eq 'MSWin32' ? $s[5] : (getgrgid($s[5]))[0] // $s[5]),
         type  => 'file',
     );
 
@@ -116,8 +116,8 @@ use_ok('ChangeTrack::Metadata');
             mode  => sprintf('%04o', $s[2] & 07777),
             uid   => $s[4],
             gid   => $s[5],
-            user  => (getpwuid($s[4]))[0] // $s[4],
-            group => (getgrgid($s[5]))[0] // $s[5],
+            user  => ($^O eq 'MSWin32' ? $s[4] : (getpwuid($s[4]))[0] // $s[4]),
+            group => ($^O eq 'MSWin32' ? $s[5] : (getgrgid($s[5]))[0] // $s[5]),
         } },
         original => { $test_file => {
             path  => $test_file,
@@ -125,8 +125,8 @@ use_ok('ChangeTrack::Metadata');
             mode  => sprintf('%04o', $s[2] & 07777),
             uid   => $s[4],
             gid   => $s[5],
-            user  => (getpwuid($s[4]))[0] // $s[4],
-            group => (getgrgid($s[5]))[0] // $s[5],
+            user  => ($^O eq 'MSWin32' ? $s[4] : (getpwuid($s[4]))[0] // $s[4]),
+            group => ($^O eq 'MSWin32' ? $s[5] : (getgrgid($s[5]))[0] // $s[5]),
         } },
     }, 'ChangeTrack::Metadata';
 

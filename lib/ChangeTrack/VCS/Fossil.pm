@@ -16,7 +16,7 @@ use strict;
 use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
-use File::Basename qw(dirname basename);
+use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use File::Spec ();
 use Cwd qw(getcwd);

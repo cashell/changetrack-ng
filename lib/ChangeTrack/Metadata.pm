@@ -241,7 +241,7 @@ sub import_from_v1_statistics {
     carp "changetrack-ng: import_from_v1_statistics not yet implemented";
 }
 
-sub _username  { (getpwuid($_[0]))[0] // $_[0] }
-sub _groupname { (getgrgid($_[0]))[0] // $_[0] }
+sub _username  { $^O eq 'MSWin32' ? $_[0] : ((getpwuid($_[0]))[0]  // $_[0]) }
+sub _groupname { $^O eq 'MSWin32' ? $_[0] : ((getgrgid($_[0]))[0] // $_[0]) }
 
 1;
