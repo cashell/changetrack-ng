@@ -16,8 +16,9 @@ use strict;
 use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
-use File::Basename qw(dirname);
+use File::Basename qw(dirname basename);
 use File::Path qw(make_path);
+use File::Spec ();
 use Cwd qw(getcwd);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
@@ -50,8 +51,17 @@ sub _run {
     my ($self, @cmd) = @_;
     my $old = getcwd();
     chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
+    if ($self->{verbose}) {
+        warn "[Fossil] run: @cmd\n";
+    }
     my $r = run_cmd(cmd => \@cmd);
     chdir($old) or carp "chdir back to $old: $!";
+    if ($self->{verbose}) {
+        warn "[Fossil] exit=" . ($r->{success} ? 0 : ($r->{exit_code} // '?'))
+           . (length($r->{stdout} // '') ? " stdout=$r->{stdout}" : '')
+           . (length($r->{stderr} // '') ? " stderr=$r->{stderr}" : '') . "\n"
+            if $r->{stdout} =~ /\S/ || $r->{stderr} =~ /\S/ || !$r->{success};
+    }
     return $r;
 }
 
@@ -90,41 +100,52 @@ sub _merge_glob_list {
     return join(',', @parts);
 }
 
+sub _fossil_settings_dir {
+    my ($self) = @_;
+    return File::Spec->catdir($self->{output_dir}, '.fossil-settings');
+}
+
+# Write binary-glob directly as a versioned .fossil-settings file.
+# This is more reliable than `fossil settings binary-glob` which varies by
+# fossil version and may not persist across checkouts.
 sub _set_binary_glob_for_path {
     my ($self, $rel_path) = @_;
     return 0 unless defined $rel_path && length $rel_path;
 
-    my $current_r = $self->_run('fossil', 'settings', 'binary-glob');
+    my $settings_dir  = $self->_fossil_settings_dir();
+    my $glob_file     = File::Spec->catfile($settings_dir, 'binary-glob');
+
+    # Read existing entries from the versioned settings file first.
     my $current = '';
-    if ($current_r->{success}) {
-        $current = $current_r->{stdout} // '';
-        if ($current =~ /^binary-glob(?:\s*[:=])?\s*(.*)$/m) {
-            $current = $1;
-        }
-    } else {
-        # Some fossil versions return non-zero for unset values. Treat as empty.
-        my $all_r = $self->_run('fossil', 'settings');
-        if ($all_r->{success} && ($all_r->{stdout} // '') =~ /^binary-glob\s+(.+)$/m) {
-            $current = $1;
-        }
+    if (-f $glob_file) {
+        open(my $fh, '<', $glob_file)
+            or carp "Cannot read $glob_file: $!"
+            and return 0;
+        $current = do { local $/; <$fh> };
+        close $fh;
+        $current =~ s/\r//g;
+        $current =~ s/^\s+|\s+$//g;
     }
-    $current =~ s/\r//g;
-    $current =~ s/^\s+|\s+$//g;
 
     my $merged = $self->_merge_glob_list($current, $rel_path);
+    return 1 if $merged eq $current;   # nothing to change
 
-    # Try common syntax variants for better fossil-version compatibility.
-    my @cmds = (
-        ['fossil', 'settings', 'binary-glob', $merged],
-        ['fossil', 'settings', '--local', 'binary-glob', $merged],
-        ['fossil', 'settings', 'binary-glob', $merged, '--local'],
-    );
-    for my $cmd (@cmds) {
-        my $set_r = $self->_run(@$cmd);
-        return 1 if $set_r->{success};
+    make_path($settings_dir, { mode => 0755 }) unless -d $settings_dir;
+
+    open(my $fh, '>', $glob_file)
+        or carp "Cannot write $glob_file: $!"
+        and return 0;
+    print $fh "$merged\n";
+    close $fh;
+
+    if ($self->{verbose}) {
+        warn "[Fossil] wrote binary-glob: $merged\n";
     }
 
-    return 0;
+    # Stage the settings file so it is committed alongside the data file.
+    $self->_run('fossil', 'add', '--', '.fossil-settings/binary-glob');
+
+    return 1;
 }
 
 sub init {
@@ -177,7 +198,8 @@ sub commit {
     my $changes = $self->_run('fossil', 'changes', '--classify', '--hash');
     return unless $changes->{stdout} =~ /\S/;
 
-    my $r = $self->_run('fossil', 'commit', '--no-prompt', '-m', $msg);
+    # --no-warnings suppresses interactive abandonment on encoding/CR-LF issues.
+    my $r = $self->_run('fossil', 'commit', '--no-prompt', '--no-warnings', '-m', $msg);
     return if $r->{stdout} =~ /nothing\s+(has\s+)?changed/i
            || $r->{stderr} =~ /nothing\s+(has\s+)?changed/i;
 
@@ -185,13 +207,15 @@ sub commit {
         my $err_text = join("\n", grep { defined && length } ($r->{stderr}, $r->{stdout}));
         my $bad_path = $self->_extract_invalid_utf8_path($err_text);
         if (defined $bad_path && length $bad_path) {
+            warn "[changetrack-ng] Fossil: flagging '$bad_path' as binary in .fossil-settings/binary-glob\n";
             if ($self->_set_binary_glob_for_path($bad_path)) {
-                my $retry = $self->_run('fossil', 'commit', '--no-prompt', '-m', $msg);
+                # Commit again; the settings file is now staged too.
+                my $retry = $self->_run('fossil', 'commit', '--no-prompt', '--no-warnings', '-m', $msg);
                 return if $retry->{stdout} =~ /nothing\s+(has\s+)?changed/i
                        || $retry->{stderr} =~ /nothing\s+(has\s+)?changed/i;
                 $r = $retry;
             } else {
-                carp "fossil settings binary-glob update failed for '$bad_path'";
+                carp "fossil binary-glob update failed for '$bad_path'";
             }
         }
     }

@@ -62,6 +62,7 @@ sub new {
     return bless {
         output_dir => $args{output_dir} // '/var/lib/changetrack-ng',
         options    => $args{options}    // {},
+        verbose    => $args{verbose}    // 0,
     }, $class;
 }
 

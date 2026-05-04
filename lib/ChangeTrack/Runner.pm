@@ -173,6 +173,7 @@ sub run {
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
         options    => { push_remote => $cfg->global('push_remote') },
+        verbose    => $self->{verbose} // 0,
     );
 
     # Auto-init
@@ -521,6 +522,7 @@ sub _setup {
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
         options    => { push_remote => $cfg->global('push_remote') },
+        verbose    => $self->{verbose} // 0,
     );
     croak "VCS not initialized. Run 'changetrack-ng init' first."
         unless $vcs->is_initialized;
