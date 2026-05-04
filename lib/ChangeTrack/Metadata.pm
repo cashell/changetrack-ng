@@ -102,6 +102,7 @@ sub record_for {
 }
 
 # update_from_stat($path) — repopulate the in-memory record by stat()ing the live file.
+# Type is the single source of truth: file, symlink, binary, empty, unreadable, special, directory, missing.
 sub update_from_stat {
     my ($self, $path) = @_;
 
@@ -112,10 +113,13 @@ sub update_from_stat {
     }
 
     my $type;
-    if    (-l _) { $type = 'symlink' }
-    elsif (-f _) { $type = 'file'    }
+    if    (-l _) { $type = 'symlink'   }
     elsif (-d _) { $type = 'directory' }
-    else          { $type = 'special'  }
+    elsif (!-f _) { $type = 'special'  }
+    elsif (!-r $path) { $type = 'unreadable' }
+    elsif ($s[7] == 0) { $type = 'empty' }
+    elsif (-B $path)   { $type = 'binary' }
+    else               { $type = 'file' }
 
     my $rec = {
         path  => $path,
@@ -126,7 +130,7 @@ sub update_from_stat {
         group => _groupname($s[5]),
         type  => $type,
     };
-    if ($type eq 'file') {
+    if ($type eq 'file' || $type eq 'binary' || $type eq 'empty' || $type eq 'unreadable') {
         $rec->{mtime} = $s[9] + 0;
         $rec->{size}  = $s[7] + 0;
     }
@@ -135,28 +139,45 @@ sub update_from_stat {
     $self->{records}{$path} = $rec;
 }
 
-# can_skip_content_diff($path) — true when a regular file's content could not
-# have changed since the loaded snapshot, so a VCS content diff can be skipped.
-# Returns true when mtime+size are both unchanged, OR when both old and current
-# size are 0 (empty files have no content regardless of mtime).
+# can_skip_content_diff($path) — true when a file's content could not have
+# changed since the loaded snapshot.  Covers: mtime+size unchanged for regular
+# files, both-empty fast path, symlink target unchanged, and non-content types
+# (binary/empty/special/unreadable) when mtime+size haven't moved.
 sub can_skip_content_diff {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
     return 0 unless defined $orig;
-    return 0 unless ($orig->{type} // '') eq 'file';
 
-    my @s = lstat($path);
-    return 0 unless @s;
-    return 0 unless -f _;
-    return 0 unless defined $orig->{mtime} && defined $orig->{size};
+    my $otype = $orig->{type} // '';
 
-    my $cur_mtime = $s[9] + 0;
-    my $cur_size  = $s[7] + 0;
+    # Symlinks: compare stored target to live readlink — no file I/O needed.
+    if ($otype eq 'symlink') {
+        my $cur_target = readlink($path);
+        return 0 unless defined $cur_target;
+        return ($cur_target eq ($orig->{target} // '')) ? 1 : 0;
+    }
 
-    # Both empty: no content to diff, mtime is irrelevant.
-    return 1 if $cur_size == 0 && ($orig->{size} + 0) == 0;
+    # Non-content types: unchanged mtime+size means nothing to reprocess.
+    # Regular files: unchanged mtime+size means content hasn't changed.
+    if ($otype eq 'file' || $otype eq 'binary' || $otype eq 'empty' || $otype eq 'unreadable') {
+        my @s = lstat($path);
+        return 0 unless @s;
+        return 0 unless -f _;
+        return 0 unless defined $orig->{mtime} && defined $orig->{size};
 
-    return ($cur_mtime == ($orig->{mtime} + 0) && $cur_size == ($orig->{size} + 0)) ? 1 : 0;
+        my $cur_size  = $s[7] + 0;
+        my $cur_mtime = $s[9] + 0;
+
+        # Both empty: content is trivially identical regardless of mtime.
+        return 1 if $cur_size == 0 && ($orig->{size} + 0) == 0;
+
+        return ($cur_mtime == ($orig->{mtime} + 0) && $cur_size == ($orig->{size} + 0)) ? 1 : 0;
+    }
+
+    # special/directory/missing: no content to diff.
+    return 1 if $otype eq 'special' || $otype eq 'directory';
+
+    return 0;
 }
 
 # changed_since_load($path) — bool: has the live file's metadata changed vs the loaded record?

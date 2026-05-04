@@ -272,8 +272,9 @@ sub _process_file {
     $report->increment_tracked;
 
     my $existing = $md->record_for($real_path);
+    my $prev_type = defined($existing) ? ($existing->{type} // '') : '';
 
-    # File no longer on disk
+    # ── File no longer on disk ────────────────────────────────────────────────
     unless (-e $real_path || -l $real_path) {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
@@ -283,17 +284,24 @@ sub _process_file {
         return;
     }
 
-    # Skip non-regular files (sockets, FIFOs, devices)
-    unless (-f $real_path || -l $real_path) {
-        my $was_special = defined($existing) && (($existing->{skip_reason} // '') eq 'special');
-
+    # ── Fast path: metadata unchanged → skip entirely ─────────────────────────
+    # For known files where mtime+size (or symlink target) haven't changed,
+    # there is nothing to process regardless of type.
+    if (defined $existing && $md->can_skip_content_diff($real_path)
+        && !$md->changed_since_load($real_path)) {
+        # Refresh the record (preserves the type as-is).
         $md->update_from_stat($real_path);
-        if (my $rec = $md->record_for($real_path)) {
-            $rec->{skip_reason} = 'special';
-        }
+        return;
+    }
 
-        # Warn only on first detection or when metadata changed.
-        unless ($was_special && !$md->changed_since_load($real_path)) {
+    # ── Classify the file (stat it once, determine type) ──────────────────────
+    $md->update_from_stat($real_path);
+    my $rec  = $md->record_for($real_path);
+    my $type = $rec->{type};
+
+    # ── Non-trackable types: special, unreadable, binary, empty ───────────────
+    if ($type eq 'special') {
+        unless ($prev_type eq 'special' && !$md->changed_since_load($real_path)) {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping special file (FIFO/socket/device): $real_path");
             }
@@ -302,79 +310,69 @@ sub _process_file {
         return;
     }
 
-    # Warn about hardlinked regular files — changes via other names won't be tracked
-    {
-        my @st = stat($real_path);
-        if (@st && !-l $real_path && $st[3] > 1) {
-            $self->_warn("$real_path has $st[3] hard links — changes via other names will not be tracked");
+    if ($type eq 'unreadable') {
+        unless ($prev_type eq 'unreadable' && !$md->changed_since_load($real_path)) {
+            $report->add_warning("Skipping unreadable: $real_path");
         }
-    }
-
-    unless (-r $real_path) {
-        my $was_unreadable = defined($existing) && (($existing->{skip_reason} // '') eq 'unreadable');
-
-        $md->update_from_stat($real_path);
-        if (my $rec = $md->record_for($real_path)) {
-            $rec->{skip_reason} = 'unreadable';
-        }
-
-        # For regular files, mtime+size unchanged means this unreadable skip is unchanged.
-        # For symlinks, changed_since_load already covers relevant metadata/target changes.
-        my $unchanged_skip = $was_unreadable
-            && !$md->changed_since_load($real_path)
-            && (-l $real_path || $md->can_skip_content_diff($real_path));
-
-        $report->add_warning("Skipping unreadable: $real_path") unless $unchanged_skip;
         return;
     }
 
-    # Unchanged symlinks can be fully skipped without VCS diff probes.
-    if (-l $real_path && defined $existing) {
-        my $skip_reason = $existing->{skip_reason} // '';
-        if ($skip_reason eq '' && !$md->changed_since_load($real_path)) {
-            $md->update_from_stat($real_path);
-            if (my $rec = $md->record_for($real_path)) {
-                delete $rec->{skip_reason};
-            }
-            return;
-        }
-    }
-
-    # Skip binary regular files (archives, blobs, etc.) to avoid VCS backend
-    # failures and unreadable diffs. Symlinks are handled by VCS logic.
-    if (-f $real_path && !-l $real_path) {
-        my $was_binary = defined($existing) && (($existing->{skip_reason} // '') eq 'binary');
-
-        # Fast path: already known binary with unchanged mtime+size — skip without reading the file.
-        if ($was_binary && $md->can_skip_content_diff($real_path)) {
-            $md->update_from_stat($real_path);
-            if (my $rec = $md->record_for($real_path)) { $rec->{skip_reason} = 'binary'; }
-            return;
-        }
-
-        # Either newly seen or metadata changed — probe the file content.
-        if (_is_binary_file($real_path)) {
-            $md->update_from_stat($real_path);
-            if (my $rec = $md->record_for($real_path)) {
-                $rec->{skip_reason} = 'binary';
-            }
+    if ($type eq 'binary') {
+        unless ($prev_type eq 'binary') {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping binary file: $real_path");
             }
             $report->add_warning("Skipping binary file: $real_path");
-            return;
+        }
+        return;
+    }
+
+    if ($type eq 'empty') {
+        # Empty files have no content to diff.  Report only meta changes.
+        if (defined $existing && $md->changed_since_load($real_path)) {
+            my $meta_summary = $md->diff_summary($real_path);
+            my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+            $vcs->checkin($real_path, $msg);
+            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
+            $report->add_change(
+                path         => $real_path,
+                is_new       => 0,
+                is_sensitive => $is_sensitive,
+                diff         => [],
+                meta_change  => $meta_summary,
+                recipients   => $recipients,
+            );
+            $self->_verbose("Changed (meta): $real_path ($meta_summary)");
+        } elsif (!defined $existing) {
+            $vcs->checkin($real_path, $commit_msg);
+            $vcs->add($real_path);
+            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
+            $report->add_change(
+                path         => $real_path,
+                is_new       => 1,
+                is_sensitive => $is_sensitive,
+                diff         => ['(new empty file)'],
+                meta_change  => '',
+                recipients   => $recipients,
+            );
+            $self->_info("New: $real_path");
+        }
+        return;
+    }
+
+    # Warn about hardlinked regular files
+    if ($type eq 'file') {
+        my @st = stat($real_path);
+        if (@st && $st[3] > 1) {
+            $self->_warn("$real_path has $st[3] hard links — changes via other names will not be tracked");
         }
     }
 
-    # Resolve sensitive flag
+    # ── Trackable types: file, symlink ────────────────────────────────────────
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
 
     if (!defined $existing) {
-        # ── New file ──────────────────────────────────────────────────────────
-        $md->update_from_stat($real_path);
-        if (my $rec = $md->record_for($real_path)) {
-            delete $rec->{skip_reason};
-        }
+        # New file / symlink
         $vcs->checkin($real_path, $commit_msg);
         $vcs->add($real_path);
         $report->add_change(
@@ -387,24 +385,15 @@ sub _process_file {
         );
         $self->_info("New: $real_path");
     } else {
-        # ── Existing file ─────────────────────────────────────────────────────
+        # Existing file / symlink — check for changes
         my $meta_changed = $md->changed_since_load($real_path);
         my $meta_summary = $meta_changed ? $md->diff_summary($real_path) : '';
 
-        my $skip_content_diff = $md->can_skip_content_diff($real_path);
-        # Symlink content is the link target; metadata change detection already
-        # captures target/mode/owner/group drift for unchanged links.
-        if (!$skip_content_diff && -l $real_path && !$meta_changed) {
-            $skip_content_diff = 1;
-        }
-        my $diff_lines   = $skip_content_diff ? [] : $vcs->diff($real_path);
+        # Symlinks: content is the target, already captured by changed_since_load.
+        # Regular files: diff only if mtime+size moved.
+        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path);
+        my $diff_lines = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
-
-        # Update metadata to current state
-        $md->update_from_stat($real_path);
-        if (my $rec = $md->record_for($real_path)) {
-            delete $rec->{skip_reason};
-        }
 
         if ($meta_changed || $content_changed) {
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
@@ -608,7 +597,7 @@ sub status {
     my @results;
     for my $entry (@$entries) {
         next unless -e $entry->{path} || -l $entry->{path};
-        next if -f $entry->{path} && _is_binary_file($entry->{path});
+        next if _is_non_diffable($entry->{path});
         my $diff = eval { $vcs->diff($entry->{path}) } // [];
         push @results, { path => $entry->{path}, diff => $diff } if @$diff;
     }
@@ -629,7 +618,7 @@ sub diff_path {
     my %result;
     for my $entry (@$entries) {
         next unless -e $entry->{path} || -l $entry->{path};
-        next if -f $entry->{path} && _is_binary_file($entry->{path});
+        next if _is_non_diffable($entry->{path});
         my $diff = eval { $vcs->diff($entry->{path}) } // [];
         $result{$entry->{path}} = $diff if @$diff;
     }
@@ -650,20 +639,23 @@ sub log_path {
     my %result;
     for my $entry (@$entries) {
         next unless -e $entry->{path} || -l $entry->{path};
-        next if -f $entry->{path} && _is_binary_file($entry->{path});
+        next if _is_non_diffable($entry->{path});
         my $log = eval { $vcs->log_history($entry->{path}) } // [];
         $result{$entry->{path}} = $log;
     }
     return \%result;
 }
 
-sub _is_binary_file {
+# _is_non_diffable($path) — true for files that cannot produce meaningful diffs
+# (binary, empty, special, unreadable).  Does NOT open/read the file for symlinks.
+sub _is_non_diffable {
     my ($path) = @_;
-    # -f follows symlinks; exclude them — symlinks are handled by VCS logic.
-    # -z (zero-byte) files are not binary; Perl's -B returns true for empty files.
-    return 0 unless defined $path && -f $path && !-l $path;
-    return 0 if -z $path;
-    return (-B $path) ? 1 : 0;
+    return 1 unless defined $path;
+    return 0 if -l $path;          # symlinks are always diffable (target is text)
+    return 1 unless -f $path;      # special files
+    return 1 unless -r $path;      # unreadable
+    return 1 if -z $path;          # empty
+    return (-B $path) ? 1 : 0;     # binary
 }
 
 # Reverts $path to $rev in both the VCS mirror and the real file.
