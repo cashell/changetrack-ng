@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-04
+
+### Changed
+
+- **Metadata type system overhaul**: Replaced `skip_reason` field with unified `type` values
+  (`file`, `symlink`, `binary`, `empty`, `unreadable`, `special`, `directory`, `missing`).
+  Old metadata files are transparently migrated on next run (lazy, no manual step).
+- **Runner rewritten as type-based dispatch**: `_process_file()` uses a single `update_from_stat`
+  classification followed by a clean switch on type, eliminating redundant stat calls and
+  split-brain logic.
+
+### Fixed
+
+- **Performance**: metadata-based fast path now skips all unchanged files (any type) before
+  any file I/O, VCS subprocess calls, or binary probes.
+- **Symlinks misclassified as binary**: `-f` follows symlinks, so symlinks to binary targets
+  were entering the binary detection path. Now excluded via `!-l` guard in classification.
+- **Empty files flagged as binary**: Perl's `-B` returns true for zero-byte files. Now
+  classified as `empty` type and handled with a content-free fast path.
+- **Binary warnings on every run**: Previously warned even for known-binary files with
+  unchanged mtime+size. Now warns only on first detection.
+- **getpwuid/getgrgid on non-POSIX**: Guarded with `$^O` check for Windows portability.
+
 ### Added
 
 - dnf package-manager integration via plugin files:

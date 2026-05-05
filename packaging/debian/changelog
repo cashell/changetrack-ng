@@ -1,3 +1,15 @@
+changetrack-ng (0.4.3) unstable; urgency=medium
+
+  * Unified metadata type system: drop skip_reason, use single type field
+    (file, symlink, binary, empty, unreadable, special, directory, missing).
+  * Performance: metadata-based fast path skips unchanged files without I/O.
+  * Fix: symlinks no longer misclassified as binary.
+  * Fix: empty (zero-byte) files no longer flagged as binary.
+  * Fix: binary file warnings only emitted on first detection.
+  * Fix: getpwuid/getgrgid portability for non-POSIX platforms.
+
+ -- Christopher Cashell <topher@zyp.org>  Sun, 04 May 2026 00:00:00 +0000
+
 changetrack-ng (0.3.0) unstable; urgency=medium
 
   * Initial Debian packaging.

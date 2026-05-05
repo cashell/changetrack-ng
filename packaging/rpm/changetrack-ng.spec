@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.3.0
+Version:        0.4.3
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -106,6 +106,15 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Sun May 04 2026 Christopher Cashell <topher@zyp.org> - 0.4.3-1
+- Unified metadata type system: drop skip_reason, use single type field
+  (file, symlink, binary, empty, unreadable, special, directory, missing)
+- Performance: metadata-based fast path skips unchanged files without I/O
+- Fix: symlinks no longer misclassified as binary
+- Fix: empty (zero-byte) files no longer flagged as binary
+- Fix: binary file warnings only emitted on first detection
+- Fix: getpwuid/getgrgid portability for non-POSIX platforms
+
 * Mon Apr 28 2026 Christopher Cashell <topher@zyp.org> - 0.3.0-1
 - Initial RPM packaging
 - Clean Perl rewrite of changetrack with modern VCS and notification support

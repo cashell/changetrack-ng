@@ -1,7 +1,7 @@
 # changetrack-ng — Architecture and Design
 
-Date: 2026-04-30
-Version: 0.3.0
+Date: 2026-05-04
+Version: 0.4.3
 
 ---
 
@@ -71,10 +71,10 @@ Version: 0.3.0
 | `ChangeTrack::Runner` | Main orchestration: config load → lock → build file list → per-file stat+diff → Report accumulation → VCS commit → notification dispatch |
 | `ChangeTrack::Config` | INI v2 parser with strict key validation; auto-detects legacy v1 format; `migrate_v1_to_v2()` migration tool; `HOSTNAME` interpolation |
 | `ChangeTrack::Lock` | `flock(2)`-based pidfile with timeout/force modes; non-blocking skip for cron safety |
-| `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots; immutable-on-load snapshot for change detection; atomic save (tmpfile + rename) |
+| `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
 | `ChangeTrack::Util` | `hostname()`, `run_cmd()` (IPC::Open3, IO::Select, no shell), `sync_mirror_path()`, `restore_mirror_path()` |
-| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.3.0'`) |
+| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.4.3'`) |
 | `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `add`, `checkin`, `commit`, `diff`, `log_history`, `revert`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; batch commit; optional push_remote |
 | `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate ci -l per file |
@@ -102,12 +102,16 @@ Version: 0.3.0
                          →  Apply ignore patterns (built-in + user)
                              │
  ┌─ For each tracked path ───────────────────────────────────────────────────┐
- │  • stat()/lstat() current file                                             │
- │  • Compare against metadata sidecar (mode, uid, gid, symlink target)       │
- │  • Run VCS diff (copies to mirror, compares against last commit)           │
- │  • If changed: VCS checkin, update metadata, add to Report                 │
- │  • If new: VCS checkin+add, create metadata entry, add to Report           │
- │  • If removed: mark in metadata, add to Report                             │
+ │  1. Missing from disk? → report removed, done                              │
+ │  2. Fast path: can_skip_content_diff + !changed_since_load → skip entirely │
+ │  3. update_from_stat → classify type (file/symlink/binary/empty/etc.)      │
+ │  4. Dispatch on type:                                                       │
+ │     • special/unreadable/binary → warn on first detection, skip content    │
+ │     • empty → track metadata changes only                                  │
+ │     • symlink → target comparison via metadata (no file I/O)               │
+ │     • file → VCS diff (copy to mirror, compare against last commit)        │
+ │  5. If new: VCS checkin+add, create metadata entry, add to Report          │
+ │  6. If changed: VCS checkin, update metadata, add to Report                │
  └────────────────────────────────────────────────────────────────────────────┘
                              │
  Metadata.save()        →  Atomic tmpfile + rename
@@ -138,11 +142,28 @@ All whole-repo backends (Git, Fossil, SVN, Mercurial) use a mirror tree:
 
 JSONL file (one JSON object per line), sorted by path on write:
 ```json
-{"path":"/etc/passwd","mode":"0644","uid":0,"gid":0,"user":"root","group":"root","type":"file"}
-{"path":"/etc/shadow","mode":"0640","uid":0,"gid":42,"user":"root","group":"shadow","type":"file"}
+{"path":"/etc/passwd","mode":"0644","uid":0,"gid":0,"user":"root","group":"root","type":"file","mtime":1714300000,"size":2345}
+{"path":"/etc/shadow","mode":"0640","uid":0,"gid":42,"user":"root","group":"shadow","type":"unreadable","mtime":1714300000,"size":1024}
+{"path":"/etc/localtime","mode":"0644","uid":0,"gid":0,"user":"root","group":"root","type":"symlink","target":"/usr/share/zoneinfo/America/Chicago"}
+{"path":"/etc/selinux/default/modules/active/policy.kern","mode":"0644","uid":0,"gid":0,"user":"root","group":"root","type":"binary","mtime":1714300000,"size":98304}
 ```
 
+The `type` field is the single source of truth for file classification:
+
+| Type | Meaning | Tracked content |
+|------|---------|-----------------|
+| `file` | Regular text file | Full VCS diff |
+| `symlink` | Symbolic link | Target path (via `readlink`) |
+| `binary` | Regular file with binary content | Metadata only |
+| `empty` | Regular file, 0 bytes | Metadata only |
+| `unreadable` | Regular file, no read permission | Metadata only |
+| `special` | FIFO, socket, device node | Metadata only |
+| `directory` | Directory (defensive) | Metadata only |
+| `missing` | Previously tracked, now gone | N/A |
+
 Change detection compares live `lstat()` against the immutable "original" snapshot loaded at run start.
+The fast path (`can_skip_content_diff`) skips all further processing when mtime+size are unchanged
+(for regular file types) or symlink target is unchanged — no file I/O or VCS calls needed.
 
 ---
 
@@ -323,7 +344,7 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 
 ### 9.3 Version management
 
-- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.3.0'`)
+- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.4.3'`)
 - All modules: `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`
 - Makefile `VERSION` variable must be kept in sync
 - RPM spec `Version:` and `%changelog` updated manually

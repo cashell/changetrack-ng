@@ -157,5 +157,5 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 
 ## Implementation Status
 
-All phases (1–11) from `PLAN.md` are complete. The project is at version 0.3.0.
+All phases (1–11) from `PLAN.md` are complete. The project is at version 0.4.3.
 Tests in `t/` cover all implemented modules. See `TODO.md` for remaining improvements.
