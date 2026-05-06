@@ -117,7 +117,12 @@ sub _send_one {
     my $from    = $self->{email_from};
     my $subject = "[changetrack-ng] Changes on $host \@ $date";
 
-    open(my $pipe, '|-', $sendmail, '-oi', '-f', $from, $to)
+    my @cmd = ($sendmail, '-oi', '-f', $from, $to);
+    if ($^O eq 'MSWin32' && $sendmail !~ /\.(?:exe|bat|cmd|com)$/i) {
+        @cmd = ($^X, $sendmail, '-oi', '-f', $from, $to);
+    }
+
+    open(my $pipe, '|-', @cmd)
         or die "Cannot open sendmail pipe: $!";
     binmode($pipe, ':encoding(UTF-8)');
 
@@ -136,6 +141,7 @@ sub _find_sendmail {
 
     if ($self->{sendmail_path}) {
         return $self->{sendmail_path} if -x $self->{sendmail_path};
+        return $self->{sendmail_path} if -f $self->{sendmail_path};
     }
 
     for my $path (@SENDMAIL_PATHS) {

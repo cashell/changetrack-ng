@@ -125,6 +125,7 @@ sub new {
         message            => $args{message}            // '',
         quiet              => $args{quiet}              // 0,
         verbose            => $args{verbose}            // 0,
+        dry_run            => $args{dry_run}            // 0,
         force              => $args{force}              // 0,
         warn_special_files => $args{warn_special_files} // 1,
     }, $class;
@@ -178,6 +179,8 @@ sub run {
 
     # Auto-init
     unless ($vcs->is_initialized) {
+        croak "VCS not initialized for --dry-run. Run 'changetrack-ng init' first."
+            if $self->{dry_run};
         croak "VCS not initialized and --no-auto-init is set. Run 'changetrack-ng init'."
             if $self->{no_auto_init};
         $self->_info("Initializing $vcs_name repository in $output_dir");
@@ -191,9 +194,10 @@ sub run {
     # Build combined ignore list
     my @user_ignore = @{ $cfg->global('ignore') // [] };
     my @ignore_pats = (@BUILTIN_IGNORE, @user_ignore);
+    my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
 
     # Build file list from track entries
-    my @entries = $self->_build_file_list($cfg->tracks, \@ignore_pats, _internal_exclude_paths($cfg));
+    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg));
 
     # Commit message
     my $ts         = strftime('%Y-%m-%dT%H:%M:%S', localtime($start_time));
@@ -212,11 +216,13 @@ sub run {
     }
 
     # Save metadata
-    eval { $md->save($meta_path) };
-    $self->_warn("metadata save failed: $@") if $@;
+    unless ($self->{dry_run}) {
+        eval { $md->save($meta_path) };
+        $self->_warn("metadata save failed: $@") if $@;
+    }
 
     # Batch commit for whole-repo VCS
-    if ($vcs->model eq 'whole-repo' && $report->has_changes) {
+    if (!$self->{dry_run} && $vcs->model eq 'whole-repo' && $report->has_changes) {
         eval { $vcs->commit($commit_msg) };
         croak "VCS commit failed: $@" if $@;
     }
@@ -235,28 +241,8 @@ sub run {
             $self->_warn("cannot load $nclass: $@");
             next;
         };
-        my $notifier = $nclass->new(
-            email_from                => $cfg->global('email_from'),
-            email_to                  => $cfg->global('email_to') // [],
-            sendmail_path             => $cfg->global('sendmail_path'),
-            sensitive_notify          => $cfg->global('sensitive_notify') // 'suppress',
-            log_path                  => $cfg->global('notify_log_path'),
-            file_heartbeat            => $cfg->global('file_heartbeat') // 0,
-            file_full_diff            => $cfg->global('file_full_diff') // 1,
-            webhook_url               => $cfg->global('webhook_url'),
-            webhook_full_diff         => $cfg->global('webhook_full_diff') // 0,
-            webhook_heartbeat         => $cfg->global('webhook_heartbeat') // 0,
-            webhook_insecure          => $cfg->global('webhook_insecure') // 0,
-            otlp_endpoint             => $cfg->global('otlp_endpoint'),
-            otlp_headers              => $cfg->global('otlp_headers') // '',
-            otlp_compression          => $cfg->global('otlp_compression') // '',
-            otlp_full_diff            => $cfg->global('otlp_full_diff') // 0,
-            otlp_heartbeat            => $cfg->global('otlp_heartbeat') // 1,
-            otlp_timeout              => $cfg->global('otlp_timeout') // 10,
-            otlp_insecure             => $cfg->global('otlp_insecure') // 0,
-            otlp_resource_attributes  => $cfg->global('otlp_resource_attributes') // {},
-        );
-        $notifier->send($report);
+        my $notifier = $self->_build_notifier($nclass, $cfg);
+        $notifier->send($report) unless $self->{dry_run};
     }
 
     return $report;
@@ -333,7 +319,7 @@ sub _process_file {
         if (defined $existing && $md->changed_since_load($real_path)) {
             my $meta_summary = $md->diff_summary($real_path);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
-            $vcs->checkin($real_path, $msg);
+            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
             $report->add_change(
                 path         => $real_path,
@@ -345,8 +331,7 @@ sub _process_file {
             );
             $self->_verbose("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing) {
-            $vcs->checkin($real_path, $commit_msg);
-            $vcs->add($real_path);
+            $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
             $report->add_change(
                 path         => $real_path,
@@ -374,8 +359,7 @@ sub _process_file {
 
     if (!defined $existing) {
         # New file / symlink
-        $vcs->checkin($real_path, $commit_msg);
-        $vcs->add($real_path);
+        $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
         $report->add_change(
             path         => $real_path,
             is_new       => 1,
@@ -398,7 +382,7 @@ sub _process_file {
 
         if ($meta_changed || $content_changed) {
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
-            $vcs->checkin($real_path, $msg);
+            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -468,26 +452,49 @@ sub _internal_exclude_paths {
 
 sub _is_excluded_path {
     my ($path, $exclude_paths) = @_;
+    my $norm_path = $path;
+    $norm_path =~ s{\\}{/}g;
     for my $exclude (@$exclude_paths) {
         next unless defined $exclude && $exclude =~ /\S/;
-        return 1 if $path eq $exclude;
-        return 1 if index($path, "$exclude/") == 0;
+        my $norm_exclude = $exclude;
+        $norm_exclude =~ s{\\}{/}g;
+        return 1 if $norm_path eq $norm_exclude;
+        return 1 if index($norm_path, "$norm_exclude/") == 0;
     }
     return 0;
 }
 
 sub _should_ignore {
-    my ($full_path, $base, $patterns) = @_;
-    for my $pat (@$patterns) {
-        if ($pat =~ m{/}) {
-            # Path pattern: match as trailing suffix of the full path
-            my $re = _glob_to_re($pat);
-            return 1 if $full_path =~ m{(?:^|/)${re}$};
+    my ($full_path, $base, $compiled_patterns) = @_;
+    if (@$compiled_patterns && ref($compiled_patterns->[0]) ne 'HASH') {
+        $compiled_patterns = _compile_ignore_patterns($compiled_patterns);
+    }
+    my $norm_full_path = $full_path;
+    $norm_full_path =~ s{\\}{/}g;
+    for my $spec (@$compiled_patterns) {
+        if ($spec->{path}) {
+            return 1 if $norm_full_path =~ $spec->{re};
         } else {
-            return 1 if _glob_match($pat, $base);
+            return 1 if $base =~ $spec->{re};
         }
     }
     return 0;
+}
+
+sub _compile_ignore_patterns {
+    my ($patterns) = @_;
+    my @compiled;
+    for my $pat (@$patterns) {
+        next unless defined $pat && $pat ne '';
+        if ($pat =~ m{/}) {
+            my $re = _glob_to_re($pat);
+            push @compiled, { path => 1, re => qr{(?:^|/)${re}$} };
+        } else {
+            my $re = _glob_to_re($pat);
+            push @compiled, { path => 0, re => qr/^${re}$/ };
+        }
+    }
+    return \@compiled;
 }
 
 sub _glob_match {
@@ -586,7 +593,33 @@ sub _tracked_entries {
     my ($self, $cfg) = @_;
     my @user_ignore = @{ $cfg->global('ignore') // [] };
     my @ignore_pats = ($self->builtin_ignore_patterns, @user_ignore);
-    return [$self->_build_file_list($cfg->tracks, \@ignore_pats, _internal_exclude_paths($cfg))];
+    my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
+    return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg))];
+}
+
+sub _build_notifier {
+    my ($self, $nclass, $cfg) = @_;
+    return $nclass->new(
+        email_from                => $cfg->global('email_from'),
+        email_to                  => $cfg->global('email_to') // [],
+        sendmail_path             => $cfg->global('sendmail_path'),
+        sensitive_notify          => $cfg->global('sensitive_notify') // 'suppress',
+        log_path                  => $cfg->global('notify_log_path'),
+        file_heartbeat            => $cfg->global('file_heartbeat') // 0,
+        file_full_diff            => $cfg->global('file_full_diff') // 1,
+        webhook_url               => $cfg->global('webhook_url'),
+        webhook_full_diff         => $cfg->global('webhook_full_diff') // 0,
+        webhook_heartbeat         => $cfg->global('webhook_heartbeat') // 0,
+        webhook_insecure          => $cfg->global('webhook_insecure') // 0,
+        otlp_endpoint             => $cfg->global('otlp_endpoint'),
+        otlp_headers              => $cfg->global('otlp_headers') // '',
+        otlp_compression          => $cfg->global('otlp_compression') // '',
+        otlp_full_diff            => $cfg->global('otlp_full_diff') // 0,
+        otlp_heartbeat            => $cfg->global('otlp_heartbeat') // 1,
+        otlp_timeout              => $cfg->global('otlp_timeout') // 10,
+        otlp_insecure             => $cfg->global('otlp_insecure') // 0,
+        otlp_resource_attributes  => $cfg->global('otlp_resource_attributes') // {},
+    );
 }
 
 # Returns arrayref of { path, diff } for every tracked file with pending changes.
@@ -710,27 +743,7 @@ sub _validate_notifier_startup {
             or croak "Unknown notifier '$nname'";
         eval "require $nclass; 1" or croak "Cannot load $nclass: $@";
 
-        my $notifier = $nclass->new(
-            email_from                => $cfg->global('email_from'),
-            email_to                  => $cfg->global('email_to') // [],
-            sendmail_path             => $cfg->global('sendmail_path'),
-            sensitive_notify          => $cfg->global('sensitive_notify') // 'suppress',
-            log_path                  => $cfg->global('notify_log_path'),
-            file_heartbeat            => $cfg->global('file_heartbeat') // 0,
-            file_full_diff            => $cfg->global('file_full_diff') // 1,
-            webhook_url               => $cfg->global('webhook_url'),
-            webhook_full_diff         => $cfg->global('webhook_full_diff') // 0,
-            webhook_heartbeat         => $cfg->global('webhook_heartbeat') // 0,
-            webhook_insecure          => $cfg->global('webhook_insecure') // 0,
-            otlp_endpoint             => $cfg->global('otlp_endpoint'),
-            otlp_headers              => $cfg->global('otlp_headers') // '',
-            otlp_compression          => $cfg->global('otlp_compression') // '',
-            otlp_full_diff            => $cfg->global('otlp_full_diff') // 0,
-            otlp_heartbeat            => $cfg->global('otlp_heartbeat') // 1,
-            otlp_timeout              => $cfg->global('otlp_timeout') // 10,
-            otlp_insecure             => $cfg->global('otlp_insecure') // 0,
-            otlp_resource_attributes  => $cfg->global('otlp_resource_attributes') // {},
-        );
+        my $notifier = $self->_build_notifier($nclass, $cfg);
 
         my @errors = $notifier->validate_config;
         if (@errors) {

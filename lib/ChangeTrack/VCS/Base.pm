@@ -30,6 +30,12 @@ Return true if the repository already exists.
 
 Stage I<$src_path> for the next commit.
 
+=item $vcs->checkin($src_path, $message)
+
+Prepare I<$src_path> for commit in backend-specific ways. Implementations are
+responsible for any required staging (for example, calling C<add> internally
+for whole-repo backends).
+
 =item $vcs->commit($message)
 
 Commit all staged changes with I<$message>.

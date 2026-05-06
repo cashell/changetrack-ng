@@ -106,11 +106,11 @@ ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
 
     my $runner = ChangeTrack::Runner->new();
     my $entries = $runner->_tracked_entries($cfg);
-    my @paths = map { $_->{path} } @$entries;
+    my @paths = map { File::Spec->canonpath($_->{path}) } @$entries;
 
-    ok((grep { $_ eq "$track_dir/real.txt" } @paths), 'real tracked file remains included');
-    ok(!(grep { $_ eq "$output_dir/.changetrack-metadata" } @paths), 'metadata sidecar is excluded');
-    ok(!(grep { $_ eq "$track_dir/state/changetrack-ng.fossil" } @paths), 'fossil repo database is excluded');
+    ok((grep { $_ eq File::Spec->canonpath("$track_dir/real.txt") } @paths), 'real tracked file remains included');
+    ok(!(grep { $_ eq File::Spec->canonpath("$output_dir/.changetrack-metadata") } @paths), 'metadata sidecar is excluded');
+    ok(!(grep { $_ eq File::Spec->canonpath("$track_dir/state/changetrack-ng.fossil") } @paths), 'fossil repo database is excluded');
 }
 
 done_testing();

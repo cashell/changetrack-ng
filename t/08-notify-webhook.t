@@ -179,6 +179,41 @@ sub make_report {
     ok(defined $p->{files_tracked},             'files_tracked present');
 }
 
+# ── diff counters ignore unified header lines ───────────────────────────────
+
+{
+    my $body_file = File::Spec->catfile($tmpdir, 'header_count.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(
+        path         => '/etc/hosts',
+        is_new       => 0,
+        is_sensitive => 0,
+        diff         => [
+            '--- a/etc/hosts',
+            '+++ b/etc/hosts',
+            '@@ -1 +1 @@',
+            '-127.0.0.1 localhost',
+            '+127.0.0.1 localhost.localdomain',
+        ],
+        meta_change  => '',
+        recipients   => [],
+    );
+    $report->set_end_time(1000000002);
+
+    my $n = ChangeTrack::Notify::Webhook->new(
+        webhook_url => "http://127.0.0.1:$port/",
+    );
+    $n->send($report);
+    waitpid($pid, 0);
+
+    my $p = read_payload($body_file);
+    ok(defined $p, 'Header counter: payload is valid JSON');
+    is($p->{files}[0]{diff_lines_added}, 1, 'Header counter: +++ header is excluded');
+    is($p->{files}[0]{diff_lines_removed}, 1, 'Header counter: --- header is excluded');
+}
+
 # ── webhook_full_diff=1 includes diff content ─────────────────────────────────
 
 {

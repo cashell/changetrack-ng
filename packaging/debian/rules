@@ -8,6 +8,13 @@ export DH_VERBOSE = 1
 override_dh_auto_build:
 	# pure Perl — nothing to compile
 
+override_dh_auto_test:
+	@if echo " $(DEB_BUILD_OPTIONS) " | grep -q " nocheck "; then \
+		echo "Skipping tests (DEB_BUILD_OPTIONS contains nocheck)"; \
+	else \
+		$(MAKE) test; \
+	fi
+
 override_dh_auto_install:
 	$(MAKE) install install-man \
 	    DESTDIR=$(CURDIR)/debian/changetrack-ng \

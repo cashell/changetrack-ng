@@ -159,6 +159,58 @@ use_ok('ChangeTrack::Test::MockSendmail');
         'Permission loosening: meta_change always present in notification');
 }
 
+# ── sensitive_auto × sensitive_notify interaction matrix ─────────────────────
+
+{
+    my ($fh, $file) = tempfile(UNLINK => 1, SUFFIX => '.secret');
+    print $fh "token=abcd\n";
+    close($fh);
+    chmod(0600, $file); # no world read => sensitive when auto=1
+
+    my @cases = (
+        { auto => 1, notify => 'suppress', expect_secret => 0, label => 'auto=1 suppress' },
+        { auto => 1, notify => 'allow',    expect_secret => 1, label => 'auto=1 allow' },
+        { auto => 0, notify => 'suppress', expect_secret => 1, label => 'auto=0 suppress' },
+        { auto => 0, notify => 'allow',    expect_secret => 1, label => 'auto=0 allow' },
+    );
+
+    for my $c (@cases) {
+        my $is_sensitive = ChangeTrack::Runner::_resolve_sensitive($file, undef, $c->{auto});
+
+        my $dir = tempdir(CLEANUP => 1);
+        my $log = "$dir/matrix.log";
+        my $n   = ChangeTrack::Notify::File->new(
+            log_path         => $log,
+            sensitive_notify => $c->{notify},
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => $file,
+            is_new       => 0,
+            is_sensitive => $is_sensitive,
+            diff         => ['-token=old', '+token=new'],
+            meta_change  => '',
+        );
+        $n->send($report);
+
+        open(my $rfh, '<', $log) or die $!;
+        my $line = <$rfh>;
+        close($rfh);
+        chomp $line;
+
+        require JSON::PP;
+        my $rec = JSON::PP->new->decode($line);
+        my $diff_str = join("\n", @{ $rec->{files}[0]{diff} // [] });
+        if ($c->{expect_secret}) {
+            like($diff_str, qr/token=/, "$c->{label}: full diff present");
+        } else {
+            unlike($diff_str, qr/token=/, "$c->{label}: secret suppressed");
+            like($diff_str, qr/suppressed/i, "$c->{label}: suppression placeholder");
+        }
+    }
+}
+
 # ── email notifier: sensitive suppression ────────────────────────────────────
 
 {

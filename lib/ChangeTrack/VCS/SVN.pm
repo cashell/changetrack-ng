@@ -15,7 +15,7 @@ an svn working copy.
 use strict;
 use warnings;
 use parent 'ChangeTrack::VCS::Base';
-use Carp qw(croak carp);
+use Carp qw(croak);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use Cwd qw(getcwd);
@@ -50,8 +50,16 @@ sub _run {
     my ($self, @cmd) = @_;
     my $old = getcwd();
     chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
-    my $r = run_cmd(cmd => \@cmd);
-    chdir($old) or carp "chdir back to $old: $!";
+    my $r;
+    my $err;
+    eval {
+        $r = run_cmd(cmd => \@cmd);
+        1;
+    } or do {
+        $err = $@ || 'unknown svn command failure';
+    };
+    chdir($old) or croak "chdir back to $old: $!";
+    die $err if defined $err;
     return $r;
 }
 

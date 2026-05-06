@@ -164,14 +164,14 @@ sub _sleep { sleep($_[1]) }
 sub _count_added {
     my ($lines) = @_;
     my $n = 0;
-    $n++ for grep { /^\+/ } @{ $lines // [] };
+    $n++ for grep { /^\+/ && !/^\+\+\+\s/ } @{ $lines // [] };
     return $n;
 }
 
 sub _count_removed {
     my ($lines) = @_;
     my $n = 0;
-    $n++ for grep { /^-/ } @{ $lines // [] };
+    $n++ for grep { /^-/ && !/^---\s/ } @{ $lines // [] };
     return $n;
 }
 

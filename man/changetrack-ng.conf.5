@@ -148,6 +148,11 @@ Default: C<1>.  Enables "alert on silence" monitoring patterns.
 Append-only JSON log file path.  Required when C<notify> includes C<file>.
 Default: C</var/log/changetrack-ng.log>.
 
+=item B<file_full_diff> = C<0> | C<1>
+
+Include full diff lines in file-notifier JSON records.  Default: C<1>.
+Set to C<0> for metadata-only file notifier output.
+
 =item B<file_heartbeat> = C<0> | C<1>
 
 Append a heartbeat record on every run.  Default: C<0>.

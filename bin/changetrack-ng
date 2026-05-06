@@ -21,6 +21,7 @@ my %opts = (
     quiet       => 0,
     verbose     => 0,
     no_auto_init => 0,
+    dry_run     => 0,
     message     => '',
     force       => 0,
 );
@@ -29,6 +30,7 @@ GetOptions(
     'config|c=s'     => \$opts{config},
     'message|m=s'    => \$opts{message},
     'no-auto-init'   => \$opts{no_auto_init},
+    'dry-run|n'      => \$opts{dry_run},
     'quiet|q'        => \$opts{quiet},
     'verbose|v'      => \$opts{verbose},
     'force|f'        => \$opts{force},
@@ -65,6 +67,7 @@ sub cmd_run {
         config       => $opts{config},
         message      => $opts{message},
         no_auto_init => $opts{no_auto_init},
+        dry_run      => $opts{dry_run},
         quiet        => $opts{quiet},
         verbose      => $opts{verbose},
         force        => $opts{force},
@@ -294,6 +297,7 @@ Options:
                                                                                 ~/.config/changetrack-ng/... for non-root]
   -m, --message <msg>    Extra annotation appended to commit message
       --no-auto-init     Disable implicit VCS initialization on first run
+    -n, --dry-run          Detect and report changes without committing/notifying
   -f, --force            Force through lock or confirmation prompts
   -q, --quiet            Suppress progress output
   -v, --verbose          Enable verbose debug output
@@ -395,6 +399,11 @@ Extra text appended to generated commit messages.
 =item C<--no-auto-init>
 
 Disable automatic repository initialization during C<run>.
+
+=item C<-n, --dry-run>
+
+Detect and report changes without mutating the repository, writing metadata,
+or dispatching notifications.
 
 =item C<-f, --force>
 

@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Added
+- `--dry-run` / `-n` flag to analyze changes statically without writing VCS or dispatching notifications.
+- Symlink metadata lifecycle maps correctly.
+- Added troubleshooting guide in INSTALL.md and documentation for `OTEL_EXPORTER_*` config precedence hierarchy.
+- Reimplemented tests mapping to `DEB_BUILD_OPTIONS=nocheck`.
+
+### Fixed
+- **Webhook Diff Counting**: Prevented diff counts from inflating due to unified diff `+++`/`---` headers.
+- **Redundant Commits**: Eliminated redundant `$vcs->add()` execution in checkin flow.
+- **VCS Backend Hardening**: Evaluated and wrapped `chdir()` usages in Fossil and SVN in exception-safe environments to prevent directory poisoning on failures. Mercurial utilizes `-R` option.
+
+### Changed
+- **Runner Helper**: Extracted `_build_notifier` inside Runner.
+- **Ignore Pre-compilation**: Refactored logic to statically pre-compile all ignore patterns, drastically improving scaling.
+
 ## [0.4.3] - 2026-05-04
 
 ### Changed

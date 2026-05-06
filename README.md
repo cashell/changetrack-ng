@@ -102,6 +102,9 @@ To migrate a legacy `changetrack` v1 config:
 sudo changetrack-ng migrate-config /etc/changetrack.conf
 ```
 
+For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
+
 ## Subcommands
 
 | Command | Description |

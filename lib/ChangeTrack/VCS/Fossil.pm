@@ -51,11 +51,19 @@ sub _run {
     my ($self, @cmd) = @_;
     my $old = getcwd();
     chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
+    my $r;
+    my $err;
     if ($self->{verbose}) {
         warn "[Fossil] run: @cmd\n";
     }
-    my $r = run_cmd(cmd => \@cmd);
-    chdir($old) or carp "chdir back to $old: $!";
+    eval {
+        $r = run_cmd(cmd => \@cmd);
+        1;
+    } or do {
+        $err = $@ || 'unknown fossil command failure';
+    };
+    chdir($old) or croak "chdir back to $old: $!";
+    die $err if defined $err;
     if ($self->{verbose}) {
         warn "[Fossil] exit=" . ($r->{success} ? 0 : ($r->{exit_code} // '?'))
            . (length($r->{stdout} // '') ? " stdout=$r->{stdout}" : '')

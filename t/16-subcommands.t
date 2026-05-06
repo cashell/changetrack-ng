@@ -173,6 +173,29 @@ close($fh);
     is($rc >> 8, 1, 'CLI status: exits 1 when dirty');
 }
 
+# ── CLI: run --dry-run (no commit, no metadata persistence) ─────────────────
+
+{
+    # Capture current committed content (still red from setup history),
+    # then make an uncommitted change and dry-run.
+    open(my $fh_in, '<', $test_file) or die $!;
+    my $before = do { local $/; <$fh_in> };
+    close($fh_in);
+
+    open(my $fh_out, '>', $test_file) or die $!;
+    print $fh_out "color = cyan\n";
+    close($fh_out);
+
+    my $rc = system($^X, $bin, '--config', $cfg, '--dry-run', '-q', 'run');
+    is($rc >> 8, 0, 'CLI run --dry-run: exits 0');
+
+    # A subsequent status should still show the file as dirty because dry-run
+    # does not commit or persist metadata state.
+    my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
+    my $changed = $runner->status;
+    ok(@$changed >= 1, 'CLI run --dry-run: leaves working state unchanged');
+}
+
 # ── CLI: diff ─────────────────────────────────────────────────────────────────
 
 {

@@ -84,6 +84,11 @@ C<-m 'post-install: apt'>.
 Disable automatic VCS initialization on first run.  The command will abort
 if the repository is not already initialized.
 
+=item B<-n>, B<--dry-run>
+
+Detect and report pending changes without mutating VCS state, writing
+metadata, or sending notifications.
+
 =item B<-f>, B<--force>
 
 Bypass interactive confirmation prompts (e.g., for B<revert>).

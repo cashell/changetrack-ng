@@ -80,25 +80,21 @@ Notes:
 
 ## Config
 
-Three ready-to-use config templates are installed alongside the main config
-reference:
+Four ready-to-use example templates are installed under
+`/usr/share/doc/changetrack-ng/examples/`:
 
 | File | Purpose |
 |------|----------|
-| `changetrack-ng.conf` | Full reference — every option with detailed comments |
-| `examples/changetrack-ng.conf-minimal` | Quickstart — git + email + common system files |
-| `examples/changetrack-ng.conf-user` | Non-root install — home directory paths and dotfiles |
+| `changetrack-ng.conf-full` | Full reference — every option with detailed comments |
+| `changetrack-ng.conf-default` | Balanced defaults — all options with concise guidance |
+| `changetrack-ng.conf-minimal` | Quickstart — git + email + common system files |
+| `changetrack-ng.conf-user` | Non-root install — home directory paths and dotfiles |
 
 For a fresh system install, start from the minimal example:
 
 ```sh
-# PREFIX=/usr/local:
-sudo cp /usr/local/etc/changetrack-ng/examples/changetrack-ng.conf-minimal \
-        /usr/local/etc/changetrack-ng/changetrack-ng.conf
-sudo $EDITOR /usr/local/etc/changetrack-ng/changetrack-ng.conf
-
 # PREFIX=/usr:
-sudo cp /etc/changetrack-ng/examples/changetrack-ng.conf-minimal \
+sudo cp /usr/share/doc/changetrack-ng/examples/changetrack-ng.conf-minimal \
         /etc/changetrack-ng/changetrack-ng.conf
 sudo $EDITOR /etc/changetrack-ng/changetrack-ng.conf
 ```
@@ -106,6 +102,39 @@ sudo $EDITOR /etc/changetrack-ng/changetrack-ng.conf
 At minimum, set the files/directories to track in `[track]`, verify
 `email_to`, and choose a VCS backend in `[global]`.  The full reference
 config documents every supported option with accepted values and defaults.
+
+## Troubleshooting
+
+### Another instance is running
+
+- Symptom: run exits quietly or logs indicate lock contention.
+- Checks:
+	- Verify `lock_path` in config.
+	- Check for stale lock files after unclean shutdown.
+	- If needed for debugging, set `lock_timeout` to a small non-zero value.
+
+### VCS not initialized
+
+- Symptom: startup fails with VCS initialization error.
+- Fix:
+	- Run `changetrack-ng init` once.
+	- Ensure `output_dir` is writable by the runtime user.
+
+### Permission denied on tracked paths
+
+- Symptom: warnings about unreadable files or missing diffs.
+- Fix:
+	- Run under an account with read access to tracked paths.
+	- Keep `sensitive_auto = 1` unless you explicitly want full diff output.
+
+### No notifications received
+
+- Symptom: commits happen but email/webhook/OTLP output is missing.
+- Checks:
+	- Confirm `notify = ...` contains the expected channel(s).
+	- For email, validate `sendmail_path` or MTA availability.
+	- For webhook/OTLP, verify endpoint reachability and TLS settings.
+	- For OTLP headers, prefer `OTEL_EXPORTER_OTLP_HEADERS` for secrets.
 
 ## Scheduling
 
