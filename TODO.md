@@ -1,6 +1,6 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-04-30
+Last updated: 2026-05-05
 
 Items are prioritized by severity and grouped by category.
 
@@ -33,7 +33,17 @@ None currently open.
 
 ## Data Integrity / Correctness
 
-None currently open.
+### CORR-1: Webhook `_count_added`/`_count_removed` includes diff header lines (Low)
+
+**Issue:** In `Notify/Webhook.pm`, `_count_added` matches `/^\+/` and `_count_removed` matches `/^-/`. These patterns also match unified diff header lines (`+++` and `---`), inflating each count by 1 per file in the diff. The bug affects only the `lines_added`/`lines_removed` fields in webhook JSON payloads — it does not affect change detection, VCS behavior, or other notifiers.
+
+**Fix:** Anchor the patterns to exclude header lines: `/^\+[^+]/` and `/^-[^-]/`, or skip lines matching `/^(?:\+\+\+|---)\s/`.
+
+### CORR-2: Redundant `add()` call after `checkin()` in Runner `_process_file` (Low)
+
+**Issue:** Runner calls `$vcs->add($real_path)` immediately after `$vcs->checkin($real_path, $msg)`. Every whole-repo backend's `checkin()` already calls `$self->add()` internally (Git.pm, Fossil.pm, SVN.pm, Mercurial.pm all verified). For RCS, `add()` is a no-op. The extra call is dead code that obscures the actual contract.
+
+**Fix:** Remove the redundant `$vcs->add($real_path)` call after `checkin()`. Add a comment on the `checkin()` contract in `VCS/Base.pm` documenting that `checkin` is responsible for staging.
 
 ---
 
@@ -60,13 +70,43 @@ None currently open.
 
 **Status:** Acceptable for current use cases (lock_timeout is typically 0). Flag for review if longer timeouts become common.
 
-
-
 ---
 
 ## Testing
 
-None currently open.
+### TEST-5: No dedicated `Report.pm` test file (Medium)
+
+**Issue:** `Report.pm` is the change accumulator passed to all notifiers, yet it has no dedicated test file. Its behavior is exercised indirectly through notifier tests, but edge cases (empty reports, reports with only metadata changes, reports with mixed sensitive/non-sensitive entries) are not directly covered.
+
+**Recommendation:** Add `t/XX-report.t` covering construction, entry accumulation, summary generation, and sensitive entry handling.
+
+### TEST-6: No symlink metadata tests in `03-metadata.t` (Medium)
+
+**Issue:** Symlinks are a first-class type in the metadata system (`update_from_stat` records link targets, `can_skip_content_diff` has symlink-specific logic, `changed_since_load` compares targets, `diff_summary` reports target changes). None of this is tested in `03-metadata.t`.
+
+**Recommendation:** Add symlink lifecycle tests: create symlink → `update_from_stat` → verify `target` field → change target → verify `changed_since_load` → verify `diff_summary` output → verify `can_skip_content_diff` returns false on target change.
+
+### TEST-7: No test for `Config::dump_v2` (Low)
+
+**Issue:** The `dump_v2` method in Config.pm has no test coverage. Round-trip correctness (parse v2 → dump → parse again → equivalent) should be verified.
+
+### TEST-8: No `sensitive_auto` × `sensitive_notify` interaction matrix (Medium)
+
+**Issue:** `sensitive_auto` controls whether files are auto-detected as sensitive; `sensitive_notify` controls whether diffs appear in notifications. These are documented as orthogonal, but there is no test that exercises all four combinations (auto on/off × notify suppress/allow) to verify the interaction behaves as specified.
+
+### TEST-9: No notifier failure isolation test (Low)
+
+**Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
+
+### TEST-10: No file type transition tests (Low)
+
+**Issue:** No tests verify correct behavior when a tracked file changes type between runs (e.g., regular file replaced by symlink, empty file gains content, text file becomes binary). These transitions exercise the metadata type system and VCS mirror sync logic.
+
+### TEST-11: `MockSendmail.pm` hardcodes `$VERSION` (Low)
+
+**Issue:** `t/lib/MockSendmail.pm` has `$VERSION = '0.4.3'` hardcoded instead of using `ChangeTrack::Version`. This will drift on version bumps.
+
+**Fix:** Use `our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };` consistent with all other modules.
 
 ---
 
@@ -95,6 +135,34 @@ None currently open.
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
 **Impact:** Low — built-in ignore patterns don't use character classes, and user-defined patterns rarely need them.
+
+### DEBT-6: Notifier construction duplicated in Runner (Medium)
+
+**Issue:** The ~20-line notifier constructor call block appears identically in `run()` and `_validate_notifier_startup()`. If a new config key is added to the notifier constructor, both sites must be updated in lockstep — a maintenance trap that will eventually cause a divergence bug.
+
+**Recommendation:** Extract a `_build_notifier($class, $cfg)` helper that both call sites invoke. This also sets up cleanly for DEBT-1 (per-notifier key filtering) as a follow-on.
+
+### DEBT-7: Ignore patterns recompiled on every file (Low-Medium)
+
+**Issue:** `_should_ignore()` calls `_glob_to_re()` for every path-containing pattern on every file. For a run with N files and P ignore patterns, this is up to N×P regex compilations. With Perl's `/o` flag unavailable (patterns are dynamic), the cost scales linearly.
+
+**Recommendation:** Precompile all ignore patterns into `qr//` regexes once at the start of the run (after config load). Store them alongside the raw patterns and pass the compiled set to `_should_ignore()`. This is a straightforward change with measurable benefit for large file sets.
+
+---
+
+## Performance
+
+### PERF-1: OTLP `_resource_attrs()` re-reads `/etc/machine-id` on every call (Low)
+
+**Issue:** `Notify/OTLP.pm`'s `_resource_attrs()` opens and reads `/etc/machine-id` on every invocation. The machine ID is immutable at runtime; reading it once and caching via a `state` variable eliminates redundant file I/O.
+
+**Fix:** `state $cached_id; $cached_id //= do { ... read file ... }; ` — idiomatic for Perl 5.20+ with `feature 'state'` already in scope.
+
+### PERF-2: `_resolve_sensitive` performs redundant `stat()` (Low)
+
+**Issue:** `Runner::_resolve_sensitive()` calls `stat($path)` to check mode bits, but the file was already `lstat()`ed by `Metadata::update_from_stat()` in the same processing loop. The mode is available in the metadata record.
+
+**Recommendation:** Pass the metadata record's `mode` field to `_resolve_sensitive` instead of re-statting. Minor optimization but eliminates one syscall per tracked file per run.
 
 ---
 

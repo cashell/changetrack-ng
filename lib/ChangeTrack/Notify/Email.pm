@@ -18,7 +18,7 @@ use feature qw(say);
 use parent 'ChangeTrack::Notify::Base';
 use POSIX qw(strftime);
 
-use ChangeTrack::Util qw(hostname);
+use ChangeTrack::Util qw(hostname fqdn);
 
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -32,7 +32,7 @@ my @SENDMAIL_PATHS = qw(
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{email_from}       //= 'changetrack-ng@' . hostname();
+    $self->{email_from}       //= 'changetrack-ng@' . fqdn();
     $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
@@ -51,15 +51,21 @@ sub send_changes {
             return;
         };
 
-    # Group changes by recipient. Per-track recipients take precedence;
-    # global email_to is used as a default fallback when a change has none.
+    # Group changes by recipient.  Per-track recipients override global;
+    # global email_to is the fallback when a track entry has none.
+    my @global_recips = grep { defined $_ && /\S/ } @{ $self->{email_to} // [] };
     my %by_recipient;
     for my $c (@{ $report->changes }) {
         my @track_recips = grep { defined $_ && /\S/ } @{ $c->{recipients} // [] };
-        my @recips = @track_recips ? @track_recips : grep { defined $_ && /\S/ } @{ $self->{email_to} // [] };
+        my @recips = @track_recips ? @track_recips : @global_recips;
 
         my %seen;
         @recips = grep { !$seen{$_}++ } @recips;
+
+        unless (@recips) {
+            warn "[changetrack-ng] email: no recipients for $c->{path}, skipping\n";
+            next;
+        }
 
         for my $r (@recips) {
             push @{ $by_recipient{$r} }, $c;

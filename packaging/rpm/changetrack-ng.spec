@@ -14,6 +14,7 @@ BuildArch:      noarch
 BuildRequires:  make
 BuildRequires:  perl-interpreter
 BuildRequires:  perl-generators
+BuildRequires:  systemd-rpm-macros
 BuildRequires:  %{_bindir}/pod2man
 
 Requires:       perl-interpreter >= 5.020
@@ -66,16 +67,21 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %post
-# Nothing to do; initialize with: changetrack-ng init
+%systemd_post %{name}.timer
 
 
 %preun
-# Nothing to do; config and data dirs are preserved on uninstall
+%systemd_preun %{name}.timer %{name}.service
+
+
+%postun
+%systemd_postun_with_restart %{name}.timer
 
 
 %files
 %license LICENSE
 %doc README.md INSTALL.md CHANGELOG.md
+%doc %{_docdir}/%{name}/examples
 
 %{_bindir}/changetrack-ng
 
@@ -89,9 +95,6 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 %dir %{_sysconfdir}/%{name}
-%dir %{_sysconfdir}/%{name}/examples
-%config(noreplace) %{_sysconfdir}/%{name}/examples/changetrack-ng.conf-minimal
-%config(noreplace) %{_sysconfdir}/%{name}/examples/changetrack-ng.conf-user
 
 %dir %{_localstatedir}/lib/%{name}
 

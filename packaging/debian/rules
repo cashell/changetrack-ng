@@ -21,6 +21,19 @@ override_dh_auto_install:
 	sed -e "s|@BINDIR@|/usr/bin|g" packaging/cron/changetrack-ng \
 	    > $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
 	chmod 755 $(CURDIR)/debian/changetrack-ng/etc/cron.hourly/changetrack-ng
+	# examples → /usr/share/doc (Makefile already installs to DOCDIR)
+	# Ensure the examples directory is present even if Makefile missed it:
+	install -d $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-full \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-default \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-minimal \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-user \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
+	# Remove any erroneously installed /etc examples dir
+	rm -rf $(CURDIR)/debian/changetrack-ng/etc/changetrack-ng/examples
 
 override_dh_installsystemd:
 	dh_installsystemd --no-enable changetrack-ng.service

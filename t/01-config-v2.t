@@ -136,6 +136,34 @@ INI
 }
 
 {
+    my @bool_variants = qw(
+        0 1
+        true false
+        yes no
+        on off
+        TRUE FALSE
+        YES NO
+        ON OFF
+    );
+
+    for my $val (@bool_variants) {
+        my ($fh, $tmp) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+        print {$fh} <<"INI";
+[global]
+vcs = git
+webhook_heartbeat = $val
+
+[track]
+/etc/hosts
+INI
+        close($fh);
+
+        my $ok = eval { ChangeTrack::Config->load($tmp); 1 };
+        ok($ok, "boolean variant accepted: $val");
+    }
+}
+
+{
     my ($fh, $tmp) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh} <<'INI';
 [global]

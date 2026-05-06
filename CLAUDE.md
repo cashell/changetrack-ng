@@ -88,11 +88,11 @@ All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with 
 
 ## Known Gaps to Fix (see TODO.md)
 
-- Config value type validation is missing (invalid values = undefined behavior)
 - `otlp_headers` and `otlp_resource_attributes` type handling is fragile (scalar vs arrayref depends on whether config has a value)
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
-- No integration test coverage for full Config → Runner → Notifier data path
-- `getpwuid`/`getgrgid` in Metadata.pm will crash on non-Unix (guard with eval)
+- Notifier constructor block is duplicated in `Runner::run()` and `Runner::_validate_notifier_startup()`
+- Webhook `_count_added`/`_count_removed` overcounts by including unified diff header lines
+- Ignore pattern regexes are recompiled per-file instead of precompiled once per run
 
 ## Key Design Constraints
 

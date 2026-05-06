@@ -10,6 +10,7 @@ LIBDIR     ?= $(PREFIX)/lib/$(NAME)
 SYSCONFDIR ?= $(if $(filter /usr,$(PREFIX)),/etc,$(PREFIX)/etc)
 DATADIR    ?= /var/lib/$(NAME)
 MANDIR     ?= $(PREFIX)/share/man
+DOCDIR     ?= $(PREFIX)/share/doc/$(NAME)
 SYSTEMDDIR ?= /etc/systemd/system
 HOOKSDIR   ?= $(LIBDIR)/hooks
 CRONDIR    ?= /etc/cron.hourly
@@ -18,7 +19,7 @@ DESTDIR    ?=
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist clean install-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
+.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -28,7 +29,9 @@ all:
 	@echo "  make install         Install (PREFIX=$(PREFIX))"
 	@echo "  make install-man     Install man pages (requires pod2man)"
 	@echo "  make uninstall       Remove installed files"
-	@echo "  make dist            Build release tarball"
+	@echo "  make dist            Build full source release tarball"
+	@echo "  make dist-deploy     Build production deployment tarball"
+	@echo "  make dist-minimal    Build minimal fatpacked deployment tarball"
 	@echo "  make fatpack         Build standalone single-file script (requires App::FatPacker)"
 	@echo "  make install-hooks   Install package manager hooks"
 	@echo "  make install-systemd Install systemd timer"
@@ -64,7 +67,7 @@ install: _install_dirs _install_bin _install_lib _install_conf _install_examples
 _install_conf_user:
 	install -d $(HOME)/.config/$(NAME)
 	@if [ ! -f $(HOME)/.config/$(NAME)/$(NAME).conf ]; then \
-		install -m 640 etc/examples/$(NAME).conf-user $(HOME)/.config/$(NAME)/$(NAME).conf; \
+		install -m 640 packaging/etc/examples/$(NAME).conf-user $(HOME)/.config/$(NAME)/$(NAME).conf; \
 		echo "Installed user config: $(HOME)/.config/$(NAME)/$(NAME).conf"; \
 	else \
 		echo "Skipping config (already exists): $(HOME)/.config/$(NAME)/$(NAME).conf"; \
@@ -75,7 +78,7 @@ _install_dirs:
 	install -d $(DESTDIR)$(LIBDIR)/ChangeTrack/VCS
 	install -d $(DESTDIR)$(LIBDIR)/ChangeTrack/Notify
 	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)
-	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)/examples
+	install -d $(DESTDIR)$(DOCDIR)/examples
 	install -d $(DESTDIR)$(DATADIR)
 	install -d $(DESTDIR)$(MANDIR)/man8
 	install -d $(DESTDIR)$(MANDIR)/man5
@@ -109,8 +112,10 @@ _install_conf:
 	fi
 
 _install_examples:
-	install -m 644 etc/examples/changetrack-ng.conf-minimal $(DESTDIR)$(SYSCONFDIR)/$(NAME)/examples/changetrack-ng.conf-minimal
-	install -m 644 etc/examples/changetrack-ng.conf-user    $(DESTDIR)$(SYSCONFDIR)/$(NAME)/examples/changetrack-ng.conf-user
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-full    $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-full
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-default $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-default
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-minimal $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-minimal
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-user
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(NAME)
@@ -139,6 +144,26 @@ dist:
 	    --exclude='packaging/debian/.debhelper' \
 	    --transform "s,^,$(NAME)-$(VERSION)/," \
 	    bin lib etc man packaging t Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+
+# Production deployment tarball: program, libs, configs, docs, hooks, scheduling, Makefile.
+# No test suite, packaging metadata, or development files.
+dist-deploy:
+	tar -czf $(NAME)-$(VERSION)-deploy.tar.gz \
+	    --exclude='*.tar.gz' \
+	    --exclude='man/*.gz' \
+	    --transform "s,^,$(NAME)-$(VERSION)/," \
+	    bin lib etc man packaging/systemd packaging/cron packaging/hooks packaging/etc \
+	    Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+
+# Minimal deployment tarball: fatpacked single-file script + essential support files.
+# Requires fatpack to have been run first (or runs it automatically).
+dist-minimal: fatpack
+	tar -czf $(NAME)-$(VERSION)-minimal.tar.gz \
+	    --exclude='*.tar.gz' \
+	    --exclude='man/*.gz' \
+	    --transform "s,^,$(NAME)-$(VERSION)/," \
+	    $(NAME)-$(VERSION).pl etc man packaging/systemd packaging/cron packaging/hooks packaging/etc \
+	    Makefile LICENSE README.md INSTALL.md CHANGELOG.md
 
 clean:
 	find t/ -name '*.tmp' -delete 2>/dev/null; true
@@ -235,8 +260,11 @@ _install_lib_user:
 	fi
 
 _install_examples_user:
-	install -m 644 etc/examples/changetrack-ng.conf-minimal $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-minimal
-	install -m 644 etc/examples/changetrack-ng.conf-user    $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-user
+	install -d $(HOME)/.config/$(NAME)/examples
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-full    $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-full
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-default $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-default
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-minimal $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-minimal
+	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-user
 install-user-uninstall:
 	rm -f $(HOME)/.local/bin/$(NAME)
 	rm -rf $(HOME)/.local/lib/$(NAME)

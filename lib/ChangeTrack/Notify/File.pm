@@ -30,6 +30,7 @@ sub new {
     my $self = $class->SUPER::new(%args);
     $self->{log_path}         //= '/var/log/changetrack-ng.log';
     $self->{file_heartbeat}   //= 0;
+    $self->{file_full_diff}   //= 1;
     $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
@@ -68,16 +69,19 @@ sub _build_record {
     my @files;
     unless ($is_heartbeat) {
         for my $c (@{ $report->changes }) {
-            my @diff_lines = $self->_diff_text_for($c);
-            push @files, {
+            my $entry = {
                 path             => $c->{path},
                 is_new           => $c->{is_new}       ? JSON::PP::true() : JSON::PP::false(),
                 is_removed       => $c->{is_removed}   ? JSON::PP::true() : JSON::PP::false(),
                 is_sensitive     => $c->{is_sensitive} ? JSON::PP::true() : JSON::PP::false(),
                 metadata_changed => ($c->{meta_change} ? JSON::PP::true() : JSON::PP::false()),
                 meta_change      => $c->{meta_change} // '',
-                diff             => \@diff_lines,
             };
+            if ($self->{file_full_diff}) {
+                my @diff_lines = $self->_diff_text_for($c);
+                $entry->{diff} = \@diff_lines;
+            }
+            push @files, $entry;
         }
     }
 

@@ -365,9 +365,9 @@ Metadata tracks symlink targets via `readlink()`, while `sync_mirror_path()` wri
 
 The `%KNOWN_GLOBAL_KEYS` whitelist enforces valid keys at parse time, which is strong. However, some documented keys (`sensitive_auto`) are consumed only partially — the Runner reads it but the relationship between it and the notifier-level `sensitive_notify` is indirect.
 
-### 10.4 No config validation beyond parse
+### 10.4 Config validation scope
 
-Values are not type-checked at load time. Invalid values (e.g., `lock_timeout = banana`) produce undefined behavior rather than immediate errors.
+Global values are now type-checked at parse time via `Config::_validate_global_values()` (booleans, integers, enums, notifier names). Invalid values produce immediate, actionable error messages. Per-track values and cross-field semantic constraints (e.g., mutually exclusive options) are not validated.
 
 ---
 

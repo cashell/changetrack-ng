@@ -1,0 +1,24 @@
+# changetrack-ng — minimal starter configuration
+#
+# Tracks common config files with git and sends email notifications.
+# Copy to /etc/changetrack-ng/changetrack-ng.conf and adjust.
+# For all options, see the full reference config or run: perldoc changetrack-ng
+
+[global]
+
+# Track history with git (also: rcs fossil svn hg)
+vcs = git
+output_dir = /var/lib/changetrack-ng
+
+# Send email when files change (also: webhook otlp file)
+notify = email
+email_from = changetrack-ng@HOSTNAME
+email_to = root@localhost
+
+[track]
+/etc/passwd
+/etc/group
+/etc/hosts
+/etc/hostname
+/etc/fstab
+DIRECTORY /etc/ssh

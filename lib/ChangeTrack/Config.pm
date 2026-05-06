@@ -84,7 +84,7 @@ my %KNOWN_GLOBAL_KEYS = map { $_ => 1 } qw(
     webhook_url webhook_full_diff webhook_heartbeat webhook_insecure
     otlp_endpoint otlp_full_diff otlp_compression otlp_headers otlp_timeout
     otlp_insecure otlp_resource_attributes otlp_heartbeat
-    notify_log_path file_heartbeat
+    notify_log_path file_heartbeat file_full_diff
     ignore
     sensitive_auto sensitive_notify
     warn_special_files
@@ -95,7 +95,7 @@ my %KNOWN_GLOBAL_KEYS = map { $_ => 1 } qw(
 my %BOOL_KEYS = map { $_ => 1 } qw(
     webhook_full_diff webhook_heartbeat webhook_insecure
     otlp_full_diff otlp_insecure otlp_heartbeat
-    file_heartbeat
+    file_heartbeat file_full_diff
     sensitive_auto
     warn_special_files
 );
@@ -463,13 +463,13 @@ sub migrate_v1_to_v2 {
     say $fh "# Review and adjust before use";
     say $fh "";
     say $fh "[global]";
-    say $fh "vcs                = rcs";
-    say $fh "output_dir         = /var/lib/changetrack-ng";
-    say $fh "notify             = email";
-    say $fh "email_from         = changetrack-ng\@HOSTNAME";
-    say $fh "ignore             = *.swp *~ *.bak *.dpkg-* *.rpmnew";
-    say $fh "sensitive_auto     = 1";
-    say $fh "sensitive_notify   = suppress";
+    say $fh "vcs = rcs";
+    say $fh "output_dir = /var/lib/changetrack-ng";
+    say $fh "notify = email";
+    say $fh "email_from = changetrack-ng\@HOSTNAME";
+    say $fh "ignore = *.swp *~ *.bak *.dpkg-* *.rpmnew";
+    say $fh "sensitive_auto = 1";
+    say $fh "sensitive_notify = suppress";
     say $fh "";
     say $fh "[track]";
 
@@ -494,8 +494,8 @@ sub migrate_v1_to_v2 {
 sub _config_hostname {
     state $h;
     return $h if defined $h;
-    eval { require Sys::Hostname; $h = Sys::Hostname::hostname() };
-    $h //= 'localhost';
+    require ChangeTrack::Util;
+    $h = ChangeTrack::Util::fqdn();
     return $h;
 }
 

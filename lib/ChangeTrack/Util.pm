@@ -55,7 +55,7 @@ use File::Copy qw(copy);
 # SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 our @ISA     = qw(Exporter);
-our @EXPORT_OK = qw(hostname run_cmd sync_mirror_path restore_mirror_path);
+our @EXPORT_OK = qw(hostname fqdn run_cmd sync_mirror_path restore_mirror_path);
 
 my $SYMLINK_SNAPSHOT_PREFIX = '__CHANGTRACK_NG_SYMLINK_TARGET__=';
 
@@ -67,6 +67,44 @@ sub hostname {
     $h //= 'localhost';
     $h =~ s/\..*$//;    # trim to short name
     return $h;
+}
+
+# fqdn() — fully-qualified domain name, cached
+# Tries: Sys::Hostname → DNS canonical lookup → Net::Domain → fallback short
+sub fqdn {
+    state $fqdn;
+    return $fqdn if defined $fqdn;
+
+    require Sys::Hostname;
+    my $h = Sys::Hostname::hostname() // 'localhost';
+
+    # Already FQDN?
+    if ($h =~ /\./) {
+        $fqdn = $h;
+        return $fqdn;
+    }
+
+    # Try DNS canonical name lookup
+    my $packed = gethostbyname($h);
+    if ($packed) {
+        my $canon = gethostbyaddr($packed, 2);  # AF_INET = 2
+        if ($canon && $canon =~ /\./) {
+            $fqdn = $canon;
+            return $fqdn;
+        }
+    }
+
+    # Try Net::Domain (core in older Perls, may not be available)
+    eval {
+        require Net::Domain;
+        my $nd = Net::Domain::hostfqdn();
+        $fqdn = $nd if $nd && $nd =~ /\./;
+    };
+    return $fqdn if defined $fqdn;
+
+    # Fall back to short name
+    $fqdn = $h;
+    return $fqdn;
 }
 
 # run_cmd(%args) — run an external command safely
