@@ -1,0 +1,166 @@
+# changetrack-ng — default configuration
+#
+# All options shown with default values.
+# For detailed documentation, see the -full example config.
+# Example configs installed to: /usr/share/doc/changetrack-ng/examples/
+
+###################################################################
+# Global Configuration
+###################################################################
+#
+[global]
+
+##########################
+# Core
+##########################
+#
+# VCS backend: rcs | git | fossil | svn | hg
+vcs = git
+
+# Directory where tracked file history is stored
+output_dir = /var/lib/changetrack-ng
+
+##########################
+# Scheduling
+##########################
+#
+# Run schedule for systemd/cron install targets (not read at runtime)
+# Accepted: hourly | daily | <cron-expression>
+interval = hourly
+
+##########################
+# Locking
+##########################
+#
+# Lock file path (only one instance runs at a time)
+lock_path = /var/run/changetrack-ng.lock
+
+# Seconds to wait for lock; 0 = skip silently if locked (cron-friendly)
+lock_timeout = 0
+
+##########################
+# Sensitive Files
+##########################
+#
+# Auto-detect sensitive files by mode (lacks group+world read = sensitive)
+sensitive_auto = 1
+
+# Handling of sensitive diffs in notifications: suppress | allow
+sensitive_notify = suppress
+
+# Warn on non-regular files (sockets, FIFOs, device nodes, hard links)
+warn_special_files = 1
+
+###################################################################
+# Notifications
+###################################################################
+#
+# Channels to enable (space-separated): email  webhook  otlp  file
+notify =
+
+##########################
+# Email
+##########################
+#
+# Envelope sender; HOSTNAME is substituted with the system FQDN
+email_from = changetrack-ng@HOSTNAME
+
+# Default recipients (space-separated); per-track recipients override this
+email_to =
+
+# Sendmail binary path; auto-detected if unset
+# sendmail_path = /usr/sbin/sendmail
+
+##########################
+# Webhook
+##########################
+#
+# URL(s) to POST JSON change reports to (space-separated)
+webhook_url =
+
+# Include full unified diff in payload (0 = summary only)
+webhook_full_diff = 0
+
+# POST a heartbeat even when no changes detected
+webhook_heartbeat = 0
+
+# Skip TLS cert verification (dev only, never production)
+webhook_insecure = 0
+
+##########################
+# OTLP / OpenTelemetry
+##########################
+#
+# OTLP/HTTP log endpoint URL (must include /v1/logs)
+otlp_endpoint =
+
+# Include full diff in log record attributes
+otlp_full_diff = 0
+
+# HTTP body compression: gzip | none
+otlp_compression = gzip
+
+# Extra HTTP headers (space-separated key=value); supports ${ENV_VAR}
+otlp_headers =
+
+# HTTP timeout in seconds
+otlp_timeout = 10
+
+# Skip TLS cert verification
+otlp_insecure = 0
+
+# Extra OTLP resource attributes (space-separated key=value)
+otlp_resource_attributes =
+
+# Send heartbeat record on every run (enables "alert on absence")
+otlp_heartbeat = 1
+
+##########################
+# File (JSON Log)
+##########################
+#
+# Path to append-only JSON log file
+notify_log_path = /var/log/changetrack-ng.log
+
+# Include full diff in each log record (0 = metadata only)
+file_full_diff = 1
+
+# Append heartbeat record on every run
+file_heartbeat = 0
+
+##########################
+# VCS Push
+##########################
+#
+# Remote(s) to push to after each commit (space-separated)
+push_remote =
+
+###################################################################
+# File Tracking
+###################################################################
+
+##########################
+# Ignore Patterns
+##########################
+#
+# Additional globs to skip during traversal (space-separated)
+# Built-in defaults already exclude: editor temps, archives, package
+# manager artifacts, bytecode, and common system runtime files.
+ignore =
+
+[track]
+##########################
+# Track List
+##########################
+#
+# Syntax:
+#   /path/to/file [: recip@addr ...] [option=value ...]
+#   DIRECTORY /path [: recip@addr ...] [option=value ...]
+#
+# Per-entry options: sensitive=yes|no|auto
+#
+# Examples:
+# /etc/passwd
+# /etc/hosts
+# DIRECTORY /etc/ssh
+# DIRECTORY /etc/nginx : admin@example.com

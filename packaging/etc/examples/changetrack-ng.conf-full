@@ -1,0 +1,237 @@
+# changetrack-ng — full reference configuration
+#
+# This file documents every supported option with detailed explanations.
+# For quick-start use, see the other example configs:
+#   -default — all options with defaults, concise comments
+#   -minimal — bare essentials to get going
+#   -user    — non-root, user-level install
+#
+# Copy to /etc/changetrack-ng/changetrack-ng.conf and adjust.
+# Lines beginning with # are comments.  Blank lines are ignored.
+#
+# SECURITY: This file may contain notifier credentials (otlp_headers,
+# webhook_url).  Recommended file mode: 0640, owned root:root (or your
+# service account).
+
+###################################################################
+# Global Configuration
+###################################################################
+#
+[global]
+
+##########################
+# Core
+##########################
+#
+# VCS backend used to store file history.
+# Accepted: rcs | git | fossil | svn | hg
+vcs = git
+
+# Directory where tracked file history is stored.
+# RCS stores flat ,v files here.  Git/Fossil/SVN/Hg use a mirror tree.
+output_dir = /var/lib/changetrack-ng
+
+##########################
+# Scheduling
+##########################
+#
+# Used by 'make install-systemd' and 'make install-cron' to set the run
+# schedule.  Not read at runtime by changetrack-ng itself.
+# Accepted: hourly | daily | <cron-expression>
+interval = hourly
+
+##########################
+# Locking
+##########################
+#
+# Lock file path.  Only one instance runs at a time.
+# Default for root:     /var/run/changetrack-ng.lock
+# Default for non-root: $XDG_CACHE_HOME/changetrack-ng.lock
+#                    or ~/.cache/changetrack-ng.lock
+lock_path = /var/run/changetrack-ng.lock
+
+# Seconds to wait to acquire the lock before giving up.
+# 0 = skip silently if already locked (cron-friendly, default)
+lock_timeout = 0
+
+##########################
+# Sensitive Files
+##########################
+#
+# Auto-detect sensitive files by permission mode.
+# A file is treated as sensitive when it lacks both group-read and world-read
+# permission (mode & 0044 == 0), e.g. mode 0600 or 0640.
+# 1 = auto-detect (default) | 0 = disable auto-detection
+sensitive_auto = 1
+
+# How to handle sensitive file diffs in outbound notifications.
+# suppress = redact diff with a placeholder (default; paths still logged)
+# allow    = include full diff (only safe if the notification channel is private)
+sensitive_notify = suppress
+
+##########################
+# Special File Warnings
+##########################
+#
+# Emit warnings for non-regular files encountered during directory traversal
+# (sockets, FIFOs, device nodes) and for regular files with multiple hard links.
+# 1 = warn (default) | 0 = suppress
+warn_special_files = 1
+
+###################################################################
+# Notifications
+###################################################################
+#
+# Notification channels to enable (space-separated list).
+# Accepted subset of: email  webhook  otlp  file
+# Leave empty to disable all outbound notifications.
+notify =
+
+##########################
+# Email
+##########################
+#
+# Envelope sender address for outbound email.
+# HOSTNAME is substituted with the system FQDN at runtime.
+email_from = changetrack-ng@HOSTNAME
+
+# Default recipient address(es) for email notifications (space-separated).
+# Used when a tracked entry does not specify per-entry recipients.
+# Per-entry recipients (after the colon in [track] lines) override this.
+# Example: email_to = root@localhost admin@example.com
+email_to =
+
+# Path to the sendmail binary.  Detected automatically if not set.
+# Checked locations: /usr/sbin/sendmail, /usr/lib/sendmail, then $PATH.
+# sendmail_path = /usr/sbin/sendmail
+
+##########################
+# Webhook
+##########################
+#
+# URL(s) to POST a JSON change report to (space-separated).
+# Required when notify includes 'webhook'.
+webhook_url =
+
+# Include full unified diff in the webhook payload.
+# 0 = summary statistics only (default) | 1 = full diff text
+webhook_full_diff = 0
+
+# POST a heartbeat payload even when there are no changes.
+# Useful for "alert on absence" monitoring at the receiver.
+# 0 = disabled (default) | 1 = enabled
+webhook_heartbeat = 0
+
+# Disable TLS certificate verification for webhook delivery.
+# Only for self-signed dev setups.  Never use in production.
+# 0 = verify (default) | 1 = skip verification
+webhook_insecure = 0
+
+##########################
+# OTLP / OpenTelemetry
+##########################
+#
+# OTLP/HTTP log endpoint URL (must include /v1/logs).
+# Required when notify includes 'otlp'.
+# Overridden by $OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or $OTEL_EXPORTER_OTLP_ENDPOINT.
+otlp_endpoint =
+
+# Include full diff text in each OTLP log record attribute (ct.diff).
+# 0 = summary only (default) | 1 = full diff
+otlp_full_diff = 0
+
+# HTTP body compression for OTLP exports.
+# Accepted: gzip (default) | none
+otlp_compression = gzip
+
+# Additional HTTP request headers (space-separated key=value pairs).
+# Escape spaces inside values with a backslash: Authorization=Bearer\ token
+# Supports ${ENV_VAR} expansion -- keep secrets out of this file:
+#   otlp_headers = Authorization=Bearer\ ${OTLP_TOKEN}
+# Overridden by $OTEL_EXPORTER_OTLP_HEADERS.
+otlp_headers =
+
+# HTTP request timeout in seconds.
+otlp_timeout = 10
+
+# Disable TLS certificate verification for OTLP delivery.
+# 0 = verify (default) | 1 = skip verification
+otlp_insecure = 0
+
+# Additional OTLP resource attributes (space-separated key=value pairs).
+# Example: otlp_resource_attributes = deployment.environment=prod team=infra
+otlp_resource_attributes =
+
+# Send a heartbeat log record on every run, even when there are no changes.
+# OTLP is a monitoring channel; heartbeats enable "alert on absence" detection.
+# 0 = disabled | 1 = enabled (default)
+otlp_heartbeat = 1
+
+##########################
+# File (JSON Log)
+##########################
+#
+# Path to the append-only JSON log file.
+# Required when notify includes 'file'.
+notify_log_path = /var/log/changetrack-ng.log
+
+# Include full diff text in each JSON log record.
+# 1 = full diff (default) | 0 = metadata only
+file_full_diff = 1
+
+# Append a heartbeat record on every run, even when there are no changes.
+# 0 = disabled (default) | 1 = enabled
+file_heartbeat = 0
+
+##########################
+# VCS Push
+##########################
+#
+# Remote(s) to push to after each commit (space-separated).
+# Applies to whole-repo backends (git, fossil, svn, hg).
+# Leave empty to skip push.
+push_remote =
+
+###################################################################
+# File Tracking
+###################################################################
+
+##########################
+# Ignore Patterns
+##########################
+#
+# Additional glob patterns to skip during directory traversal
+# (space-separated).  Applied on top of built-in defaults.
+#
+# Built-in defaults already exclude common noise:
+#   editor temp files:  *.swp  *~  #*#  .*.sw?  *.bak
+#   archives:           *.gz  *.bz2  *.bzip2  *.xz  *.zst  *.7z
+#                       *.zip  *.tar  *.tgz  *.tbz2  *.txz
+#   package manager:    *.dpkg-*  *.rpmnew  *.rpmsave  *.pacnew  *.pacorig
+#   compiled bytecode:  *.pyc  *.pyo  *.elc
+#   system runtime:     mtab  ld.so.cache  prelink.cache  adjtime
+#                       udev/hwdb.bin  lvm/cache  lvm/archive
+ignore =
+
+[track]
+##########################
+# Track List
+##########################
+#
+# Each line specifies a file or directory to track.
+#
+# Syntax:
+#   /absolute/path/to/file [: email@example.com ...] [option=value ...]
+#   DIRECTORY /absolute/path [: email@example.com ...] [option=value ...]
+#
+# Optional per-entry recipients (after the colon) override the global email_to
+# default for that entry.  Multiple addresses are space-separated.
+#
+# Per-entry options (key=value after the path/recipients):
+#   sensitive=yes|no|auto   Override automatic sensitive-file detection
+#
+# Examples:
+#   /etc/passwd : root@localhost
+#   /etc/hosts
+#   DIRECTORY /etc/nginx : admin@example.com
+#   DIRECTORY /etc/ssl/private : security@example.com sensitive=yes
