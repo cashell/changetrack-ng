@@ -4,20 +4,27 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-06
+
 ### Added
 - `--dry-run` / `-n` flag to analyze changes statically without writing VCS or dispatching notifications.
 - Symlink metadata lifecycle maps correctly.
 - Added troubleshooting guide in INSTALL.md and documentation for `OTEL_EXPORTER_*` config precedence hierarchy.
 - Reimplemented tests mapping to `DEB_BUILD_OPTIONS=nocheck`.
+- Each notifier class declares `config_keys()`; `Runner::_build_notifier` now filters the config arg pool to only the keys the target notifier accepts. Surfaced missing `webhook_timeout` key.
+- `t/21-report.t`: 52-test dedicated suite for `ChangeTrack::Report`. Added missing `start_time()` / `end_time()` accessors.
 
 ### Fixed
 - **Webhook Diff Counting**: Prevented diff counts from inflating due to unified diff `+++`/`---` headers.
 - **Redundant Commits**: Eliminated redundant `$vcs->add()` execution in checkin flow.
 - **VCS Backend Hardening**: Evaluated and wrapped `chdir()` usages in Fossil and SVN in exception-safe environments to prevent directory poisoning on failures. Mercurial utilizes `-R` option.
+- **MockSendmail version**: `t/lib/ChangeTrack/Test/MockSendmail.pm` now derives `$VERSION` from `ChangeTrack::Version` instead of a hardcoded string.
 
 ### Changed
 - **Runner Helper**: Extracted `_build_notifier` inside Runner.
 - **Ignore Pre-compilation**: Refactored logic to statically pre-compile all ignore patterns, drastically improving scaling.
+- **OTLP performance**: `/etc/machine-id` is now read once via `state` variable and cached for process lifetime.
+- **Sensitive detection performance**: `_resolve_sensitive()` accepts pre-computed mode from metadata record, eliminating a redundant `stat()` syscall per tracked file per run.
 
 ## [0.4.3] - 2026-05-04
 

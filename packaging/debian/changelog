@@ -1,3 +1,21 @@
+changetrack-ng (0.5.0) unstable; urgency=medium
+
+  * Add config_keys() to each notifier; Runner::_build_notifier filters args
+    to only the keys the target notifier accepts. Surfaces missing webhook_timeout.
+  * Add t/21-report.t: 52-test dedicated suite for ChangeTrack::Report.
+  * Add missing start_time/end_time accessors to Report.pm.
+  * Fix: MockSendmail $VERSION now derived from ChangeTrack::Version.
+  * Perf: cache /etc/machine-id in OTLP::_resource_attrs() via state variable.
+  * Perf: pass pre-computed mode to _resolve_sensitive(); eliminates redundant stat().
+  * Fix: webhook diff counters no longer count unified diff +++ / --- header lines.
+  * Fix: eliminate redundant $vcs->add() call after checkin() in Runner.
+  * Fix: Fossil/SVN chdir() wrapped in exception-safe eval; Mercurial uses -R.
+  * Add: --dry-run / -n flag for static change analysis without VCS mutation.
+  * Precompile ignore patterns once per run (was per-file); improves scaling.
+  * Deduplicate notifier construction via shared _build_notifier helper.
+
+ -- Christopher Cashell <topher@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
+
 changetrack-ng (0.4.3) unstable; urgency=medium
 
   * Unified metadata type system: drop skip_reason, use single type field

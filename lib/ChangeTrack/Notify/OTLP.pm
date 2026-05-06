@@ -16,6 +16,7 @@ and heartbeat enabled by default.
 
 use strict;
 use warnings;
+use feature qw(state);
 use parent 'ChangeTrack::Notify::Base';
 use JSON::PP ();
 use HTTP::Tiny ();
@@ -48,6 +49,9 @@ sub heartbeat_enabled {
 }
 
 sub name { 'otlp' }
+
+# config_keys — the set of constructor args this notifier reads from config.
+sub config_keys { qw(otlp_endpoint otlp_headers otlp_compression otlp_full_diff otlp_heartbeat otlp_timeout otlp_insecure otlp_resource_attributes) }
 
 sub validate_config {
     my ($self) = @_;
@@ -174,10 +178,13 @@ sub _build_payload {
 sub _resource_attrs {
     my ($self) = @_;
 
-    my $machine_id = '';
-    if (open(my $fh, '<', '/etc/machine-id')) {
-        chomp($machine_id = <$fh> // '');
-        close $fh;
+    state $machine_id;
+    unless (defined $machine_id) {
+        $machine_id = '';
+        if (open(my $fh, '<', '/etc/machine-id')) {
+            chomp($machine_id = <$fh> // '');
+            close $fh;
+        }
     }
 
     my %attrs = (

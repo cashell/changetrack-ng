@@ -44,6 +44,9 @@ sub heartbeat_enabled {
 
 sub name { 'webhook' }
 
+# config_keys — the set of constructor args this notifier reads from config.
+sub config_keys { qw(webhook_url webhook_full_diff webhook_heartbeat webhook_insecure webhook_timeout) }
+
 sub validate_config {
     my ($self) = @_;
     return () if @{ $self->{_urls} // [] };

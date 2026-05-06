@@ -8,7 +8,7 @@ use File::Temp qw(tempfile);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 
-our $VERSION = '0.4.3';
+our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 # create() — write a mock sendmail script that captures its invocation.
 # Returns the path to the script and the path to the capture file.

@@ -91,8 +91,6 @@ All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with 
 - `otlp_headers` and `otlp_resource_attributes` type handling is fragile (scalar vs arrayref depends on whether config has a value)
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
 - `Util::run_cmd()` IO::Select timeout is hardcoded to 30s instead of accepting a parameter for slow VCS ops
-- Report/change accumulator (`Report.pm`) lacks standalone coverage testing
-- No feature flag to exclude specific files within an already globally tracked directory path
 
 ## Key Design Constraints
 
@@ -157,5 +155,5 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 
 ## Implementation Status
 
-All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.4.3.
+All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.5.0.
 Tests in `t/` (313 total) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.

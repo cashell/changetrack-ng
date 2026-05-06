@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.4.3
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -109,6 +109,20 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Tue May 06 2026 Christopher Cashell <topher@zyp.org> - 0.5.0-1
+- Add config_keys() to each notifier; _build_notifier filters to notifier-specific keys
+- Add t/21-report.t: 52-test dedicated suite for ChangeTrack::Report
+- Add start_time/end_time accessors to Report.pm (were documented but missing)
+- Fix: MockSendmail $VERSION now derived from ChangeTrack::Version
+- Perf: cache /etc/machine-id in OTLP::_resource_attrs() via state variable
+- Perf: pass pre-computed mode to _resolve_sensitive(), eliminate redundant stat()
+- Fix: webhook diff counters no longer count unified diff +++ / --- header lines
+- Fix: eliminate redundant $vcs->add() after checkin() in Runner
+- Fix: Fossil/SVN chdir() wrapped in exception-safe eval; Mercurial uses -R
+- Add --dry-run / -n flag for static change analysis without VCS mutation
+- Precompile ignore patterns once per run (was per-file); improves scaling
+- Deduplicate notifier construction via shared _build_notifier helper
+
 * Sun May 04 2026 Christopher Cashell <topher@zyp.org> - 0.4.3-1
 - Unified metadata type system: drop skip_reason, use single type field
   (file, symlink, binary, empty, unreadable, special, directory, missing)

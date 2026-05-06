@@ -320,7 +320,8 @@ sub _process_file {
             my $meta_summary = $md->diff_summary($real_path);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             $vcs->checkin($real_path, $msg) unless $self->{dry_run};
-            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
+            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
+                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -332,7 +333,8 @@ sub _process_file {
             $self->_verbose("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing) {
             $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
-            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
+            my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
+                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
             $report->add_change(
                 path         => $real_path,
                 is_new       => 1,
@@ -355,7 +357,8 @@ sub _process_file {
     }
 
     # ── Trackable types: file, symlink ────────────────────────────────────────
-    my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto});
+    my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
+        defined($rec->{mode}) ? oct($rec->{mode}) : undef);
 
     if (!defined $existing) {
         # New file / symlink
@@ -517,17 +520,21 @@ sub _glob_to_re {
 }
 
 sub _resolve_sensitive {
-    my ($real_path, $override, $auto_enabled) = @_;
+    my ($real_path, $override, $auto_enabled, $mode_oct) = @_;
     if (defined $override) {
         return 1 if $override =~ /^(yes|1)$/i;
         return 0 if $override =~ /^(no|0)$/i;
     }
     $auto_enabled = 1 unless defined $auto_enabled;
     return 0 unless $auto_enabled;
-    # Auto-detect: no world-read permission (includes 0600 and 0640)
-    my @s = stat($real_path);
-    return 0 unless @s;
-    return (($s[2] & 0004) == 0) ? 1 : 0;
+    # Auto-detect: no world-read permission (includes 0600 and 0640).
+    # Use the pre-computed mode from metadata when available to avoid re-stat.
+    unless (defined $mode_oct) {
+        my @s = stat($real_path);
+        return 0 unless @s;
+        $mode_oct = $s[2];
+    }
+    return (($mode_oct & 0004) == 0) ? 1 : 0;
 }
 
 sub _bool_or_default {
@@ -599,18 +606,26 @@ sub _tracked_entries {
 
 sub _build_notifier {
     my ($self, $nclass, $cfg) = @_;
-    return $nclass->new(
+
+    # Build the complete pool of config args (all possible keys across all notifiers).
+    # _build_notifier then filters to only the keys the target notifier class declares
+    # via config_keys(), plus the shared sensitive_notify key.
+    my %all_args = (
+        # Email
         email_from                => $cfg->global('email_from'),
         email_to                  => $cfg->global('email_to') // [],
         sendmail_path             => $cfg->global('sendmail_path'),
-        sensitive_notify          => $cfg->global('sensitive_notify') // 'suppress',
+        # File
         log_path                  => $cfg->global('notify_log_path'),
         file_heartbeat            => $cfg->global('file_heartbeat') // 0,
         file_full_diff            => $cfg->global('file_full_diff') // 1,
+        # Webhook
         webhook_url               => $cfg->global('webhook_url'),
         webhook_full_diff         => $cfg->global('webhook_full_diff') // 0,
         webhook_heartbeat         => $cfg->global('webhook_heartbeat') // 0,
         webhook_insecure          => $cfg->global('webhook_insecure') // 0,
+        webhook_timeout           => $cfg->global('webhook_timeout') // 10,
+        # OTLP
         otlp_endpoint             => $cfg->global('otlp_endpoint'),
         otlp_headers              => $cfg->global('otlp_headers') // '',
         otlp_compression          => $cfg->global('otlp_compression') // '',
@@ -620,6 +635,17 @@ sub _build_notifier {
         otlp_insecure             => $cfg->global('otlp_insecure') // 0,
         otlp_resource_attributes  => $cfg->global('otlp_resource_attributes') // {},
     );
+
+    # Filter to only the keys this notifier class accepts, plus the shared key.
+    my %accepted = map { $_ => 1 } ($nclass->config_keys, 'sensitive_notify');
+    my %args = (
+        sensitive_notify => $cfg->global('sensitive_notify') // 'suppress',
+        map  { $_ => $all_args{$_} }
+        grep { exists $all_args{$_} }
+        keys %accepted,
+    );
+
+    return $nclass->new(%args);
 }
 
 # Returns arrayref of { path, diff } for every tracked file with pending changes.

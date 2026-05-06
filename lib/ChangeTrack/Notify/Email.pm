@@ -42,6 +42,9 @@ sub heartbeat_enabled { 0 }
 
 sub name { 'email' }
 
+# config_keys — the set of constructor args this notifier reads from config.
+sub config_keys { qw(email_from email_to sendmail_path) }
+
 sub send_changes {
     my ($self, $report) = @_;
 

@@ -42,6 +42,9 @@ sub heartbeat_enabled {
 
 sub name { 'file' }
 
+# config_keys — the set of constructor args this notifier reads from config.
+sub config_keys { qw(log_path file_heartbeat file_full_diff) }
+
 sub validate_config {
     my ($self) = @_;
     my $path = $self->{log_path} // '';

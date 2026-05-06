@@ -1,7 +1,7 @@
 # changetrack-ng — Architecture and Design
 
 Date: 2026-05-04
-Version: 0.4.3
+Version: 0.5.0
 
 ---
 
@@ -74,7 +74,7 @@ Version: 0.4.3
 | `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
 | `ChangeTrack::Util` | `hostname()`, `run_cmd()` (IPC::Open3, IO::Select, no shell), `sync_mirror_path()`, `restore_mirror_path()` |
-| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.4.3'`) |
+| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.5.0'`) |
 | `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `add`, `checkin`, `commit`, `diff`, `log_history`, `revert`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; batch commit; optional push_remote |
 | `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate ci -l per file |
@@ -348,7 +348,7 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 
 ### 9.3 Version management
 
-- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.4.3'`)
+- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.5.0'`)
 - All modules: `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`
 - Makefile `VERSION` variable must be kept in sync
 - RPM spec `Version:` and `%changelog` updated manually

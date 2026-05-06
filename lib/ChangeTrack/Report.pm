@@ -137,6 +137,8 @@ sub is_heartbeat_eligible {
 sub changes       { $_[0]->{changes}       }
 sub warnings      { $_[0]->{warnings}      }
 sub files_tracked { $_[0]->{files_tracked} }
+sub start_time    { $_[0]->{start_time}    }
+sub end_time      { $_[0]->{end_time}      }
 
 sub duration_ms {
     my ($self) = @_;

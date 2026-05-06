@@ -1,10 +1,19 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-05-06)
+
+- TEST-11: Fixed `t/lib/ChangeTrack/Test/MockSendmail.pm` to derive `$VERSION` dynamically from `ChangeTrack::Version` instead of hardcoding.
+- PERF-1: Cached `/etc/machine-id` read in `Notify/OTLP.pm::_resource_attrs()` using a `state` variable — eliminates redundant file I/O on every OTLP export call.
+- PERF-2: Pass pre-computed mode integer from metadata record (`oct($rec->{mode})`) to `_resolve_sensitive()` — eliminates a redundant `stat()` syscall per tracked file.
+- DEBT-1: Each notifier class now declares `config_keys()`. `Runner::_build_notifier` filters the config arg pool to only the keys the target notifier accepts (plus the shared `sensitive_notify` key). Also surfaced and included `webhook_timeout` which was missing from the old monolithic build.
+- TEST-5: Added `t/21-report.t` with 52 tests covering `ChangeTrack::Report` construction, accumulation, `add_removed`, `add_warning`, `is_heartbeat_eligible`, `duration_ms`, and all `to_text` output cases (sensitive suppression, metadata-only changes, removals, warnings section). Also added the missing `start_time` / `end_time` accessors documented in POD but never implemented.
+- PKG-1: Makefile `install-systemd` and `install-hooks` targets perform `sed` substitution of `@BINDIR@` at install time.
 
 ## Completed (2026-05-05)
 
@@ -72,21 +81,9 @@ None currently open.
 
 **Recommendation:** Accept a `timeout` parameter in `run_cmd()` args hash, defaulting to 30. Pass through from callers who need longer operations.
 
-### OPS-4: Lock module's polling retry uses `sleep(1)` (Low)
-
-**Issue:** The timeout loop in `Lock::acquire()` calls `$self->_sleep(1)` in a loop, which is a busy-poll with 1-second granularity. For short timeouts this is fine, but for long timeouts it's wasteful.
-
-**Status:** Acceptable for current use cases (lock_timeout is typically 0). Flag for review if longer timeouts become common.
-
 ---
 
 ## Testing
-
-### TEST-5: No dedicated `Report.pm` test file (Medium)
-
-**Issue:** `Report.pm` is the change accumulator passed to all notifiers, yet it has no dedicated test file. Its behavior is exercised indirectly through notifier tests, but edge cases (empty reports, reports with only metadata changes, reports with mixed sensitive/non-sensitive entries) are not directly covered.
-
-**Recommendation:** Add `t/XX-report.t` covering construction, entry accumulation, summary generation, and sensitive entry handling.
 
 ### TEST-7: No test for `Config::dump_v2` (Low)
 
@@ -100,27 +97,9 @@ None currently open.
 
 **Issue:** No tests verify correct behavior when a tracked file changes type between runs (e.g., regular file replaced by symlink, empty file gains content, text file becomes binary). These transitions exercise the metadata type system and VCS mirror sync logic.
 
-### TEST-11: `MockSendmail.pm` hardcodes `$VERSION` (Low)
-
-**Issue:** `t/lib/MockSendmail.pm` has `$VERSION = '0.4.3'` hardcoded instead of using `ChangeTrack::Version`. This will drift on version bumps.
-
-**Fix:** Use `our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };` consistent with all other modules.
-
 ---
 
 ## Code Quality / Technical Debt
-
-### DEBT-1: Notifier constructor receives ALL config keys (Medium)
-
-**Issue:** Runner passes every possible notifier config key to every notifier constructor, regardless of which notifier is being instantiated. Email notifier receives OTLP settings, etc. This is wasteful and confusing.
-
-**Recommendation:** Each notifier class should declare its required/accepted config keys. Runner should pass only relevant keys per notifier.
-
-### DEBT-2: `eval "require $class"` pattern for dynamic loading (Low)
-
-**Issue:** Runner uses string-eval to dynamically load VCS and Notifier modules. While this is a common Perl pattern, it's opaque to static analysis tools and slightly risky if `$class` were ever derived from untrusted input (it isn't today — it comes from a hardcoded hash).
-
-**Status:** Acceptable given the trusted source. Consider `Module::Load` from core for clarity, or document the trust assumption.
 
 ### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low)
 
@@ -130,54 +109,46 @@ None currently open.
 
 ---
 
-## Performance
-
-### PERF-1: OTLP `_resource_attrs()` re-reads `/etc/machine-id` on every call (Low)
-
-**Issue:** `Notify/OTLP.pm`'s `_resource_attrs()` opens and reads `/etc/machine-id` on every invocation. The machine ID is immutable at runtime; reading it once and caching via a `state` variable eliminates redundant file I/O.
-
-**Fix:** `state $cached_id; $cached_id //= do { ... read file ... }; ` — idiomatic for Perl 5.20+ with `feature 'state'` already in scope.
-
-### PERF-2: `_resolve_sensitive` performs redundant `stat()` (Low)
-
-**Issue:** `Runner::_resolve_sensitive()` calls `stat($path)` to check mode bits, but the file was already `lstat()`ed by `Metadata::update_from_stat()` in the same processing loop. The mode is available in the metadata record.
-
-**Recommendation:** Pass the metadata record's `mode` field to `_resolve_sensitive` instead of re-statting. Minor optimization but eliminates one syscall per tracked file per run.
-
----
-
 ## Feature Gaps
-
-### FEAT-2: No way to exclude specific files within a tracked directory (Low)
-
-**Issue:** Ignore patterns are global. There's no per-`[track]` entry ignore mechanism.
-
-**Recommendation:** Consider per-track `exclude=<pattern>` option in the track line.
 
 ### FEAT-3: No health-check / self-test subcommand (Low)
 
 **Issue:** Operators have no way to validate their configuration without running a full scan. A `changetrack-ng check` that validates config, tests VCS access, and optionally tests notification delivery would reduce deployment issues.
 
-### FEAT-4: No support for tracking file deletions proactively (Low)
-
-**Issue:** A file that is removed from disk is detected only on the next run. There's no inotify/fanotify integration for real-time deletion alerting.
-
-**Status:** By design — changetrack-ng is a polling model. Document as a known limitation.
-
 ---
 
 ## Packaging / Distribution
 
-### PKG-1: systemd service and pacman hooks use `@BINDIR@` template (Fixed)
-
-**Status:** The Makefile `install-systemd` and `install-hooks` targets now perform `sed` substitution of `@BINDIR@` at install time. The raw files in the repo contain the placeholder.
-
-### PKG-2: No dnf/zypper hook implementation (Fixed for dnf)
-
-**Status:** `install-hooks` now installs a dnf plugin (`/etc/dnf/plugins/changetrack_ng.py` + `.conf`) and RPM packaging ships the same files. zypper remains unimplemented.
+(All packaging tickets currently resolved.)
 
 ---
 
 ## Documentation
 
 (All documentation tickets currently resolved.)
+
+---
+
+## Closed — Won't Fix
+
+These items have been deliberately decided against. They remain here for historical context and to prevent re-opening without new justification.
+
+### OPS-4: Lock polling retry uses `sleep(1)`
+
+**Reason:** `lock_timeout` is typically `0` (skip immediately). For the rare non-zero case, 1s granularity over a handful of retries is acceptable. `select()`-based sub-second polling adds complexity with no practical benefit.
+
+### DEBT-2: `eval "require $class"` pattern for dynamic loading
+
+**Reason:** Class names come from the hardcoded `%NOTIFY_CLASSES` dispatch table in Runner.pm — not from user input. The trust boundary is explicit and static. A comment in Runner.pm documents this. `Module::Load` would add no safety benefit.
+
+### FEAT-2: Per-track exclude patterns
+
+**Reason:** Config schema expansion requiring parser, data structure, file-walk, and migration changes. Global `ignore` patterns cover the vast majority of cases. Deferred to v0.5+ if user demand materialises.
+
+### FEAT-4: Real-time file deletion detection (inotify/fanotify)
+
+**Reason:** changetrack-ng is a polling model by design. A persistent daemon with inotify would be a fundamentally different architecture. Out of scope; documented as a known limitation in the man page.
+
+### PKG-2: zypper hook
+
+**Reason:** zypper's plugin mechanism is significantly more complex than apt/dnf/pacman. openSUSE user base overlap is minimal. Will not be implemented unless contributed externally; dnf support ships and covers the RPM ecosystem.
