@@ -56,15 +56,29 @@ Notification channels to enable.  Valid values: C<email>, C<webhook>,
 C<otlp>, C<file>.  Multiple values are space-separated.
 Leave empty to disable notifications.
 
+=item B<push_remote> = I<remote ...>
+
+For whole-repo VCS backends: space-separated list of Git/SVN/etc. remotes to
+push to after each commit.  Leave empty to skip push.
+
+=back
+
+=head2 Email
+
+=over 4
+
+=item B<email_to> = I<address ...>
+
+Global fallback email recipients, space-separated.  Used for tracked entries
+that do not define specific per-file or per-directory recipient addresses
+in the C<[track]> section.
+
 =item B<email_from> = I<address>
 
 Sender address for email notifications.  The token C<HOSTNAME> is replaced
 with the system hostname at runtime.  Default: C<changetrack-ng@HOSTNAME>.
 
-=item B<push_remote> = I<remote ...>
-
-For whole-repo VCS backends: space-separated list of Git/SVN/etc. remotes to
-push to after each commit.  Leave empty to skip push.
+Note: Email notifications are naturally anti-spam; they have no heartbeat configuration and send zero emails during a clean no-change run.
 
 =back
 

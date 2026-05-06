@@ -99,7 +99,7 @@ Version: 0.4.3
  Lock.acquire()         →  flock(LOCK_EX|LOCK_NB) or timeout loop
                              │
  _build_file_list()     →  Expand [track] entries (files + recursive dirs)
-                         →  Apply ignore patterns (built-in + user)
+                         →  Apply ignore patterns (precompiled to singular regex passes for scale)
                              │
  ┌─ For each tracked path ───────────────────────────────────────────────────┐
  │  1. Missing from disk? → report removed, done                              │
@@ -233,13 +233,17 @@ Heartbeat is only sent when: no changes detected AND the run completed without e
 
 ## 7. Security architecture
 
-### 7.1 Command execution model
+### 7.1 Command execution and exception safety
 
 All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 - Uses `IPC::Open3` with list-form arguments (no shell interpolation)
-- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks
+- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks (timeout adjustable via parameter)
 - Returns structured result `{ success, stdout, stderr, exit_code }`
 - No user-controlled data is ever interpolated into shell strings
+
+VCS Backend execution safety encompasses directory management:
+- Subcommand backends relying on external process scoping (Fossil, SVN) securely execute commands within the mirror path via dynamic `chdir()` wrapped in strict `eval { ... }; chdir($old) or croak` blocks ensuring cwd is securely restored despite subprocess crashes, preserving main agent thread context.
+- Backends with native repository flags (`hg -R`, `git -C`) utilize those instead of active state modification.
 
 ### 7.2 Trust boundaries
 

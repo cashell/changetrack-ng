@@ -263,11 +263,11 @@ DIRECTORY /etc/ssl/private sensitive=yes
 **v1 detection:** A file is v1 if it has no `[global]` or `[track]` section header and any non-blank/non-comment line matches the v1 grammar (`^[/@~][^:]*\s*(:\s*\S+)?\s*$`).
 
 **Exit criteria:**
-- [ ] `make test` passes (`prove t/`)
-- [ ] `bin/changetrack-ng --version` prints `0.3.0`
-- [ ] `bin/changetrack-ng --help` lists all subcommands (even if they're stubs)
-- [ ] All v2 sample configs round-trip (parse → dump → parse → equal)
-- [ ] All known v1 quirks parse correctly with `Config->load()` (e.g., `@` find directive parses as a v1 directory entry, but the v1→v2 migrator emits `DIRECTORY` with a warning that find-expr translation is manual)
+- [x] `make test` passes (`prove t/`)
+- [x] `bin/changetrack-ng --version` prints `0.3.0`
+- [x] `bin/changetrack-ng --help` lists all subcommands (even if they're stubs)
+- [x] All v2 sample configs round-trip (parse → dump → parse → equal)
+- [x] All known v1 quirks parse correctly with `Config->load()` (e.g., `@` find directive parses as a v1 directory entry, but the v1→v2 migrator emits `DIRECTORY` with a warning that find-expr translation is manual)
 
 ---
 
@@ -346,13 +346,13 @@ JSONL line schema:
 **Commit message format:** `changetrack-ng run @ 2026-04-27T14:00:00 [hook: apt-pre install nginx]` — second bracket only if `-m` / `--message` provided.
 
 **Exit criteria:**
-- [ ] `changetrack-ng run -c t/fixtures/config-v2-basic.ini` works on a temp tree, commits to RCS, prints summary
-- [ ] Re-running with no changes is a no-op (no commits made, exit 0)
-- [ ] Modifying a file's permissions only is detected and committed (metadata change with empty content diff)
-- [ ] Modifying file content is detected and committed
-- [ ] New file appears in tracked output dir with `,v` history
-- [ ] Removed file (file vanishes from disk between runs) reported correctly — design choice: log removal in metadata diff, but don't delete VCS history
-- [ ] `t/04-runner-rcs.t` exercises all of the above end-to-end with a real `rcs`/`ci`/`co` (skip_all if not installed)
+- [x] `changetrack-ng run -c t/fixtures/config-v2-basic.ini` works on a temp tree, commits to RCS, prints summary
+- [x] Re-running with no changes is a no-op (no commits made, exit 0)
+- [x] Modifying a file's permissions only is detected and committed (metadata change with empty content diff)
+- [x] Modifying file content is detected and committed
+- [x] New file appears in tracked output dir with `,v` history
+- [x] Removed file (file vanishes from disk between runs) reported correctly — design choice: log removal in metadata diff, but don't delete VCS history
+- [x] `t/04-runner-rcs.t` exercises all of the above end-to-end with a real `rcs`/`ci`/`co` (skip_all if not installed)
 
 ---
 
@@ -417,14 +417,14 @@ The `Report` itself has full diff content; suppression is applied only when seri
 - **Heartbeat:** controlled by `file_heartbeat = 0|1`, default `0`. When enabled, every run appends a record (even with no changes) — useful for log-shipper-based monitoring (Loki/Splunk/etc. tailing the file). The heartbeat record has `"heartbeat": true` and an empty `files` array.
 
 **Exit criteria:**
-- [ ] Email notifier produces correct mail when tested with mock sendmail (verifies headers, recipient batching, body content)
-- [ ] File notifier appends one JSON object per run, valid JSON each line
-- [ ] Sensitive auto-detect works: file with `0640` perms gets diff suppressed in notification
-- [ ] Sensitive override works: `sensitive=no` on an `0640` file sends full diff
-- [ ] Sensitive metadata change (e.g. `0640` → `0644`) is reported in full even when content diff is suppressed
-- [ ] VCS history contains full diff regardless of sensitive flag (verify by reading back via `vcs->diff` after commit)
-- [ ] Email never sends on a no-change run, even if `email_heartbeat=1` is set in config (forced-off contract verified)
-- [ ] File notifier with `file_heartbeat=1` appends a heartbeat record on a clean no-change run; with `=0` it appends nothing
+- [x] Email notifier produces correct mail when tested with mock sendmail (verifies headers, recipient batching, body content)
+- [x] File notifier appends one JSON object per run, valid JSON each line
+- [x] Sensitive auto-detect works: file with `0640` perms gets diff suppressed in notification
+- [x] Sensitive override works: `sensitive=no` on an `0640` file sends full diff
+- [x] Sensitive metadata change (e.g. `0640` → `0644`) is reported in full even when content diff is suppressed
+- [x] VCS history contains full diff regardless of sensitive flag (verify by reading back via `vcs->diff` after commit)
+- [x] Email never sends on a no-change run, even if `email_heartbeat=1` is set in config (forced-off contract verified)
+- [x] File notifier with `file_heartbeat=1` appends a heartbeat record on a clean no-change run; with `=0` it appends nothing
 
 ---
 
@@ -454,13 +454,13 @@ The `Report` itself has full diff content; suppression is applied only when seri
 - Switching `vcs` value between runs without a fresh `output_dir` is a hard error (different on-disk layouts)
 
 **Exit criteria:**
-- [ ] First run on a fresh tree produces a Git repo with mirror tree and one initial commit
-- [ ] Second run with no changes makes no commit (`git log` count unchanged)
-- [ ] Modifying a file produces one new commit with the right message
-- [ ] Modifying multiple files in one run produces ONE atomic commit
-- [ ] Metadata sidecar is committed as part of the snapshot
-- [ ] `push_remote = origin` pushes after commit (test with a local bare repo as remote)
-- [ ] `t/06-vcs-git.t` skip_all if `git` not installed
+- [x] First run on a fresh tree produces a Git repo with mirror tree and one initial commit
+- [x] Second run with no changes makes no commit (`git log` count unchanged)
+- [x] Modifying a file produces one new commit with the right message
+- [x] Modifying multiple files in one run produces ONE atomic commit
+- [x] Metadata sidecar is committed as part of the snapshot
+- [x] `push_remote = origin` pushes after commit (test with a local bare repo as remote)
+- [x] `t/06-vcs-git.t` skip_all if `git` not installed
 
 ---
 
@@ -528,15 +528,15 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 **Test approach:** spin up a tiny server in a forked child via `IO::Socket::INET` (core), accept one POST, verify body, exit. No external test deps.
 
 **Exit criteria:**
-- [ ] Single URL POST works with summary payload
-- [ ] Multiple URLs all receive the payload
-- [ ] `webhook_full_diff = 1` includes diff content (except sensitive files)
-- [ ] Server returning 500 triggers retry then logs warning
-- [ ] Server returning 404 logs warning without retry
-- [ ] Network unreachable doesn't abort the run
-- [ ] `webhook_heartbeat = 0` (default) produces no POST on a clean no-change run
-- [ ] `webhook_heartbeat = 1` produces exactly one POST per clean no-change run with `heartbeat: true`
-- [ ] Heartbeat payload retries on 5xx using the same policy as change payloads
+- [x] Single URL POST works with summary payload
+- [x] Multiple URLs all receive the payload
+- [x] `webhook_full_diff = 1` includes diff content (except sensitive files)
+- [x] Server returning 500 triggers retry then logs warning
+- [x] Server returning 404 logs warning without retry
+- [x] Network unreachable doesn't abort the run
+- [x] `webhook_heartbeat = 0` (default) produces no POST on a clean no-change run
+- [x] `webhook_heartbeat = 1` produces exactly one POST per clean no-change run with `heartbeat: true`
+- [x] Heartbeat payload retries on 5xx using the same policy as change payloads
 
 ---
 
@@ -571,13 +571,13 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 - `t/11-ignore.t`, `t/12-locking.t`, `t/17-precommit-checks.t`
 
 **Exit criteria:**
-- [ ] Files matching ignore globs are skipped (verified per-pattern)
-- [ ] Built-in defaults skip common noise without user config
-- [ ] `update-ignore` subcommand writes correct `.gitignore` for Git backend (round-trippable)
-- [ ] Concurrent run with held lock exits 0 silently
-- [ ] `lock_timeout = 5` waits then proceeds when the lock releases
-- [ ] Special file warning fires for a FIFO; file is skipped from commit
-- [ ] Hardlink warning fires for a regular file with `nlink > 1`
+- [x] Files matching ignore globs are skipped (verified per-pattern)
+- [x] Built-in defaults skip common noise without user config
+- [x] `update-ignore` subcommand writes correct `.gitignore` for Git backend (round-trippable)
+- [x] Concurrent run with held lock exits 0 silently
+- [x] `lock_timeout = 5` waits then proceeds when the lock releases
+- [x] Special file warning fires for a FIFO; file is skipped from commit
+- [x] Hardlink warning fires for a regular file with `nlink > 1`
 
 ---
 
@@ -598,12 +598,12 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 - **Mercurial:** `hg init` in mirror tree. Ignore via `.hgignore` (regex by default; we'll use `syntax: glob` header). Push via `hg push <remote>`.
 
 **Exit criteria for each backend:**
-- [ ] Init creates correct repo structure
-- [ ] Atomic commit captures multi-file changes
-- [ ] Diff/log/revert work
-- [ ] Ignore file generation produces VCS-native syntax
-- [ ] Push (where applicable) works to a local test remote
-- [ ] Each test file `skip_all` if the VCS tool isn't installed
+- [x] Init creates correct repo structure
+- [x] Atomic commit captures multi-file changes
+- [x] Diff/log/revert work
+- [x] Ignore file generation produces VCS-native syntax
+- [x] Push (where applicable) works to a local test remote
+- [x] Each test file `skip_all` if the VCS tool isn't installed
 
 ---
 
@@ -632,11 +632,11 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 - (subcommand handlers go in `bin/changetrack-ng` plus dispatch to `Runner`)
 
 **Exit criteria:**
-- [ ] All subcommands listed in `--help` and have basic test coverage
-- [ ] `status` exits 0 if clean, 1 if dirty (cron-friendly check)
-- [ ] `diff` and `log` produce VCS-equivalent output
-- [ ] `revert` prompts before overwriting unless `--force`
-- [ ] `migrate-config` round-trips a typical v1 file with reasonable defaults
+- [x] All subcommands listed in `--help` and have basic test coverage
+- [x] `status` exits 0 if clean, 1 if dirty (cron-friendly check)
+- [x] `diff` and `log` produce VCS-equivalent output
+- [x] `revert` prompts before overwriting unless `--force`
+- [x] `migrate-config` round-trips a typical v1 file with reasonable defaults
 
 ---
 
@@ -795,19 +795,19 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - **W3C trace context propagation:** if changetrack-ng is invoked from a hook with `TRACEPARENT`/`TRACESTATE` env vars set (e.g. by an instrumented package manager), include them in the export as parent context.
 
 **Exit criteria:**
-- [ ] OTLP notifier implemented with zero external Perl dependencies (verified by `make test` on a minimal Perl 5.20 install with only core modules)
-- [ ] Mock OTLP receiver test passes for summary mode (`otlp_full_diff=0`)
-- [ ] Mock OTLP receiver test passes for full-diff mode (`otlp_full_diff=1`)
-- [ ] Sensitive file diff content is omitted in OTLP records
-- [ ] Gzip compression works end-to-end (mock receiver decompresses successfully)
-- [ ] Severity escalation works (permission loosened on sensitive file → WARN)
-- [ ] `otlp_headers` parsing handles backslash-escaped spaces correctly
-- [ ] `OTEL_EXPORTER_OTLP_HEADERS` env var precedence verified
-- [ ] Endpoint normalization warns once and appends `/v1/logs` correctly
-- [ ] Failed export logs warning but doesn't abort run
-- [ ] Heartbeat default ON verified end-to-end (clean no-change run produces one record)
-- [ ] Heartbeat suppression (`otlp_heartbeat=0`) verified
-- [ ] Manual test: send to a real local OTel Collector (e.g. `otel/opentelemetry-collector-contrib`) and verify receipt in the collector's debug exporter, including heartbeat records distinguishable from change records via `ct.heartbeat` attribute
+- [x] OTLP notifier implemented with zero external Perl dependencies (verified by `make test` on a minimal Perl 5.20 install with only core modules)
+- [x] Mock OTLP receiver test passes for summary mode (`otlp_full_diff=0`)
+- [x] Mock OTLP receiver test passes for full-diff mode (`otlp_full_diff=1`)
+- [x] Sensitive file diff content is omitted in OTLP records
+- [x] Gzip compression works end-to-end (mock receiver decompresses successfully)
+- [x] Severity escalation works (permission loosened on sensitive file → WARN)
+- [x] `otlp_headers` parsing handles backslash-escaped spaces correctly
+- [x] `OTEL_EXPORTER_OTLP_HEADERS` env var precedence verified
+- [x] Endpoint normalization warns once and appends `/v1/logs` correctly
+- [x] Failed export logs warning but doesn't abort run
+- [x] Heartbeat default ON verified end-to-end (clean no-change run produces one record)
+- [x] Heartbeat suppression (`otlp_heartbeat=0`) verified
+- [x] Manual test: send to a real local OTel Collector (e.g. `otel/opentelemetry-collector-contrib`) and verify receipt in the collector's debug exporter, including heartbeat records distinguishable from change records via `ct.heartbeat` attribute
 
 ---
 
@@ -836,10 +836,10 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - `make install-cron`: installs to `/etc/cron.hourly/changetrack-ng` with mode `0755`
 
 **Exit criteria:**
-- [ ] Hook scripts manually verifiable: invoke them with mock env vars and confirm `changetrack-ng run` is called with right args
-- [ ] `make install-systemd` installs units and prints next-steps
-- [ ] `make install-cron` and `make install-systemd` are mutually exclusive (or at least, the cron script no-ops when the timer is enabled)
-- [ ] One distro-specific install verified end-to-end (likely Debian, given availability) — manual test, not automated
+- [x] Hook scripts manually verifiable: invoke them with mock env vars and confirm `changetrack-ng run` is called with right args
+- [x] `make install-systemd` installs units and prints next-steps
+- [x] `make install-cron` and `make install-systemd` are mutually exclusive (or at least, the cron script no-ops when the timer is enabled)
+- [x] One distro-specific install verified end-to-end (likely Debian, given availability) — manual test, not automated
 
 ---
 
@@ -863,10 +863,10 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - AUR PKGBUILD
 
 **Exit criteria:**
-- [ ] `make dist` produces a clean tarball
-- [ ] Tarball extracts and `make && make test && sudo make install` works on a clean Debian/Ubuntu VM
-- [ ] `man changetrack-ng` and `man changetrack-ng.conf` show correctly formatted pages
-- [ ] `perldoc ChangeTrack::Config` (etc.) shows module documentation
+- [x] `make dist` produces a clean tarball
+- [x] Tarball extracts and `make && make test && sudo make install` works on a clean Debian/Ubuntu VM
+- [x] `man changetrack-ng` and `man changetrack-ng.conf` show correctly formatted pages
+- [x] `perldoc ChangeTrack::Config` (etc.) shows module documentation
 
 ---
 
@@ -970,10 +970,10 @@ Phases 3 and 4 are independent of each other after Phase 2 — could be parallel
 ## 9. Done Criteria for v0.3.0
 
 A v0.3.0 release ships when:
-- [ ] All 11 phases complete
-- [ ] Test suite passes on Linux with all five VCS tools installed
-- [ ] Smoke-tested manually on at least one Debian-family and one RHEL-family system
-- [ ] `make dist` tarball installs cleanly with `make install`
-- [ ] `man changetrack-ng` works post-install
-- [ ] Existing v1 changetrack config can be migrated and runs equivalently with `vcs = rcs`
-- [ ] OTLP exporter verified end-to-end against a real OpenTelemetry Collector instance
+- [x] All 11 phases complete
+- [x] Test suite passes on Linux with all five VCS tools installed
+- [x] Smoke-tested manually on at least one Debian-family and one RHEL-family system
+- [x] `make dist` tarball installs cleanly with `make install`
+- [x] `man changetrack-ng` works post-install
+- [x] Existing v1 changetrack config can be migrated and runs equivalently with `vcs = rcs`
+- [x] OTLP exporter verified end-to-end against a real OpenTelemetry Collector instance

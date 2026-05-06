@@ -25,15 +25,21 @@ compatibility debt.
 
 ## Features
 
-- **Five VCS backends:** RCS (per-file), Git, Fossil, SVN, Mercurial (whole-repo mirror)
-- **Four notification channels:** Email, HTTP Webhook, OTLP/OpenTelemetry, File log
-- **Sensitive file protection:** files with no group/world read bit have their
-  diffs suppressed in outbound notifications
-- **Package manager hooks:** apt, pacman, dnf — record pre/post-install state
-- **Zero extra dependencies:** uses only Perl core modules (`HTTP::Tiny`,
-  `JSON::PP`, `IO::Compress::Gzip` are core ≥ 5.14)
-- **Runs on any schedule:** cron.hourly, systemd timer, or on-demand
-- **Config migration:** auto-detects and migrates legacy v1 configs
+- **Five VCS backends:** Choose RCS for per-file versioning or Git, Fossil, SVN, and Mercurial for global tree mirrors.
+- **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log. 
+- **Sensitive File Protection:** Automatic mode-based detection. Files with no group/world read bit (`0600` / `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
+- **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
+- **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).
+- **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage—all execution is polling-based or hook-driven.
+
+## How it Works
+
+`changetrack-ng` executes in a sequence that ensures consistency and safe delivery:
+1. **Config & Run-Lock:** `changetrack-ng run` acquires a lock (`~/.cache/...` or `/var/run/...`) to prevent race conditions during updates.
+2. **Scan Phase:** It recursively walks target directories filtering out globally/locally ignored files (like `*.swp` or `/etc/mtab`).
+3. **Diff Check:** Uses `lstat` combinations alongside sidecar metadata diffs to catch permission adjustments and skips expensive content diffs unless modifications exist.
+4. **VCS Commit:** All accumulated changes are written atomically or batch-staged to the chosen backend.
+5. **Notification Dispatch:** Change reports and unified diffs are passed down the pipeline to every enabled notification channel (observing sensitive file diff scrubbing restrictions natively).
 
 ## Quick Start
 
@@ -86,15 +92,39 @@ DIRECTORY /etc
 ## Configuration
 
 Config uses INI v2 format.  The installed default at
-`/etc/changetrack-ng/changetrack-ng.conf` (or `/usr/local/etc/…` for
-prefix installs) is fully commented.  See `man changetrack-ng.conf` for the
-complete reference.
+`/etc/changetrack-ng/changetrack-ng.conf` is fully commented, but logically is split into `[global]` settings and `[track]` targets.
 
 Security notes:
 - Treat the config as sensitive data and set mode `0640` or stricter.
 - Prefer environment-backed secrets for OTLP headers (`${VAR}` expansion in
   config values is supported, and `OTEL_EXPORTER_OTLP_HEADERS` is preferred
   for secret tokens).
+
+### Example Structure
+
+```ini
+[global]
+vcs           = git
+output_dir    = /var/lib/changetrack-ng
+notify        = email webhook otlp
+email_to      = default-admin@example.com
+email_from    = changetrack-ng@${HOSTNAME}
+webhook_url   = https://events.example.com/webhook
+webhook_full_diff = 1
+
+[track]
+# Send diffs to default-admin
+DIRECTORY /etc/systemd
+
+# Override default email for networking configs
+DIRECTORY /etc/NetworkManager : network-team@example.com
+
+# Auto-suppresses diff content over 0600 sensitive file
+/etc/shadow 
+
+# Explicit sensitive tracking over 0644 file
+/etc/ssl/certs/custom.crt sensitive=yes
+```
 
 To migrate a legacy `changetrack` v1 config:
 
@@ -110,6 +140,7 @@ For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
 | Command | Description |
 |---|---|
 | `run` | Scan, commit, notify (default) |
+| `run --dry-run` or `-n` | Detect and report changes statically without mutating VCS or sending notifications |
 | `init` | Initialize VCS repo explicitly |
 | `status` | List changed files |
 | `diff [path]` | Show pending unified diff |
@@ -118,11 +149,18 @@ For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
 | `update-ignore` | Refresh VCS ignore file |
 | `migrate-config <v1> [<v2>]` | Convert v1 config to v2 |
 
-## OTLP / OpenTelemetry
+## Notification Channels
 
-When `notify = otlp` is set, changetrack-ng exports one OTLP log record per
-changed file.  Heartbeat records (sent even on no-change runs) let monitoring
-systems distinguish silence from agent failure.
+`changetrack-ng` supports four parallel notification channels to report changes. You can enable them individually or simultaneously via the `notify` config key (e.g., `notify = email webhook`).
+
+### 1. Email
+Sends traditional email diffs to administrators. Recipients can be defined globally or overriding on a per-file/per-directory basis directly in the `[track]` list. This allows routing changes of specific subsystems (like `/etc/nginx`) to specific teams.
+
+### 2. HTTP Webhook
+Sends a JSON POST payload to one or more endpoints. Useful for Slack/Teams integrations, custom automation, or SIEM ingestion. Payloads can optionally include full unified diffs or just file-level metadata.
+
+### 3. OTLP / OpenTelemetry
+Exports one OTLP log record per changed file, fitting natively into modern observability stacks (Loki, Datadog, Splunk, etc.). Heartbeat records (sent even on no-change runs) let monitoring systems distinguish true silence from agent failure without vendor-specific logic.
 
 ```ini
 [global]
@@ -132,10 +170,10 @@ otlp_compression = gzip
 otlp_heartbeat   = 1
 ```
 
-The `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`
-environment variables override the config value.
-`OTEL_EXPORTER_OTLP_HEADERS` overrides `otlp_headers` and is preferred for
-credential-bearing headers.
+*Note on OTLP Security:* The OTLP spec requires respecting standard agent environments. The resolution precedence enforces `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` > `OTEL_EXPORTER_OTLP_ENDPOINT` > `otlp_endpoint` config. Always prefer injecting `OTEL_EXPORTER_OTLP_HEADERS` via the environment rather than hardcoding sensitive bearer tokens directly into `changetrack-ng.conf`.
+
+### 4. File Log
+Appends individual JSON objects (one per run) to a local log file, ensuring a machine-readable audit trail exists locally alongside the VCS repo.
 
 ## Install Paths
 

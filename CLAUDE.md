@@ -12,7 +12,7 @@ This file provides guidance to AI coding assistants (Claude, Copilot, etc.) when
 make test                  # Run full test suite via `prove -l t/`
 prove -l t/06-vcs-git.t    # Run a single test file
 make install               # Install to /usr/local (override with PREFIX=...)
-make install-hooks         # Install package manager hooks (auto-detects apt/dnf/pacman/zypper)
+make install-hooks         # Install package manager hooks (auto-detects apt/dnf/pacman)
 make install-systemd       # Install systemd timer (templates @BINDIR@)
 make install-cron          # Install hourly cron job
 make dist                  # Build release tarball
@@ -90,9 +90,9 @@ All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with 
 
 - `otlp_headers` and `otlp_resource_attributes` type handling is fragile (scalar vs arrayref depends on whether config has a value)
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
-- Notifier constructor block is duplicated in `Runner::run()` and `Runner::_validate_notifier_startup()`
-- Webhook `_count_added`/`_count_removed` overcounts by including unified diff header lines
-- Ignore pattern regexes are recompiled per-file instead of precompiled once per run
+- `Util::run_cmd()` IO::Select timeout is hardcoded to 30s instead of accepting a parameter for slow VCS ops
+- Report/change accumulator (`Report.pm`) lacks standalone coverage testing
+- No feature flag to exclude specific files within an already globally tracked directory path
 
 ## Key Design Constraints
 
@@ -157,5 +157,5 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 
 ## Implementation Status
 
-All phases (1–11) from `PLAN.md` are complete. The project is at version 0.4.3.
-Tests in `t/` cover all implemented modules. See `TODO.md` for remaining improvements.
+All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.4.3.
+Tests in `t/` (313 total) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
