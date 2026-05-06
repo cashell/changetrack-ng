@@ -6,4 +6,4 @@ if command -v systemctl >/dev/null 2>&1; then
         exit 0
     fi
 fi
-exec @BINDIR@/changetrack-ng run
+exec @BINDIR@/changetrack-ng run --quiet

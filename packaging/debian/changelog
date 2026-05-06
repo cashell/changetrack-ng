@@ -1,3 +1,11 @@
+changetrack-ng (0.5.1) unstable; urgency=medium
+
+  * Fix: all unattended invocations (apt, pacman hooks; cron; systemd service) now
+    pass --quiet, preventing change reports from flooding terminal output during
+    package manager operations. DNF plugin was already fully silent.
+
+ -- Christopher Cashell <topher@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.0) unstable; urgency=medium
 
   * Add config_keys() to each notifier; Runner::_build_notifier filters args

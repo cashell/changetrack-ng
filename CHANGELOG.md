@@ -4,6 +4,13 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-06
+
+### Fixed
+- All unattended invocations (apt, pacman hooks; cron; systemd) now pass `--quiet` by default,
+  preventing change reports from flooding terminal output during package manager operations.
+  DNF plugin was already fully silent via `subprocess.DEVNULL`.
+
 ## [0.5.0] - 2026-05-06
 
 ### Added

@@ -5,6 +5,6 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/changetrack-ng run
+ExecStart=/usr/bin/changetrack-ng run --quiet
 StandardOutput=journal
 StandardError=journal

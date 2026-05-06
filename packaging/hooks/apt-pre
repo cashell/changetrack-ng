@@ -1,3 +1,3 @@
 // changetrack-ng pre-install hook for apt
 // Installed to /etc/apt/apt.conf.d/80changetrack-ng-pre by `make install-hooks`
-DPkg::Pre-Install-Pkgs {"changetrack-ng run -m 'pre-install: apt' 2>/dev/null || true";};
+DPkg::Pre-Install-Pkgs {"changetrack-ng run --quiet -m 'pre-install: apt' 2>/dev/null || true";};

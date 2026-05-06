@@ -1,3 +1,3 @@
 // changetrack-ng post-install hook for apt
 // Installed to /etc/apt/apt.conf.d/80changetrack-ng-post by `make install-hooks`
-DPkg::Post-Invoke {"changetrack-ng run -m 'post-install: apt' 2>/dev/null || true";};
+DPkg::Post-Invoke {"changetrack-ng run --quiet -m 'post-install: apt' 2>/dev/null || true";};
