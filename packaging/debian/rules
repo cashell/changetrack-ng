@@ -46,5 +46,8 @@ override_dh_installsystemd:
 	dh_installsystemd --no-enable changetrack-ng.service
 	dh_installsystemd changetrack-ng.timer
 
+override_dh_installdocs:
+	dh_installdocs README.md INSTALL.md ARCHITECTURE.md
+
 override_dh_installchangelogs:
 	dh_installchangelogs CHANGELOG.md

@@ -21,4 +21,4 @@ Description: system file change tracker with pluggable VCS and notification supp
  It combines the per-file flexibility of the original changetrack (last
  maintained 2009) with the modern VCS and package-manager integration
  of etckeeper. Supports systemd timer, cron.hourly, and package manager
- hooks for apt and pacman.
+ hooks for apt, dnf, and pacman.
