@@ -198,6 +198,11 @@ close($fh);
 
 # ── CLI: diff ─────────────────────────────────────────────────────────────────
 
+# Reset file to purple and commit so diff test has expected state
+open($fh, '>', $test_file) or die $!;
+print $fh "color = purple\n";
+close($fh);
+
 {
     my $output = `$^X $bin --config $cfg -q diff \Q$test_file\E 2>&1`;
     like($output, qr/purple/, 'CLI diff <path>: shows modification in output');

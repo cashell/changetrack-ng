@@ -201,12 +201,13 @@ use_ok('ChangeTrack::Metadata');
     is($rec->{type}, 'symlink', 'symlink: type recorded');
     is(File::Spec->canonpath($rec->{target}), File::Spec->canonpath($target_a),
         'symlink: target captured');
+
+    $md->{original} = { map { $_ => { %{ $md->{records}{$_} } } } keys %{ $md->{records} } };
+
     SKIP: {
         skip 'symlink target normalization differs on Windows', 1 if $^O eq 'MSWin32';
         ok($md->can_skip_content_diff($link), 'symlink: can skip when target unchanged');
     }
-
-    $md->{original} = { map { $_ => { %{ $md->{records}{$_} } } } keys %{ $md->{records} } };
 
     unlink($link) or die $!;
     symlink($target_b, $link) or die "cannot switch symlink target: $!";
