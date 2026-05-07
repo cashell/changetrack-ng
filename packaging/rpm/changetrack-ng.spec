@@ -7,7 +7,7 @@ Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
 License:        GPL-3.0-or-later
-URL:            https://github.com/changetrack-ng/changetrack-ng
+URL:            https://github.com/cashell/changetrack-ng
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch

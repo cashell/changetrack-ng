@@ -2,6 +2,8 @@
 
 All notable changes will be documented here.
 
+**Project homepage:** <https://github.com/cashell/changetrack-ng>
+
 ## [Unreleased]
 
 ## [0.5.1] - 2026-05-06
