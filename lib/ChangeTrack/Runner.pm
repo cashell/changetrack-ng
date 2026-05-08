@@ -653,13 +653,18 @@ sub status {
     my ($self) = @_;
     my ($vcs, $cfg) = $self->_setup;
     my $entries = $self->_tracked_entries($cfg);
+    my $md      = $self->_load_metadata($cfg);
 
     my @results;
     for my $entry (@$entries) {
-        next unless -e $entry->{path} || -l $entry->{path};
-        next if _is_non_diffable($entry->{path});
-        my $diff = eval { $vcs->diff($entry->{path}) } // [];
-        push @results, { path => $entry->{path}, diff => $diff } if @$diff;
+        my $path = $entry->{path};
+        next unless -e $path || -l $path;
+        next if _is_non_diffable($path);
+        next if defined $md->record_for($path)
+             && $md->can_skip_content_diff($path)
+             && !$md->changed_since_load($path);
+        my $diff = eval { $vcs->diff($path) } // [];
+        push @results, { path => $path, diff => $diff } if @$diff;
     }
     return \@results;
 }
@@ -669,18 +674,28 @@ sub status {
 sub diff_path {
     my ($self, $path) = @_;
     my ($vcs, $cfg) = $self->_setup;
+    my $md          = $self->_load_metadata($cfg);
 
     if (defined $path) {
+        if (defined $md->record_for($path)
+            && $md->can_skip_content_diff($path)
+            && !$md->changed_since_load($path)) {
+            return { $path => [] };
+        }
         return { $path => $vcs->diff($path) };
     }
 
     my $entries = $self->_tracked_entries($cfg);
     my %result;
     for my $entry (@$entries) {
-        next unless -e $entry->{path} || -l $entry->{path};
-        next if _is_non_diffable($entry->{path});
-        my $diff = eval { $vcs->diff($entry->{path}) } // [];
-        $result{$entry->{path}} = $diff if @$diff;
+        my $ep = $entry->{path};
+        next unless -e $ep || -l $ep;
+        next if _is_non_diffable($ep);
+        next if defined $md->record_for($ep)
+             && $md->can_skip_content_diff($ep)
+             && !$md->changed_since_load($ep);
+        my $diff = eval { $vcs->diff($ep) } // [];
+        $result{$ep} = $diff if @$diff;
     }
     return \%result;
 }
@@ -698,12 +713,21 @@ sub log_path {
     my $entries = $self->_tracked_entries($cfg);
     my %result;
     for my $entry (@$entries) {
-        next unless -e $entry->{path} || -l $entry->{path};
-        next if _is_non_diffable($entry->{path});
-        my $log = eval { $vcs->log_history($entry->{path}) } // [];
-        $result{$entry->{path}} = $log;
+        my $ep = $entry->{path};
+        next unless -e $ep || -l $ep;
+        next if _is_non_diffable($ep);
+        next unless -e $vcs->output_path($ep);
+        my $log = eval { $vcs->log_history($ep) } // [];
+        $result{$ep} = $log;
     }
     return \%result;
+}
+
+# Load the metadata sidecar for the configured output_dir.
+sub _load_metadata {
+    my ($self, $cfg) = @_;
+    my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
+    return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
 }
 
 # _is_non_diffable($path) — true for files that cannot produce meaningful diffs

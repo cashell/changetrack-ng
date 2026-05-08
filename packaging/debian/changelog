@@ -1,3 +1,11 @@
+changetrack-ng (0.5.2) unstable; urgency=medium
+
+  * Perf: status, diff, and log subcommands now apply the metadata fast-path,
+    skipping unchanged files without spawning a VCS process per file.
+  * Add t/16-subcommands.t: coverage for status/diff fast-path and clean-file diff_path.
+
+ -- Christopher Cashell <topher@zyp.org>  Fri, 08 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.1) unstable; urgency=medium
 
   * Fix: all unattended invocations (apt, pacman hooks; cron; systemd service) now

@@ -71,6 +71,14 @@ close($fh);
     is(scalar @$changed, 0, 'status: empty when working copy matches committed state');
 }
 
+# diff_path on a clean file: fast-path returns empty diff without touching VCS
+{
+    my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
+    my $diffs  = $runner->diff_path($test_file);
+    ok(exists $diffs->{$test_file}, 'diff_path(file): key present for clean file');
+    is(scalar @{ $diffs->{$test_file} }, 0, 'diff_path(file): empty diff for clean file');
+}
+
 # Modify the file without running (creates a dirty state)
 open($fh, '>', $test_file) or die $!;
 print $fh "color = green\n";
@@ -281,6 +289,27 @@ close($fh);
 
     my $rev = readlink($link);
     is($rev, $target_a, 'CLI revert symlink: target restored to previous revision');
+}
+
+# ── status fast-path: only changed file surfaces when multiple are tracked ─────
+
+{
+    my $file_a = "$tracked_dir/alpha.conf";
+    my $file_b = "$tracked_dir/beta.conf";
+    open(my $fha, '>', $file_a) or die $!; print $fha "a = 1\n"; close($fha);
+    open(my $fhb, '>', $file_b) or die $!; print $fhb "b = 1\n"; close($fhb);
+    chmod(0644, $_) for ($file_a, $file_b);
+
+    my $cfg2 = write_config($file_a, $file_b);
+    { ChangeTrack::Runner->new(config => $cfg2, quiet => 1)->run; }
+
+    # Modify only file_a; file_b is untouched (mtime+size+metadata all match)
+    open(my $fha2, '>', $file_a) or die $!; print $fha2 "a = 2\n"; close($fha2);
+
+    my $runner  = ChangeTrack::Runner->new(config => $cfg2, quiet => 1);
+    my $changed = $runner->status;
+    is(scalar @$changed, 1, 'status fast-path: only modified file appears (unchanged file skipped)');
+    is($changed->[0]{path}, $file_a, 'status fast-path: correct file identified as changed');
 }
 
 done_testing();

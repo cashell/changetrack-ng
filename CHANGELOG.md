@@ -6,6 +6,22 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-08
+
+### Performance
+- `status`, `diff`, and `log` subcommands now apply the metadata sidecar fast-path,
+  skipping unchanged files without spawning a VCS process per file. Previously, these
+  subcommands invoked the VCS backend once per tracked file regardless of change state.
+  The fast-path (`can_skip_content_diff` + `changed_since_load`) was already used by
+  `run`; it is now consistently applied across all read-only subcommands.
+- `log_path(undef)` additionally skips files where the VCS mirror path doesn't exist
+  (never committed, no history to retrieve).
+
+### Tests
+- `t/16-subcommands.t`: added fast-path test for `diff_path` on a clean file (expects
+  empty result without VCS call) and a multi-file `status` fast-path test confirming
+  only the modified file surfaces when one of two tracked files is unchanged.
+
 ## [0.5.1] - 2026-05-06
 
 ### Fixed
