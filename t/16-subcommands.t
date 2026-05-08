@@ -303,8 +303,9 @@ close($fh);
     my $cfg2 = write_config($file_a, $file_b);
     { ChangeTrack::Runner->new(config => $cfg2, quiet => 1)->run; }
 
-    # Modify only file_a; file_b is untouched (mtime+size+metadata all match)
-    open(my $fha2, '>', $file_a) or die $!; print $fha2 "a = 2\n"; close($fha2);
+    # Modify only file_a with different-length content so size change is detectable
+    # even if mtime hasn't advanced (same-second write on fast systems).
+    open(my $fha2, '>', $file_a) or die $!; print $fha2 "a = 2\na = modified\n"; close($fha2);
 
     my $runner  = ChangeTrack::Runner->new(config => $cfg2, quiet => 1);
     my $changed = $runner->status;
