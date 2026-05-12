@@ -19,7 +19,6 @@ use Carp qw(croak carp);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use File::Spec ();
-use Cwd qw(getcwd);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
@@ -46,29 +45,31 @@ sub _rel_path {
     return $rel;
 }
 
-# Run a fossil command from within the output_dir (the open checkout).
+# Run a fossil command inside the checkout by using fossil's own --chdir option.
+# This avoids relying on Perl's chdir(), which is unreliable under systemd where
+# the process CWD may not be set to a usable directory.
 sub _run {
     my ($self, @cmd) = @_;
-    my $old = getcwd();
-    chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
+    my ($prog, @rest) = @cmd;
     my $r;
     my $err;
     if ($self->{verbose}) {
-        warn "[Fossil] run: @cmd\n";
+        warn "[Fossil] run in $self->{output_dir}: @rest\n";
     }
     eval {
-        $r = run_cmd(cmd => \@cmd);
+        $r = run_cmd(cmd => [$prog, '--chdir', $self->{output_dir}, @rest]);
         1;
     } or do {
         $err = $@ || 'unknown fossil command failure';
     };
-    chdir($old) or croak "chdir back to $old: $!";
     die $err if defined $err;
     if ($self->{verbose}) {
+        my $stdout = $r->{stdout} // '';
+        my $stderr = $r->{stderr} // '';
         warn "[Fossil] exit=" . ($r->{success} ? 0 : ($r->{exit_code} // '?'))
-           . (length($r->{stdout} // '') ? " stdout=$r->{stdout}" : '')
-           . (length($r->{stderr} // '') ? " stderr=$r->{stderr}" : '') . "\n"
-            if $r->{stdout} =~ /\S/ || $r->{stderr} =~ /\S/ || !$r->{success};
+           . (length($stdout) ? " stdout=$stdout" : '')
+           . (length($stderr) ? " stderr=$stderr" : '') . "\n"
+            if $stdout =~ /\S/ || $stderr =~ /\S/ || !$r->{success};
     }
     return $r;
 }
@@ -187,7 +188,7 @@ sub add {
 
     # 'fossil add' is idempotent: new files are ADDED, tracked files are SKIP.
     my $r = $self->_run('fossil', 'add', '--', $rel);
-    croak "fossil add failed: $r->{stderr}" unless $r->{success};
+    croak "fossil add failed for '$real_path': $r->{stderr}" unless $r->{success};
 }
 
 sub checkin {

@@ -5,6 +5,7 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
+WorkingDirectory=/
 ExecStart=@BINDIR@/changetrack-ng run --quiet
 StandardOutput=journal
 StandardError=journal
