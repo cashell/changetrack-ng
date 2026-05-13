@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.5.2
+Version:        0.5.3
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -109,6 +109,10 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Tue May 12 2026 Christopher Cashell <topher@zyp.org> - 0.5.3-1
+- Fix: Fossil backend sets FOSSIL_HOME when HOME is absent (systemd service
+  environment), resolving "not within an open check-out" errors
+
 * Fri May 08 2026 Christopher Cashell <topher@zyp.org> - 0.5.2-1
 - Perf: status, diff, and log subcommands now apply metadata fast-path,
   skipping unchanged files without spawning a VCS process per file

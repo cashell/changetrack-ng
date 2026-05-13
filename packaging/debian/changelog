@@ -1,3 +1,10 @@
+changetrack-ng (0.5.3) unstable; urgency=medium
+
+  * Fix: Fossil backend sets FOSSIL_HOME when HOME is absent in the service
+    environment, resolving "not within an open check-out" errors under systemd.
+
+ -- Christopher Cashell <topher@zyp.org>  Tue, 12 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.2) unstable; urgency=medium
 
   * Perf: status, diff, and log subcommands now apply the metadata fast-path,
