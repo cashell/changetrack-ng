@@ -223,5 +223,42 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
     like($remote_tl->{stdout}, qr/Push test commit/, 'push_remote: commit visible in remote repo');
 }
 
+
+# ── FOSSIL_HOME / HOME environment variable behavior ──────────────────────────
+
+{
+    # Simulate systemd service environment: HOME and FOSSIL_HOME absent.
+    # _run() must set FOSSIL_HOME=output_dir so fossil can find its user db.
+    local $ENV{HOME};
+    delete $ENV{HOME};
+    local $ENV{FOSSIL_HOME};
+    delete $ENV{FOSSIL_HOME};
+
+    my $err = do { local $@; eval { $vcs->_run('fossil', 'changes') }; $@ };
+    is($err, '', '_run: fossil succeeds with HOME and FOSSIL_HOME absent (systemd env)');
+}
+
+{
+    # When HOME is set, _run() skips the FOSSIL_HOME override.
+    local $ENV{HOME}       = ($ENV{HOME} // $output_dir);
+    local $ENV{FOSSIL_HOME};
+    delete $ENV{FOSSIL_HOME};
+
+    my $err = do { local $@; eval { $vcs->_run('fossil', 'changes') }; $@ };
+    is($err, '', '_run: fossil succeeds when HOME is present');
+}
+
+{
+    # When FOSSIL_HOME is already set, _run() must not override it.
+    my $custom_fossil_home = tempdir(CLEANUP => 1);
+    local $ENV{HOME};
+    delete $ENV{HOME};
+    local $ENV{FOSSIL_HOME} = $custom_fossil_home;
+
+    my $err = do { local $@; eval { $vcs->_run('fossil', 'changes') }; $@ };
+    is($err, '', '_run: fossil succeeds with pre-set FOSSIL_HOME');
+    is($ENV{FOSSIL_HOME}, $custom_fossil_home, '_run: pre-set FOSSIL_HOME not overridden');
+}
+
 DONE:
 done_testing();
