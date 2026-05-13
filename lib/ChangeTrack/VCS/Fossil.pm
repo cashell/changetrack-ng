@@ -56,6 +56,13 @@ sub _run {
     if ($self->{verbose}) {
         warn "[Fossil] run in $self->{output_dir}: @rest\n";
     }
+    # Fossil needs a home directory for its user database (.fossil file). Under
+    # systemd, HOME is not set in the service environment, causing fossil to fail
+    # even when the checkout is accessible. Use output_dir so fossil can
+    # create/find its .fossil file alongside the other fossil state files.
+    local $ENV{FOSSIL_HOME} = $self->{output_dir}
+        unless $ENV{HOME} || $ENV{FOSSIL_HOME};
+
     eval {
         $r = run_cmd(cmd => [$prog, '--chdir', $self->{output_dir}, @rest]);
         1;
