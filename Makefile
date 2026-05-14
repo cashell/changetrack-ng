@@ -19,7 +19,7 @@ DESTDIR    ?=
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
+.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -34,6 +34,7 @@ all:
 	@echo "  make dist-minimal    Build minimal fatpacked deployment tarball"
 	@echo "  make fatpack         Build standalone single-file script (requires App::FatPacker)"
 	@echo "  make install-hooks   Install package manager hooks"
+	@echo "  make install-debug-hooks Install debug hooks (verbose log to /var/log/changetrack-ng-apt-debug.log)"
 	@echo "  make install-systemd Install systemd timer"
 	@echo "  make install-cron    Install cron.hourly job"
 	@echo "  make install-user    Install under ~/.local + ~/.config"
@@ -209,6 +210,17 @@ install-hooks:
 		fi; \
 	else \
 		echo "No supported package manager detected; install hooks manually from packaging/hooks/"; \
+	fi
+
+install-debug-hooks:
+	@if command -v apt-get >/dev/null 2>&1; then \
+		echo "Detected apt; installing debug hooks..."; \
+		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-pre-debug  /etc/apt/apt.conf.d/80$(NAME)-pre  || true; \
+		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-post-debug /etc/apt/apt.conf.d/80$(NAME)-post || true; \
+		echo "Debug hooks installed. Run 'apt update && apt upgrade' then check /var/log/changetrack-ng-apt-debug.log"; \
+		echo "Restore production hooks with: make install-hooks"; \
+	else \
+		echo "Debug hooks are only supported for apt; no action taken"; \
 	fi
 
 install-systemd:

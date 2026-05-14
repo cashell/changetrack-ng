@@ -1,0 +1,4 @@
+// changetrack-ng pre-install debug hook for apt
+// Installed to /etc/apt/apt.conf.d/80changetrack-ng-pre by `make install-debug-hooks`
+// Captures verbose debug output to /var/log/changetrack-ng-apt-debug.log
+DPkg::Pre-Install-Pkgs {"changetrack-ng run --debug -m 'pre-install: apt' >> /var/log/changetrack-ng-apt-debug.log 2>&1 || true";};
