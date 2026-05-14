@@ -41,7 +41,7 @@ No build step required — Perl modules are used directly from `lib/`.
 | `Config.pm` | INI v2 parser; strict key validation; auto-detects v1; `HOSTNAME` interpolation |
 | `Metadata.pm` | JSONL sidecar (`.changetrack-metadata`); stat snapshots; atomic save |
 | `Report.pm` | Per-run change accumulator; passed to notifiers |
-| `Util.pm` | `hostname()`, `run_cmd()` (IPC::Open3, no shell), `sync_mirror_path()` |
+| `Util.pm` | `hostname()`, `run_cmd()` (IPC::Open3, no shell), `sync_mirror_path()`, `set_debug()` |
 | `Lock.pm` | `flock(2)` pidfile; timeout/force modes |
 | `Version.pm` | Single-source version authority |
 
@@ -63,7 +63,18 @@ No build step required — Perl modules are used directly from `lib/`.
 ## Critical Implementation Details
 
 ### Command execution safety
-All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with list-form arguments (never shell interpolation). This is a deliberate security boundary — preserve it.
+All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with list-form arguments (never shell interpolation). This is a deliberate security boundary — preserve it. When `$ChangeTrack::Util::DEBUG` is set (via `set_debug(1)`), `run_cmd()` emits `[DEBUG] exec:` lines to STDERR showing every command invoked.
+
+### Diagnostic output tiers
+Three levels, each implying the ones below it:
+
+| Flag | Label | Output to | Purpose |
+|------|-------|-----------|----------|
+| `--verbose/-v` | `[VERBOSE]` | STDERR | High-level run structure: config path, VCS/output_dir, lock status, file counts, commit/notify milestones |
+| `--debug/-d` | `[DEBUG]` | STDERR | Every external command (via `run_cmd`), effective config dump (secrets redacted), files where action is taken, notification outcomes |
+| `--trace/-t` | `[TRACE]` | STDERR | Per-file disposition for ALL tracked files (O(N) output): fast-path skips, type classifications, ignore-pattern matches |
+
+Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic output uses `warn` (STDERR) to keep STDOUT clean for subcommand data output (`diff`, `status`, `log`).
 
 ### Config data shapes
 - Array-valued keys: `notify`, `ignore`, `webhook_url`, `push_remote`, `email_to` — returned as arrayrefs
@@ -131,12 +142,29 @@ All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with 
 - VCS-dependent tests skip (`plan skip_all`) if the binary isn't available.
 - On non-Unix systems, expect `getpwuid/getgrgid` and fork/sendmail limitations; prefer skip guards.
 
+## Documentation Requirements
+
+All user-visible changes, interface additions, and behavior changes must be documented before the work is considered complete. At minimum:
+- `CHANGELOG.md`: add an entry under `[Unreleased]` (or the target version) describing what changed and why.
+- `README.md`: update or add sections for any new flags, subcommands, or behavioral options.
+- `PRODUCT.md`: update if the change affects product-level features or observable behavior.
+- `CONTRIBUTING.md`: update if the change affects developer workflow, module structure, or coding conventions.
+
 ## Version Management
 
 **Single-source version:** `lib/ChangeTrack/Version.pm` is the Perl-side authority (`our $VERSION = '...'`).
 All other `lib/` modules use `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`.
-The `Makefile` `VERSION` variable is the build-system authority; keep both in sync on version bumps.
-`packaging/rpm/changetrack-ng.spec` `Version:` and the `%changelog` entry must also be updated manually.
+
+On every version bump, update **all** of the following in sync:
+
+| File | What to update |
+|---|---|
+| `lib/ChangeTrack/Version.pm` | `our $VERSION = '...'` |
+| `Makefile` | `VERSION := ...` |
+| `CHANGELOG.md` | Move `[Unreleased]` items into a new `[x.y.z] - YYYY-MM-DD` section |
+| `packaging/rpm/changetrack-ng.spec` | `Version:` field and a new `%changelog` entry |
+| `packaging/debian/changelog` | New entry in `dpkg-style` format (version, distro, urgency, details, maintainer line) |
+| `PRODUCT.md` | `Version:` header in the frontmatter |
 
 ## Copyright and Licensing
 
@@ -156,4 +184,4 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 ## Implementation Status
 
 All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.5.0.
-Tests in `t/` (313 total) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
+Tests in `t/` (764 total) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.

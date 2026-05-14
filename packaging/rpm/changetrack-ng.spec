@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.5.3
+Version:        0.5.4
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -109,6 +109,15 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Wed May 14 2026 Christopher Cashell <topher@zyp.org> - 0.5.4-1
+- Add three-tier diagnostic system: --verbose/-v (high-level run structure),
+  --debug/-d (external commands + effective config with secrets redacted),
+  --trace/-t (per-file disposition for every tracked path, O(N) output).
+  Implication chain: --trace enables --debug; --debug enables --verbose.
+  All diagnostic output goes to STDERR; STDOUT stays clean.
+- Add t/22-verbose-debug.t: 42-test suite for the diagnostic tiers
+- Add PRODUCT.md and CONTRIBUTING.md project documentation files
+
 * Tue May 12 2026 Christopher Cashell <topher@zyp.org> - 0.5.3-1
 - Fix: Fossil backend sets FOSSIL_HOME when HOME is absent (systemd service
   environment), resolving "not within an open check-out" errors

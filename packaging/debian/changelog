@@ -1,3 +1,15 @@
+changetrack-ng (0.5.4) unstable; urgency=medium
+
+  * Add three-tier diagnostic system: --verbose/-v (high-level run structure),
+    --debug/-d (external commands + effective config with secrets redacted),
+    --trace/-t (per-file disposition for all tracked paths, O(N) output).
+    Implication chain: --trace enables --debug; --debug enables --verbose.
+    All diagnostic output goes to STDERR; STDOUT stays clean.
+  * Add t/22-verbose-debug.t: 42-test suite for the diagnostic tiers.
+  * Add PRODUCT.md and CONTRIBUTING.md project documentation files.
+
+ -- Christopher Cashell <topher@zyp.org>  Wed, 14 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.3) unstable; urgency=medium
 
   * Fix: Fossil backend sets FOSSIL_HOME when HOME is absent in the service

@@ -55,7 +55,11 @@ use File::Copy qw(copy);
 # SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 our @ISA     = qw(Exporter);
-our @EXPORT_OK = qw(hostname fqdn run_cmd sync_mirror_path restore_mirror_path);
+our @EXPORT_OK = qw(hostname fqdn run_cmd sync_mirror_path restore_mirror_path set_debug);
+
+our $DEBUG = 0;
+
+sub set_debug { $DEBUG = $_[0] ? 1 : 0 }
 
 my $SYMLINK_SNAPSHOT_PREFIX = '__CHANGTRACK_NG_SYMLINK_TARGET__=';
 
@@ -134,7 +138,16 @@ sub run_cmd {
 
     eval { $pid = IPC::Open3::open3($in_fh, $out_fh, $err_fh, @$cmd) };
     if ($@) {
+        if ($DEBUG) {
+            my $cmd_str = join(' ', @$cmd);
+            warn "[changetrack-ng][][DEBUG] exec failed: $cmd_str -- $@\n";
+        }
         return { success => 0, stdout => '', stderr => "exec failed: $@", exit_code => -1 };
+    }
+
+    if ($DEBUG) {
+        my $cmd_str = join(' ', @$cmd);
+        warn "[changetrack-ng][][DEBUG] exec: $cmd_str\n";
     }
 
     if (length $input) {
@@ -159,6 +172,14 @@ sub run_cmd {
 
     waitpid($pid, 0);
     my $exit_code = $? >> 8;
+
+    if ($DEBUG && $exit_code != 0) {
+        my $err_out = $buf{fileno($err_fh)} // '';
+        $err_out = substr($err_out, 0, 200) . '...' if length($err_out) > 200;
+        $err_out =~ s/\n/ /g;
+        my $cmd_str = join(' ', @$cmd);
+        warn "[changetrack-ng][][DEBUG] exec failed (exit=$exit_code): $cmd_str -- $err_out\n";
+    }
 
     return {
         success   => ($exit_code == 0),

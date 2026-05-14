@@ -137,6 +137,20 @@ sudo changetrack-ng migrate-config /etc/changetrack.conf
 For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
 
+## Global Options
+
+These flags apply to all subcommands:
+
+| Flag | Short | Description |
+|---|---|---|
+| `--verbose` | `-v` | Show high-level run structure: config path, VCS backend, lock status, file counts, commit and notify outcomes |
+| `--debug` | `-d` | Show all external commands run, effective config values (secrets redacted), per-file actions taken. Implies `--verbose`. |
+| `--trace` | `-t` | Show per-file disposition for every tracked path (O(N): fast-path skips, type classifications, ignore matches). Implies `--debug`. |
+| `--quiet` | `-q` | Suppress all INFO output. Intended for unattended/cron/hook invocations. |
+| `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications. |
+
+All diagnostic output (`--verbose`, `--debug`, `--trace`) goes to **STDERR**. STDOUT remains clean and contains only subcommand data (diffs, status listings, log output), making it safe to pipe.
+
 ## Subcommands
 
 | Command | Description |

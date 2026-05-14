@@ -6,6 +6,30 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-05-14
+
+### Added
+- Three-tier diagnostic system with `--verbose/-v`, `--debug/-d`, and `--trace/-t` flags.
+  - `--verbose`: high-level run structure — config path, VCS backend, lock lifecycle, file
+    counts, commit/notify milestones, and run summary.
+  - `--debug`: every external command run (via `run_cmd`), effective config values (keys
+    matching `header`, `secret`, `token`, or `password` redacted as `***REDACTED***`),
+    per-file actions taken (new/changed/removed only), and notification outcomes.
+  - `--trace`: per-file disposition for **all** tracked paths (O(N) output): fast-path
+    skips, type classifications, ignore-pattern and internal-path exclusions.
+  - Implication chain: `--trace` implies `--debug`; `--debug` implies `--verbose`.
+    Chain is enforced at both the CLI layer (`bin/changetrack-ng`) and in `Runner::new()`.
+  - All diagnostic output uses STDERR (`warn`); STDOUT remains clean for subcommand data
+    (`diff`, `status`, `log`), making it safe to pipe.
+- `Util::set_debug($bool)` and `$ChangeTrack::Util::DEBUG` package variable. `run_cmd()`
+  emits `[DEBUG] exec: <cmd>` to STDERR before each subprocess, and on non-zero exit.
+- `VCS::Base::new()` now accepts and stores `debug` and `trace` arguments.
+- `t/22-verbose-debug.t`: 42-test suite covering implication chain, tier isolation,
+  secrets redaction, `run_cmd()` debug logging, and STDOUT/STDERR separation.
+- `PRODUCT.md`: product-facing overview of functionality, architecture, and diagnostics.
+- `CONTRIBUTING.md`: developer guidelines covering coding style, testing, security, and
+  dependency policy.
+
 ## [0.5.2] - 2026-05-08
 
 ### Performance

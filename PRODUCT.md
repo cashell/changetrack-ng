@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.5.0
+Version: 0.5.4
 
 ---
 
@@ -121,6 +121,34 @@ The flock-based lock ensures concurrent invocations (e.g., cron + package hook) 
 | Unreadable file | Metadata only (warns on first detection) | `/etc/shadow` |
 | Special (FIFO, socket, device) | Metadata only (warns) | `/dev/log` |
 | Missing (previously tracked) | Reported as removed | Deleted config files |
+
+---
+
+## Diagnostics
+
+Three levels of diagnostic output are available, all written to STDERR (keeping STDOUT clean for subcommand data):
+
+| Flag | Level | Implies | What it shows |
+|------|-------|---------|---------------|
+| `-v, --verbose` | `[VERBOSE]` | — | High-level run structure: config file path used, VCS backend and output directory, lock status, resolved path count, commit and notification milestones, run summary |
+| `-d, --debug` | `[DEBUG]` | verbose | Every external VCS command with full arguments, effective config values (secrets redacted), files where action is taken (new/changed/removed), notification send outcomes |
+| `-t, --trace` | `[TRACE]` | debug | Per-file disposition for every tracked file — fast-path skips (mtime+size unchanged), type classifications, ignore-pattern matches. Produces O(N) output for N tracked files. Use for diagnosing why a specific file is or isn't being tracked. |
+
+Examples:
+
+```bash
+# High-level run overview
+changetrack-ng --verbose run
+
+# Full diagnostic detail (commands + actioned files)
+changetrack-ng --debug run 2>debug.log
+
+# Everything including per-file decisions (can be very large)
+changetrack-ng --trace run 2>trace.log
+
+# Inspect config + VCS commands without modifying anything
+changetrack-ng --debug --dry-run run
+```
 
 ---
 

@@ -69,6 +69,8 @@ sub new {
         output_dir => $args{output_dir} // '/var/lib/changetrack-ng',
         options    => $args{options}    // {},
         verbose    => $args{verbose}    // 0,
+        debug      => $args{debug}     // 0,
+        trace      => $args{trace}     // 0,
     }, $class;
 }
 

@@ -28,7 +28,7 @@ C<diff_path>, C<log_path>, C<revert_path>) are also exposed for the CLI.
 =item ChangeTrack::Runner->new(%opts)
 
 Accepted options: C<config>, C<message>, C<no_auto_init>, C<quiet>,
-C<verbose>, C<force>.
+C<verbose>, C<debug>, C<trace>, C<force>.
 
 =back
 
@@ -76,7 +76,7 @@ use ChangeTrack::Config;
 use ChangeTrack::Lock;
 use ChangeTrack::Metadata;
 use ChangeTrack::Report;
-use ChangeTrack::Util qw(hostname);
+use ChangeTrack::Util qw(hostname set_debug);
 
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -119,12 +119,22 @@ sub builtin_ignore_patterns {
 
 sub new {
     my ($class, %args) = @_;
+
+    # Enforce implication chain: trace → debug → verbose
+    my $trace   = $args{trace}   // 0;
+    my $debug   = $args{debug}   // 0;
+    my $verbose = $args{verbose} // 0;
+    $debug   = 1 if $trace;
+    $verbose = 1 if $debug;
+
     return bless {
         config_path        => $args{config}             // '/etc/changetrack-ng/changetrack-ng.conf',
         no_auto_init       => $args{no_auto_init}       // 0,
         message            => $args{message}            // '',
         quiet              => $args{quiet}              // 0,
-        verbose            => $args{verbose}            // 0,
+        verbose            => $verbose,
+        debug              => $debug,
+        trace              => $trace,
         dry_run            => $args{dry_run}            // 0,
         force              => $args{force}              // 0,
         warn_special_files => $args{warn_special_files} // 1,
@@ -135,12 +145,19 @@ sub run {
     my ($self) = @_;
     my $start_time = time();
 
+    # Enable debug logging in Util (for run_cmd) early
+    set_debug(1) if $self->{debug};
+
     my $cfg        = ChangeTrack::Config->load($self->{config_path});
+    $self->_verbose("Config loaded from $self->{config_path}");
     $self->_warn_insecure_config_permissions($cfg, $self->{config_path});
     my @notify_names = @{ $cfg->global('notify') // [] };
     $self->_validate_notifier_startup($cfg, \@notify_names);
     my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
+
+    $self->_verbose("VCS: $vcs_name, output_dir: $output_dir");
+    $self->_verbose("Notify: " . (@notify_names ? join(', ', @notify_names) : 'none'));
 
     # Acquire run lock — silently skip if another instance is running (safe for cron)
     my $lock_path = $cfg->global('lock_path');
@@ -149,15 +166,20 @@ sub run {
     }
     _ensure_lock_parent_dir($lock_path);
 
+    my $lock_timeout = $cfg->global('lock_timeout') // 0;
+    $self->_verbose("Acquiring lock: $lock_path (timeout=${lock_timeout}s)");
+
     my $lock = ChangeTrack::Lock->new(
         path    => $lock_path,
-        timeout => $cfg->global('lock_timeout') // 0,
+        timeout => $lock_timeout,
         force   => $self->{force},
     );
     unless ($lock->acquire) {
+        $self->_verbose("Skipping: another instance holds lock");
         $self->_info("Another instance is running; skipping this run.");
         return ChangeTrack::Report->new(start_time => $start_time);
     }
+    $self->_verbose("Lock acquired");
 
     # Config overrides constructor default for warn_special_files
     my $cfg_wsf = $cfg->global('warn_special_files');
@@ -175,6 +197,8 @@ sub run {
         output_dir => $output_dir,
         options    => { push_remote => $cfg->global('push_remote') },
         verbose    => $self->{verbose} // 0,
+        debug      => $self->{debug}   // 0,
+        trace      => $self->{trace}   // 0,
     );
 
     # Auto-init
@@ -190,6 +214,22 @@ sub run {
     # Load metadata sidecar
     my $meta_path = "$output_dir/.changetrack-metadata";
     my $md = ChangeTrack::Metadata->load($meta_path);
+    $self->_debug("Metadata sidecar: $meta_path (" . scalar(keys %{ $md->{records} }) . " entries loaded)");
+    $self->_debug("Hostname resolved: " . hostname());
+    $self->_debug("Lock path: $lock_path (running as uid=$>)");
+
+    # Debug: dump effective config values (redact secrets)
+    if ($self->{debug}) {
+        for my $key (sort keys %{ $cfg->{global} }) {
+            my $val = $cfg->{global}{$key};
+            $val = join(' ', @$val) if ref $val eq 'ARRAY';
+            $val //= '';
+            if ($key =~ /header|secret|token|password/i) {
+                $val = '***REDACTED***';
+            }
+            $self->_debug("config: $key = $val");
+        }
+    }
 
     # Build combined ignore list
     my @user_ignore = @{ $cfg->global('ignore') // [] };
@@ -197,7 +237,11 @@ sub run {
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
 
     # Build file list from track entries
+    $self->_verbose("Building file list...");
     my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg));
+    my $track_count  = scalar @{ $cfg->tracks };
+    my $ignore_count = scalar @user_ignore;
+    $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
 
     # Commit message
     my $ts         = strftime('%Y-%m-%dT%H:%M:%S', localtime($start_time));
@@ -205,6 +249,8 @@ sub run {
     $commit_msg   .= " [hook: $self->{message}]" if $self->{message};
 
     my $report = ChangeTrack::Report->new(start_time => $start_time);
+
+    $self->_verbose("Processing " . scalar(@entries) . " tracked paths");
 
     for my $entry (@entries) {
         eval { $self->_process_file($entry, $vcs, $md, $report, $commit_msg) };
@@ -223,8 +269,12 @@ sub run {
 
     # Batch commit for whole-repo VCS
     if (!$self->{dry_run} && $vcs->model eq 'whole-repo' && $report->has_changes) {
+        my $change_count = scalar @{ $report->changes };
+        $self->_verbose("Committing $change_count changes to $vcs_name");
         eval { $vcs->commit($commit_msg) };
         croak "VCS commit failed: $@" if $@;
+    } elsif ($self->{verbose} && !$report->has_changes) {
+        $self->_verbose("No changes to commit");
     }
 
     $report->set_end_time(time());
@@ -232,6 +282,9 @@ sub run {
     print $report->to_text unless $self->{quiet};
 
     # Dispatch notifications
+    if (@notify_names) {
+        $self->_verbose("Sending notifications via: " . join(', ', @notify_names));
+    }
     for my $nname (@notify_names) {
         my $nclass = $NOTIFY_CLASSES{lc($nname)} or do {
             $self->_warn("unknown notifier '$nname'");
@@ -242,7 +295,24 @@ sub run {
             next;
         };
         my $notifier = $self->_build_notifier($nclass, $cfg);
-        $notifier->send($report) unless $self->{dry_run};
+        unless ($self->{dry_run}) {
+            $self->_debug("Notifier $nname: sending...");
+            eval { $notifier->send($report) };
+            if ($@) {
+                (my $err = $@) =~ s/\n$//;
+                $self->_debug("Notifier $nname: failed: $err");
+            } else {
+                $self->_debug("Notifier $nname: sent OK");
+            }
+        }
+    }
+
+    # Run summary
+    if ($self->{verbose}) {
+        my $n_new     = scalar grep { $_->{is_new} && !$_->{is_removed} } @{ $report->changes };
+        my $n_changed = scalar grep { !$_->{is_new} && !$_->{is_removed} } @{ $report->changes };
+        my $n_removed = scalar grep { $_->{is_removed} } @{ $report->changes };
+        $self->_verbose("Run complete ($n_new new, $n_changed changed, $n_removed removed)");
     }
 
     return $report;
@@ -266,7 +336,10 @@ sub _process_file {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
+            $self->_debug("Removed: $real_path");
             $self->_info("Removed: $real_path");
+        } else {
+            $self->_trace("$real_path: not on disk, no prior record");
         }
         return;
     }
@@ -278,6 +351,7 @@ sub _process_file {
         && !$md->changed_since_load($real_path)) {
         # Refresh the record (preserves the type as-is).
         $md->update_from_stat($real_path);
+        $self->_trace("$real_path: skipped (mtime+size unchanged)");
         return;
     }
 
@@ -288,6 +362,7 @@ sub _process_file {
 
     # ── Non-trackable types: special, unreadable, binary, empty ───────────────
     if ($type eq 'special') {
+        $self->_trace("$real_path: classified as special, metadata only");
         unless ($prev_type eq 'special' && !$md->changed_since_load($real_path)) {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping special file (FIFO/socket/device): $real_path");
@@ -298,6 +373,7 @@ sub _process_file {
     }
 
     if ($type eq 'unreadable') {
+        $self->_trace("$real_path: classified as unreadable, metadata only");
         unless ($prev_type eq 'unreadable' && !$md->changed_since_load($real_path)) {
             $report->add_warning("Skipping unreadable: $real_path");
         }
@@ -305,6 +381,7 @@ sub _process_file {
     }
 
     if ($type eq 'binary') {
+        $self->_trace("$real_path: classified as binary, metadata only");
         unless ($prev_type eq 'binary') {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping binary file: $real_path");
@@ -330,7 +407,7 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
             );
-            $self->_verbose("Changed (meta): $real_path ($meta_summary)");
+            $self->_debug("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing) {
             $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
@@ -343,7 +420,10 @@ sub _process_file {
                 meta_change  => '',
                 recipients   => $recipients,
             );
+            $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
             $self->_info("New: $real_path");
+        } elsif (!defined $existing) {
+            $self->_trace("$real_path: empty, unchanged");
         }
         return;
     }
@@ -371,6 +451,7 @@ sub _process_file {
             meta_change  => '',
             recipients   => $recipients,
         );
+        $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
         $self->_info("New: $real_path");
     } else {
         # Existing file / symlink — check for changes
@@ -394,8 +475,10 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
             );
-            $self->_verbose("Changed: $real_path"
+            $self->_debug("Changed: $real_path"
                 . ($meta_summary ? " (meta: $meta_summary)" : ''));
+        } else {
+            $self->_trace("$real_path: unchanged");
         }
     }
 }
@@ -414,8 +497,14 @@ sub _build_file_list {
 
         if ($track->{kind} eq 'file') {
             my $p = $track->{path};
-            next if _should_ignore($p, basename($p), $ignore_pats);
-            next if _is_excluded_path($p, $exclude_paths);
+            if (_should_ignore($p, basename($p), $ignore_pats)) {
+                $self->_trace("$p: ignored by pattern");
+                next;
+            }
+            if (_is_excluded_path($p, $exclude_paths)) {
+                $self->_trace("$p: excluded (internal path)");
+                next;
+            }
             push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
 
         } elsif ($track->{kind} eq 'directory') {
@@ -427,8 +516,14 @@ sub _build_file_list {
                 wanted => sub {
                     return unless -f $_ || -l $_;
                     my $p = $File::Find::name;
-                    return if _should_ignore($p, basename($p), $ignore_pats);
-                    return if _is_excluded_path($p, $exclude_paths);
+                    if (_should_ignore($p, basename($p), $ignore_pats)) {
+                        $self->_trace("$p: ignored by pattern");
+                        return;
+                    }
+                    if (_is_excluded_path($p, $exclude_paths)) {
+                        $self->_trace("$p: excluded (internal path)");
+                        return;
+                    }
                     push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
                 },
                 no_chdir => 1,
@@ -843,7 +938,19 @@ sub _info {
 sub _verbose {
     my ($self, $msg) = @_;
     return unless $self->{verbose};
-    $self->_log('DEBUG', $msg);
+    $self->_log('VERBOSE', $msg, 1);
+}
+
+sub _debug {
+    my ($self, $msg) = @_;
+    return unless $self->{debug};
+    $self->_log('DEBUG', $msg, 1);
+}
+
+sub _trace {
+    my ($self, $msg) = @_;
+    return unless $self->{trace};
+    $self->_log('TRACE', $msg, 1);
 }
 
 sub _warn {

@@ -20,6 +20,8 @@ my %opts = (
             : '/etc/changetrack-ng/changetrack-ng.conf'),
     quiet       => 0,
     verbose     => 0,
+    debug       => 0,
+    trace       => 0,
     no_auto_init => 0,
     dry_run     => 0,
     message     => '',
@@ -33,10 +35,16 @@ GetOptions(
     'dry-run|n'      => \$opts{dry_run},
     'quiet|q'        => \$opts{quiet},
     'verbose|v'      => \$opts{verbose},
+    'debug|d'        => \$opts{debug},
+    'trace|t'        => \$opts{trace},
     'force|f'        => \$opts{force},
     'version|V'      => sub { say "changetrack-ng $VERSION"; exit 0 },
     'help|h'         => sub { _usage(); exit 0 },
 ) or do { _usage(\*STDERR); exit 64 };
+
+# Implication chain: trace → debug → verbose
+$opts{debug}   = 1 if $opts{trace};
+$opts{verbose} = 1 if $opts{debug};
 
 my $subcommand = @ARGV ? shift @ARGV : 'run';
 
@@ -70,6 +78,8 @@ sub cmd_run {
         dry_run      => $opts{dry_run},
         quiet        => $opts{quiet},
         verbose      => $opts{verbose},
+        debug        => $opts{debug},
+        trace        => $opts{trace},
         force        => $opts{force},
     );
     my $report = eval { $runner->run };
@@ -300,7 +310,9 @@ Options:
     -n, --dry-run          Detect and report changes without committing/notifying
   -f, --force            Force through lock or confirmation prompts
   -q, --quiet            Suppress progress output
-  -v, --verbose          Enable verbose debug output
+  -v, --verbose          Show high-level run structure and key settings
+  -d, --debug            Show all external commands, config values, and action details
+  -t, --trace            Show per-file processing decisions (implies --debug)
   -V, --version          Print version and exit
   -h, --help             Print this help and exit
 USAGE
