@@ -1,0 +1,194 @@
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-License-Identifier: GPL-3.0-or-later
+use strict;
+use warnings;
+use Test::More;
+use FindBin qw($RealBin);
+use File::Spec;
+use lib File::Spec->catdir($RealBin, '..', 'lib');
+
+use ChangeTrack::Report;
+
+# ── Construction ──────────────────────────────────────────────────────────────
+
+{
+    my $t0 = time();
+    my $r = ChangeTrack::Report->new;
+    ok(defined $r, 'new() returns an object');
+    isa_ok($r, 'ChangeTrack::Report');
+    ok($r->start_time >= $t0, 'start_time set to approximately now');
+    is(scalar @{ $r->changes },  0, 'changes empty on construction');
+    is(scalar @{ $r->warnings }, 0, 'warnings empty on construction');
+    is($r->files_tracked,        0, 'files_tracked zero on construction');
+    ok(!$r->has_changes,            'has_changes false on empty report');
+    ok($r->is_heartbeat_eligible,   'heartbeat eligible on clean empty report');
+}
+
+{
+    my $r = ChangeTrack::Report->new(start_time => 1000);
+    is($r->start_time, 1000, 'start_time accepts explicit value');
+}
+
+# ── add_change / has_changes ──────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/passwd', diff => ['+foo'], is_sensitive => 0);
+    ok($r->has_changes, 'has_changes true after add_change');
+    is(scalar @{ $r->changes }, 1, 'one change recorded');
+    my $c = $r->changes->[0];
+    is($c->{path},         '/etc/passwd', 'path stored correctly');
+    is($c->{is_sensitive}, 0,             'is_sensitive stored');
+    is_deeply($c->{diff},  ['+foo'],      'diff stored correctly');
+    is($c->{is_new},       0,             'is_new defaults to 0');
+    is($c->{is_removed},   0,             'is_removed defaults to 0');
+    is_deeply($c->{recipients}, [],       'recipients defaults to []');
+}
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/new', is_new => 1, diff => ['(new file)'],
+                   is_sensitive => 0, recipients => ['admin@example.com']);
+    my $c = $r->changes->[0];
+    is($c->{is_new},            1,                   'is_new stored');
+    is_deeply($c->{recipients}, ['admin@example.com'], 'recipients stored');
+}
+
+# ── Multiple changes accumulate in order ──────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/a', diff => [], is_sensitive => 0);
+    $r->add_change(path => '/etc/b', diff => [], is_sensitive => 0);
+    $r->add_change(path => '/etc/c', diff => [], is_sensitive => 0);
+    is(scalar @{ $r->changes }, 3, 'three changes accumulated');
+    is($r->changes->[0]{path}, '/etc/a', 'first change in order');
+    is($r->changes->[2]{path}, '/etc/c', 'last change in order');
+}
+
+# ── add_removed ───────────────────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_removed(path => '/etc/gone');
+    ok($r->has_changes, 'has_changes true after add_removed');
+    my $c = $r->changes->[0];
+    is($c->{path},         '/etc/gone',              'removed path stored');
+    is($c->{is_removed},   1,                         'is_removed set');
+    is($c->{is_sensitive}, 0,                         'removed never sensitive');
+    is($c->{meta_change},  '(file removed from disk)', 'meta_change for removal');
+    is_deeply($c->{diff},  [],                         'no diff for removal');
+}
+
+# ── Sensitive flag stored correctly ───────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/shadow', diff => ['+secrethash'], is_sensitive => 1);
+    my $c = $r->changes->[0];
+    is($c->{is_sensitive}, 1, 'sensitive flag set to 1');
+    is_deeply($c->{diff},  ['+secrethash'], 'diff still stored internally when sensitive');
+}
+
+# ── add_warning / is_heartbeat_eligible ───────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    ok($r->is_heartbeat_eligible, 'heartbeat eligible before any warnings');
+    $r->add_warning('Something went wrong');
+    ok(!$r->is_heartbeat_eligible, 'heartbeat ineligible after add_warning');
+    is(scalar @{ $r->warnings }, 1, 'one warning stored');
+    is($r->warnings->[0], 'Something went wrong', 'warning text stored correctly');
+}
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_warning('warn1');
+    $r->add_warning('warn2');
+    is(scalar @{ $r->warnings }, 2, 'multiple warnings accumulate');
+}
+
+# ── increment_tracked / files_tracked ─────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->increment_tracked for 1..5;
+    is($r->files_tracked, 5, 'files_tracked increments correctly');
+}
+
+# ── set_end_time / duration_ms ────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new(start_time => 1000);
+    is($r->duration_ms, undef, 'duration_ms undef before end_time set');
+    $r->set_end_time(1002);
+    is($r->duration_ms, 2000, 'duration_ms correct after set_end_time');
+}
+
+# ── to_text — no changes ──────────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->increment_tracked for 1..3;
+    my $text = $r->to_text;
+    like($text, qr/No changes detected/, 'to_text reports no changes');
+    like($text, qr/3 file/, 'to_text includes tracked count');
+}
+
+# ── to_text — with changes ────────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/hosts', diff => ['+127.0.0.1 myhost'], is_sensitive => 0);
+    $r->add_change(path => '/etc/fstab', diff => [], is_new => 1, is_sensitive => 0);
+    $r->increment_tracked for 1..10;
+    my $text = $r->to_text;
+    like($text, qr|/etc/hosts|,    'to_text includes changed path');
+    like($text, qr/CHANGED/,       'to_text labels changed file');
+    like($text, qr|/etc/fstab|,    'to_text includes new path');
+    like($text, qr/NEW/,           'to_text labels new file');
+    like($text, qr/2 change\(s\)/, 'to_text includes change count');
+}
+
+# ── to_text — sensitive file suppression label ────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/shadow', diff => ['+hash'], is_sensitive => 1);
+    my $text = $r->to_text;
+    like($text, qr/diff suppressed/, 'to_text notes suppression for sensitive file');
+    unlike($text, qr/\+hash/,        'sensitive diff content NOT leaked in to_text');
+}
+
+# ── to_text — metadata-only change ───────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/passwd', diff => [], is_sensitive => 0,
+                   meta_change => 'mode 0644->0600');
+    my $text = $r->to_text;
+    like($text, qr/meta:.*mode 0644/, 'to_text includes meta_change description');
+}
+
+# ── to_text — removal ─────────────────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_removed(path => '/etc/gone');
+    my $text = $r->to_text;
+    like($text, qr/REMOVED/,     'to_text labels removed file');
+    like($text, qr|/etc/gone|,   'to_text includes removed path');
+}
+
+# ── to_text — warnings section ───────────────────────────────────────────────
+
+{
+    my $r = ChangeTrack::Report->new;
+    $r->add_change(path => '/etc/a', diff => [], is_sensitive => 0);
+    $r->add_warning('Skipping FIFO: /tmp/mypipe');
+    my $text = $r->to_text;
+    like($text, qr/Warnings:/,           'to_text includes Warnings section when present');
+    like($text, qr/Skipping FIFO/,       'to_text includes warning text');
+}
+
+done_testing;

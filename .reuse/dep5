@@ -1,0 +1,19 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: changetrack-ng
+Upstream-Contact: Christopher Cashell <topher@zyp.org>
+
+Files: README.md INSTALL.md CHANGELOG.md
+Copyright: 2026 Christopher Cashell <topher@zyp.org>
+License: GPL-3.0-or-later
+
+Files: etc/* packaging/cron/* packaging/systemd/* packaging/hooks/*
+Copyright: 2026 Christopher Cashell <topher@zyp.org>
+License: GPL-3.0-or-later
+
+Files: LICENSE
+Copyright: 2007 Free Software Foundation, Inc.
+License: GPL-3.0-or-later
+
+Files: packaging/debian/*
+Copyright: 2026 Christopher Cashell <topher@zyp.org>
+License: GPL-3.0-or-later
