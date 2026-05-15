@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 02-config-v1-compat.t - Tests for config v1 compat.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -20,8 +29,9 @@ sub _canon_track {
     };
 }
 
-# ── v1 detection ──────────────────────────────────────────────────────────────
-
+########################################################################
+# V1 Detection
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v1-legacy.conf'));
     is($cfg->version, 1, 'v1: detected as version 1');
@@ -45,15 +55,17 @@ sub _canon_track {
     like($find_entry->{path}, qr{/etc}, 'v1: find path contains /etc');
 }
 
-# ── v2 files are not misdetected as v1 ───────────────────────────────────────
-
+########################################################################
+# V2 Files Are Not Misdetected As V1
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v2-basic.ini'));
     is($cfg->version, 2, 'not misdetected: v2 config stays v2');
 }
 
-# ── migration: v1 → v2 ───────────────────────────────────────────────────────
-
+########################################################################
+# Migration: V1 -> V2
+########################################################################
 {
     my $orig = ChangeTrack::Config->load(fixture('config-v1-legacy.conf'));
 
@@ -94,8 +106,9 @@ sub _canon_track {
         'migrated: effective tracked entries match v1 semantics (excluding v1 @ find expression)');
 }
 
-# ── migration preserves multiple emails ──────────────────────────────────────
-
+########################################################################
+# Migration Preserves Multiple Emails
+########################################################################
 {
     my ($fh, $tmp) = tempfile(SUFFIX => '.conf', UNLINK => 1);
     close($fh);

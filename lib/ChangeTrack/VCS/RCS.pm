@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::VCS::RCS - Per-file model with colon-encoded flat layout
+#   and immediate ci -l.
+#
+
 package ChangeTrack::VCS::RCS;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::VCS::RCS - RCS VCS backend for changetrack-ng
@@ -12,21 +24,18 @@ compatible with the original C<changetrack> format.
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
 use File::Basename qw(dirname basename);
 use File::Path qw(make_path);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 sub model { 'per-file' }
 
-# /etc/passwd  →  $output_dir/etc:passwd
+# output_path -- Map a real path to its flat mirror location.
+# /etc/passwd -> $output_dir/etc:passwd  (colons replace path separators)
 sub output_path {
     my ($self, $real_path) = @_;
     (my $flat = $real_path) =~ s{^/}{};
@@ -34,6 +43,7 @@ sub output_path {
     return "$self->{output_dir}/$flat";
 }
 
+# _rcs_file -- Return the expected ,v archive path for $real_path.
 # $output_dir/RCS/etc:passwd,v
 sub _rcs_file {
     my ($self, $real_path) = @_;
@@ -41,25 +51,28 @@ sub _rcs_file {
     return dirname($op) . '/RCS/' . basename($op) . ',v';
 }
 
+# _ensure_output_dir -- Create the output directory for $real_path if needed.
 sub _ensure_output_dir {
     my ($self, $real_path) = @_;
     my $dir = dirname($self->output_path($real_path));
     make_path($dir, { mode => 0700 }) unless -d $dir;
 }
 
+# init -- Create output_dir and RCS/ subdirectory.
 sub init {
     my ($self) = @_;
     make_path($self->{output_dir},        { mode => 0700 }) unless -d $self->{output_dir};
     make_path("$self->{output_dir}/RCS",  { mode => 0700 }) unless -d "$self->{output_dir}/RCS";
 }
 
+# is_initialized -- Return true if output_dir and RCS/ both exist.
 sub is_initialized {
     my ($self) = @_;
     return -d $self->{output_dir} && -d "$self->{output_dir}/RCS";
 }
 
-# Copy real file → output_path and check in with ci.
-# For a new file (no ,v yet) provides -t- to suppress the description prompt.
+# checkin -- Copy real file to output_path and check in with ci -l.
+# For a new file (no ,v yet) passes -t- to suppress the description prompt.
 sub checkin {
     my ($self, $real_path, $msg) = @_;
     $msg //= 'changetrack-ng checkin';
@@ -77,13 +90,13 @@ sub checkin {
     croak "ci failed for $op: $r->{stderr}" unless $r->{success};
 }
 
-# No staging step for per-file VCS.
+# add / commit -- No-ops for RCS (per-file model; ci does its own commit).
 sub add    { }
 sub commit { }
 
-# Copy real file → output_path, then run rcsdiff.
+# diff -- Copy the real file to output_path and run rcsdiff.
 # Returns [] if unchanged, arrayref of unified-diff lines if changed.
-# Returns ["(new file)"] if no RCS history exists yet.
+# Returns ['(new file)'] if no RCS history exists yet.
 sub diff {
     my ($self, $real_path) = @_;
 
@@ -101,7 +114,7 @@ sub diff {
     croak "rcsdiff error for $op: $r->{stderr}";
 }
 
-# Returns 1 if the real file differs from the latest RCS revision (or has no history).
+# is_dirty -- Return true if the real file differs from the latest RCS revision.
 sub is_dirty {
     my ($self, $real_path) = @_;
     return 1 unless -e $self->_rcs_file($real_path);
@@ -114,6 +127,7 @@ sub is_dirty {
     return $r->{exit_code} != 0;
 }
 
+# log_history -- Return rlog output lines for $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $rcs_file = $self->_rcs_file($real_path);
@@ -122,6 +136,7 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
+# revert -- Check out revision $rev of $real_path and restore the live file.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;

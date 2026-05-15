@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Metadata - JSONL sidecar for per-file stat snapshots with
+#   change tracking.
+#
+
 package ChangeTrack::Metadata;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Metadata - JSONL sidecar for per-file stat snapshots
@@ -7,16 +19,19 @@ ChangeTrack::Metadata - JSONL sidecar for per-file stat snapshots
 =head1 SYNOPSIS
 
   my $meta = ChangeTrack::Metadata->load('/var/lib/changetrack-ng/.changetrack-metadata');
-  my $snap  = $meta->get('/etc/passwd');   # hashref or undef
-  $meta->set('/etc/passwd', { mtime => time(), size => 1234, mode => 0644, is_sensitive => 0 });
-  $meta->save;
+  my $snap  = $meta->record_for('/etc/passwd');   # hashref or undef
+  $meta->update_from_stat('/etc/passwd');          # re-stat and update in-memory record
+  $meta->save('/var/lib/changetrack-ng/.changetrack-metadata');
 
 =head1 DESCRIPTION
 
-Maintains a JSONL file (one JSON object per line) that records the last
-known stat snapshot for each tracked file, including ownership/mode and
-basic content fingerprint fields (mtime, size for regular files).  Used to
-detect changes between runs without relying solely on VCS status.
+Maintains a JSONL file (one JSON object per line) recording the last-known
+stat snapshot for each tracked file.  Fields include mode, uid/gid,
+ownership names, and for regular files mtime and size.  Symlinks also
+store the link target.  Used to detect metadata and content changes
+between runs without relying solely on VCS status.
+
+The file is written atomically via a tempfile-plus-rename pattern.
 
 =head1 CLASS METHODS
 
@@ -25,7 +40,8 @@ detect changes between runs without relying solely on VCS status.
 =item ChangeTrack::Metadata->load($path)
 
 Read the sidecar file at I<$path>.  Returns a new object; creates an
-empty object if the file does not yet exist.
+empty object if the file does not yet exist.  Corrupt lines are skipped
+with a warning.
 
 =back
 
@@ -33,38 +49,58 @@ empty object if the file does not yet exist.
 
 =over 4
 
-=item $meta->get($path)
+=item $meta->record_for($path)
 
-Return the snapshot hashref for I<$path>, or undef if not recorded.
+Return the in-memory snapshot hashref for I<$path>, or undef if the
+path has no recorded metadata yet.
 
-=item $meta->set($path, \%snapshot)
+=item $meta->update_from_stat($path)
 
-Store or update the snapshot for I<$path>.
+Re-stat I<$path> with C<lstat()> and update (or create) the in-memory
+record.  The C<type> field is set to one of: C<file>, C<symlink>,
+C<binary>, C<empty>, C<unreadable>, C<special>, C<directory>, C<missing>.
 
-=item $meta->delete($path)
+=item $meta->can_skip_content_diff($path)
 
-Remove the snapshot for I<$path>.
+Return true if the file's content cannot have changed since the loaded
+snapshot.  Covers unchanged mtime+size for regular files, unchanged
+symlink targets, and non-content types (binary/special/etc).
 
-=item $meta->save
+=item $meta->changed_since_load($path)
 
-Write the current state back to disk atomically.
+Return true if the file's mode, ownership, or symlink target has changed
+compared to the loaded snapshot.
+
+=item $meta->diff_summary($path)
+
+Return a human-readable string describing what metadata changed vs the
+loaded snapshot (e.g. C<"mode 0644 -> 0600, owner root -> nobody">).
+Returns an empty string if nothing changed.
+
+=item $meta->mark_removed($path)
+
+Remove the in-memory record for I<$path>.  Used when a tracked file
+vanishes from disk.
+
+=item $meta->save($path)
+
+Write the current in-memory records back to disk atomically (tempfile
+then rename).  Missing-type records are not written.
 
 =back
 
 =cut
 
-use strict;
-use warnings;
 use feature qw(state);
 use Carp qw(croak carp);
 use JSON::PP ();
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
-# load($path) — reads JSONL; returns object indexed by file path.
-# If the file does not exist, returns an empty object.
+# load -- Read the JSONL sidecar file at $path.
+# Returns a Metadata object with records indexed by file path.
+# Records from the loaded file are also stored as the immutable
+# 'original' snapshot, used later by changed_since_load().
 sub load {
     my ($class, $path) = @_;
     my %records;
@@ -95,14 +131,15 @@ sub load {
     }, $class;
 }
 
-# record_for($path) — current in-memory record, undef if not tracked yet.
+# record_for -- Return the current in-memory record for $path, or undef.
 sub record_for {
     my ($self, $path) = @_;
     return $self->{records}{$path};
 }
 
-# update_from_stat($path) — repopulate the in-memory record by stat()ing the live file.
-# Type is the single source of truth: file, symlink, binary, empty, unreadable, special, directory, missing.
+# update_from_stat -- Re-stat $path and update (or create) the in-memory record.
+# Determines file type from lstat results; sets mtime/size for file-like types;
+# records readlink() target for symlinks.
 sub update_from_stat {
     my ($self, $path) = @_;
 
@@ -139,10 +176,10 @@ sub update_from_stat {
     $self->{records}{$path} = $rec;
 }
 
-# can_skip_content_diff($path) — true when a file's content could not have
-# changed since the loaded snapshot.  Covers: mtime+size unchanged for regular
-# files, both-empty fast path, symlink target unchanged, and non-content types
-# (binary/empty/special/unreadable) when mtime+size haven't moved.
+# can_skip_content_diff -- Return true if file content cannot have changed
+# since the loaded snapshot.  Covers mtime+size equality for regular files,
+# symlink target equality, and non-content types (binary/special/etc).
+# Avoids unnecessary VCS diff calls for stable files.
 sub can_skip_content_diff {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
@@ -150,7 +187,7 @@ sub can_skip_content_diff {
 
     my $otype = $orig->{type} // '';
 
-    # Symlinks: compare stored target to live readlink — no file I/O needed.
+    # Symlinks: compare stored target to live readlink  --  no file I/O needed.
     if ($otype eq 'symlink') {
         my $cur_target = readlink($path);
         return 0 unless defined $cur_target;
@@ -180,11 +217,12 @@ sub can_skip_content_diff {
     return 0;
 }
 
-# changed_since_load($path) — bool: has the live file's metadata changed vs the loaded record?
+# changed_since_load -- Return true if the live file's mode, uid, gid, or
+# (for symlinks) target differs from the loaded snapshot.
 sub changed_since_load {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
-    return 0 unless defined $orig;       # not in prior metadata → it's new, not changed
+    return 0 unless defined $orig;       # not in prior metadata -> it's new, not changed
 
     my @s = lstat($path);
     return 1 unless @s;                  # vanished since last run
@@ -201,7 +239,8 @@ sub changed_since_load {
     return 0;
 }
 
-# diff_summary($path) — human string describing what changed vs the loaded record.
+# diff_summary -- Return a human-readable string describing what changed
+# in mode/uid/gid/target vs the loaded snapshot.  Returns '' if nothing changed.
 sub diff_summary {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
@@ -213,34 +252,36 @@ sub diff_summary {
     my @parts;
     my $new_mode = sprintf('%04o', $s[2] & 07777);
     if ($new_mode ne ($orig->{mode} // '')) {
-        push @parts, "mode $orig->{mode} \x{2192} $new_mode";
+        push @parts, "mode $orig->{mode} -> $new_mode";
     }
     my ($new_uid, $new_gid) = ($s[4] + 0, $s[5] + 0);
     if ($new_uid != ($orig->{uid} // -1)) {
         my $ou = $orig->{user}  // $orig->{uid};
-        push @parts, "owner $ou \x{2192} " . _username($new_uid);
+        push @parts, "owner $ou -> " . _username($new_uid);
     }
     if ($new_gid != ($orig->{gid} // -1)) {
         my $og = $orig->{group} // $orig->{gid};
-        push @parts, "group $og \x{2192} " . _groupname($new_gid);
+        push @parts, "group $og -> " . _groupname($new_gid);
     }
     if (-l _ && defined $orig->{target}) {
         my $new_tgt = readlink($path) // '';
         if ($new_tgt ne $orig->{target}) {
-            push @parts, "target $orig->{target} \x{2192} $new_tgt";
+            push @parts, "target $orig->{target} -> $new_tgt";
         }
     }
 
     return join(', ', @parts);
 }
 
-# mark_removed($path) — remove path from in-memory records (file vanished from disk).
+# mark_removed -- Remove $path's record from memory (file gone from disk).
 sub mark_removed {
     my ($self, $path) = @_;
     delete $self->{records}{$path};
 }
 
-# save($path) — write JSONL sorted by path, atomic via tempfile + rename.
+# save -- Write the in-memory records to $path atomically.
+# Uses a tmpfile+rename pattern so readers never see a partial write.
+# Records with type 'missing' are not persisted (they are transient).
 sub save {
     my ($self, $path) = @_;
 
@@ -257,17 +298,17 @@ sub save {
 
     rename($tmp, $path) or do {
         unlink $tmp;
-        croak "Cannot rename '$tmp' \x{2192} '$path': $!";
+        croak "Cannot rename '$tmp' -> '$path': $!";
     };
 }
 
-# import_from_v1_statistics($dir) — one-shot migration from old .statistics format (stub).
+# import_from_v1_statistics -- Stub for future v1 .statistics format migration.
 sub import_from_v1_statistics {
     my ($self, $dir) = @_;
     carp "changetrack-ng: import_from_v1_statistics not yet implemented";
 }
 
-sub _username  { $^O eq 'MSWin32' ? $_[0] : ((getpwuid($_[0]))[0]  // $_[0]) }
+# _username / _groupname -- Resolve uid/gid to name strings; fall back to the numeric id.
 sub _groupname { $^O eq 'MSWin32' ? $_[0] : ((getgrgid($_[0]))[0] // $_[0]) }
 
 1;

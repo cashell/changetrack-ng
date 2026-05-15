@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Config - INI v2 config parser with v1 migration support,
+#   validation, and dumping.
+#
+
 package ChangeTrack::Config;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Config - INI v2 config parser and v1 migration for changetrack-ng
@@ -9,7 +21,7 @@ ChangeTrack::Config - INI v2 config parser and v1 migration for changetrack-ng
   my $cfg = ChangeTrack::Config->load('/etc/changetrack-ng/changetrack-ng.conf');
   my $vcs  = $cfg->global('vcs');          # 'git'
   my @urls = @{ $cfg->global('webhook_url') // [] };
-  my @entries = $cfg->track_entries;
+  my @entries = $cfg->tracks;
 
 =head1 DESCRIPTION
 
@@ -22,7 +34,9 @@ Global keys are validated against a strict schema.  Unsupported keys
 raise a parse error to prevent silent misconfiguration.
 
 Detects a legacy v1 config by the absence of a C<[global]> section and
-auto-migrates via C<migrate_v1_to_v2()>.
+auto-migrates via C<migrate_v1_to_v2()>.  C<HOSTNAME> tokens in values
+are expanded to the local FQDN; C<${VAR}> tokens are expanded from the
+environment.
 
 =head1 CLASS METHODS
 
@@ -30,8 +44,8 @@ auto-migrates via C<migrate_v1_to_v2()>.
 
 =item ChangeTrack::Config->load($path)
 
-Load and parse the config file at I<$path>.  Returns a new
-C<ChangeTrack::Config> object.  Croaks on parse error.
+Load and parse the config file at I<$path>.  Auto-detects v1 vs v2 format.
+Returns a new C<ChangeTrack::Config> object.  Croaks on parse error.
 
 =item ChangeTrack::Config->migrate_v1_to_v2($v1_path, $v2_path)
 
@@ -47,32 +61,37 @@ I<$v2_path>.  Croaks on read/write errors.
 =item $cfg->global($key)
 
 Return the value of the named key in C<[global]>.  Array keys return an
-arrayref; all others return a scalar or undef.
+arrayref; all others return a scalar string or undef.
 
-=item $cfg->track_entries
+=item $cfg->tracks
 
-Return a list of hashrefs, one per C<[track]> line, each with keys
-C<path>, C<type> (C<"file"> or C<"directory">), C<emails> (arrayref),
-and C<options> (hashref).
+Return an arrayref of hashrefs, one per C<[track]> entry, each with keys:
+C<kind> (C<"file"> or C<"directory">), C<path> (absolute string),
+C<emails> (arrayref), and C<options> (hashref).
 
 =item $cfg->version
 
-Return the config format version (integer).
+Return the config format version (integer: 1 or 2).
+
+=item $cfg->dump_v2($path)
+
+Write the current config state as a v2 INI file to I<$path>.  Useful for
+persisting a migrated v1 config or a programmatically built config.
 
 =back
 
 =cut
 
-use strict;
-use warnings;
 use feature qw(say state);
 use Carp qw(croak carp);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
-# Keys whose values are split on whitespace into arrayrefs
+########################################################################
+# Schema: allowed keys and their types
+########################################################################
+
+# Keys whose values are split on whitespace into arrayrefs.
 my %ARRAY_KEYS = map { $_ => 1 } qw(
     notify ignore webhook_url push_remote email_to
 );
@@ -114,6 +133,11 @@ my %ENUM_KEYS = (
     otlp_compression => { map { $_ => 1 } qw(gzip none) },
 );
 
+########################################################################
+# Constructor and public loader
+########################################################################
+
+# new -- Internal constructor; use load() in normal code.
 sub new {
     my ($class, %args) = @_;
     return bless {
@@ -123,7 +147,9 @@ sub new {
     }, $class;
 }
 
-# load($path) — auto-detects v1 vs v2; dies on parse error
+# load -- Parse the config file at $path.
+# Auto-detects v1 (no [global] section) vs v2 format and dispatches accordingly.
+# Croaks on parse error or I/O failure.
 sub load {
     my ($class, $path) = @_;
     open(my $fh, '<', $path) or croak "Cannot open config '$path': $!";
@@ -137,6 +163,13 @@ sub load {
         : $class->_parse_v2(\@lines, $path);
 }
 
+########################################################################
+# Parsing
+########################################################################
+
+# _detect_version -- Guess config file version from content.
+# Returns 2 if a [global] or [track] section header is found; 1 if the
+# content looks like bare v1 path/@ lines; defaults to 2 for empty files.
 sub _detect_version {
     my ($lines) = @_;
     for my $line (@$lines) {
@@ -149,6 +182,9 @@ sub _detect_version {
     return 2;
 }
 
+# _parse_v2 -- Parse a v2 INI file (arrayref of chomped lines).
+# Validates all global keys against the schema and applies HOSTNAME and
+# ${VAR} expansion.  Returns a ChangeTrack::Config object.
 sub _parse_v2 {
     my ($class, $lines, $src) = @_;
 
@@ -219,6 +255,9 @@ sub _parse_v2 {
     return $class->new(version => 2, global => \%global, tracks => \@tracks);
 }
 
+# _validate_global_values -- Apply schema constraints to parsed [global] values.
+# Enforces allowed notify backends, boolean/integer/path/enum key rules.
+# Croaks with a user-facing message on the first violation found.
 sub _validate_global_values {
     my ($global, $src) = @_;
 
@@ -259,6 +298,12 @@ sub _validate_global_values {
     }
 }
 
+########################################################################
+# Value expansion helpers
+########################################################################
+
+# _expand_env_vars -- Substitute ${VAR} tokens in $val with environment values.
+# Croaks if a referenced variable is not set.
 sub _expand_env_vars {
     my ($val, $src, $key) = @_;
     return $val unless defined $val && $val =~ /\$\{/;
@@ -267,6 +312,8 @@ sub _expand_env_vars {
     return $val;
 }
 
+# _env_or_die -- Return the value of environment variable $name,
+# or croak with a user-facing config error pointing to $src and $key.
 sub _env_or_die {
     my ($name, $src, $key) = @_;
     croak "Config parse error at $src: key '$key' references undefined environment variable '$name'"
@@ -274,6 +321,8 @@ sub _env_or_die {
     return $ENV{$name} // '';
 }
 
+# _home_dir -- Return the current user's home directory.
+# Prefers $HOME; falls back to getpwuid() for non-interactive contexts.
 sub _home_dir {
     my $home = $ENV{HOME};
     if (!(defined($home) && $home =~ /\S/)) {
@@ -283,6 +332,8 @@ sub _home_dir {
     return $home;
 }
 
+# _expand_home_path -- Expand a leading ~ to the home directory in $val.
+# Croaks if HOME is unset and getpwuid fails.
 sub _expand_home_path {
     my ($val, $src, $key) = @_;
     return $val unless defined $val;
@@ -296,6 +347,13 @@ sub _expand_home_path {
     return $val;
 }
 
+########################################################################
+# Track-entry parsing
+########################################################################
+
+# _parse_track_line -- Parse one [track] section line.
+# Supports: "DIRECTORY /path [...opts]", "/path [...opts]"
+# Returns a hashref {kind, path, emails, options} or undef for blank lines.
 sub _parse_track_line {
     my ($line, $src, $lineno) = @_;
     return undef if $line =~ /^\s*$/;
@@ -316,6 +374,8 @@ sub _parse_track_line {
     return { kind => $kind, path => $path, emails => $emails_ref, options => \%options };
 }
 
+# _expand_track_path -- Apply env-var and tilde expansion to a track path.
+# Enforces that the result is an absolute path after expansion.
 sub _expand_track_path {
     my ($path, $src, $lineno) = @_;
 
@@ -335,6 +395,9 @@ sub _expand_track_path {
     return $path;
 }
 
+# _parse_rest -- Parse the optional email/option tokens that follow a track path.
+# Email addresses are any token without '='; key=value tokens become options.
+# Returns: (\@emails, %options)
 sub _parse_rest {
     my ($rest) = @_;
     return ([], ()) unless defined $rest && length $rest;
@@ -351,6 +414,13 @@ sub _parse_rest {
     return (\@emails, %options);
 }
 
+########################################################################
+# v1 compatibility
+########################################################################
+
+# _parse_v1 -- Parse a legacy v1 config (bare path list with optional : emails).
+# Produces a ChangeTrack::Config with version=1 and an empty global section.
+# Runner and migrate_v1_to_v2 handle the incomplete global defaults.
 sub _parse_v1 {
     my ($class, $lines, $src) = @_;
     my @tracks;
@@ -394,25 +464,30 @@ sub _parse_v1 {
     return $class->new(version => 1, global => {}, tracks => \@tracks);
 }
 
-# global($key) — returns scalar or arrayref depending on key type
+########################################################################
+# Accessors
+########################################################################
+
+# global -- Return the value for $key from the [global] section.
+# Array-valued keys return arrayrefs; scalar keys return strings or undef.
 sub global {
     my ($self, $key) = @_;
     return $self->{global}{lc $key};
 }
 
-# tracks() — arrayref of { kind, path, emails, options }
+# tracks -- Return the arrayref of parsed [track] entry hashrefs.
 sub tracks {
     my ($self) = @_;
     return $self->{tracks};
 }
 
-# version() — 1 or 2
+# version -- Return the detected config format version (1 or 2).
 sub version {
     my ($self) = @_;
     return $self->{version};
 }
 
-# dump_v2($path) — write this config as a v2 INI file
+# dump_v2 -- Write the current config state as a v2 INI file to $path.
 sub dump_v2 {
     my ($self, $path) = @_;
     open(my $fh, '>', $path) or croak "Cannot write config '$path': $!";
@@ -449,7 +524,9 @@ sub dump_v2 {
     close($fh);
 }
 
-# migrate_v1_to_v2($v1_path, $v2_path) — one-shot v1→v2 migration
+# migrate_v1_to_v2 -- One-shot v1-to-v2 migration.
+# Loads the v1 config at $v1_path, writes an equivalent v2 INI to $v2_path.
+# Croaks if $v1_path is not a v1 config or on any I/O failure.
 sub migrate_v1_to_v2 {
     my ($class, $v1_path, $v2_path) = @_;
 
@@ -491,6 +568,8 @@ sub migrate_v1_to_v2 {
     close($fh);
 }
 
+# _config_hostname -- Return the FQDN used for HOSTNAME token expansion.
+# Cached after the first call via state variable.
 sub _config_hostname {
     state $h;
     return $h if defined $h;

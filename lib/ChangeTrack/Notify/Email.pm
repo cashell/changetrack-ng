@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Notify::Email - Sendmail-based notifier, per-recipient
+#   digests, heartbeat always off.
+#
+
 package ChangeTrack::Notify::Email;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Notify::Email - email notifier for changetrack-ng
@@ -12,16 +24,12 @@ section.  Heartbeat is always disabled (anti-spam).
 
 =cut
 
-use strict;
-use warnings;
 use feature qw(say);
 use parent 'ChangeTrack::Notify::Base';
 use POSIX qw(strftime);
 
 use ChangeTrack::Util qw(hostname fqdn);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 my @SENDMAIL_PATHS = qw(
@@ -29,6 +37,7 @@ my @SENDMAIL_PATHS = qw(
     /usr/lib/sendmail
 );
 
+# new -- Construct the notifier with defaults for email_from and sensitive_notify.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
@@ -37,14 +46,17 @@ sub new {
     return $self;
 }
 
-# heartbeat_enabled — always 0; email is anti-spam by design.
+# heartbeat_enabled -- Always false; email notifier does not send heartbeats.
 sub heartbeat_enabled { 0 }
 
 sub name { 'email' }
 
-# config_keys — the set of constructor args this notifier reads from config.
+# config_keys -- The set of constructor args this notifier reads from config.
 sub config_keys { qw(email_from email_to sendmail_path) }
 
+# send_changes -- Send per-recipient change digest emails.
+# Changes are grouped by recipient address.  Per-track recipients take
+# precedence over the global email_to list.
 sub send_changes {
     my ($self, $report) = @_;
 
@@ -87,6 +99,7 @@ sub send_changes {
     }
 }
 
+# _format_body -- Build the plain-text email body from a list of change entries.
 sub _format_body {
     my ($self, $changes, $host, $date) = @_;
     my @lines;
@@ -114,6 +127,7 @@ sub _format_body {
     return join("\n", @lines);
 }
 
+# _send_one -- Compose and deliver one RFC 2822 email to $to via sendmail.
 sub _send_one {
     my ($self, $sendmail, $to, $host, $date, $body) = @_;
 
@@ -139,6 +153,8 @@ sub _send_one {
     close($pipe) or warn "[changetrack-ng] sendmail exited with status $?\n";
 }
 
+# _find_sendmail -- Return the path to a usable sendmail binary.
+# Checks sendmail_path config, then well-known paths, then PATH.
 sub _find_sendmail {
     my ($self) = @_;
 

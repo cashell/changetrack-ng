@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 05-vcs-rcs.t - Tests for vcs rcs.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -26,19 +35,22 @@ my $vcs = ChangeTrack::VCS::RCS->new(output_dir => $output_dir);
 isa_ok($vcs, 'ChangeTrack::VCS::RCS');
 isa_ok($vcs, 'ChangeTrack::VCS::Base');
 
-# ── model ────────────────────────────────────────────────────────────────────
-
+########################################################################
+# Model
+########################################################################
 is($vcs->model, 'per-file', 'model returns per-file');
 
-# ── init / is_initialized ────────────────────────────────────────────────────
-
+########################################################################
+# Init / Is_Initialized
+########################################################################
 ok(!$vcs->is_initialized, 'not initialized before init');
 $vcs->init;
 ok($vcs->is_initialized,   'initialized after init');
 ok(-d "$output_dir/RCS",   'RCS subdirectory created');
 
-# ── output_path ──────────────────────────────────────────────────────────────
-
+########################################################################
+# Output_Path
+########################################################################
 is($vcs->output_path('/etc/passwd'),
     "$output_dir/etc:passwd",
     'output_path: single level');
@@ -47,8 +59,9 @@ is($vcs->output_path('/etc/ssl/certs/ca.crt'),
     "$output_dir/etc:ssl:certs:ca.crt",
     'output_path: nested path');
 
-# ── checkin (new file) ───────────────────────────────────────────────────────
-
+########################################################################
+# Checkin (New File)
+########################################################################
 my $test_file = "$tracked_dir/test.conf";
 open(my $fh, '>', $test_file) or die "Cannot create: $!";
 print $fh "setting = original\n";
@@ -62,17 +75,20 @@ my $op       = $vcs->output_path($test_file);
 my $rcs_file = dirname($op) . '/RCS/' . basename($op) . ',v';
 ok(-e $rcs_file, 'checkin: ,v file created');
 
-# ── is_dirty (after checkin, should be clean) ────────────────────────────────
-
+########################################################################
+# Is_Dirty (After Checkin, Should Be Clean)
+########################################################################
 ok(!$vcs->is_dirty($test_file), 'is_dirty: false after initial checkin');
 
-# ── diff on unchanged file ────────────────────────────────────────────────────
-
+########################################################################
+# Diff On Unchanged File
+########################################################################
 my $diff = $vcs->diff($test_file);
 is_deeply($diff, [], 'diff: empty for unchanged file');
 
-# ── modify file → is_dirty / diff ────────────────────────────────────────────
-
+########################################################################
+# Modify File -> Is_Dirty / Diff
+########################################################################
 open($fh, '>', $test_file) or die $!;
 print $fh "setting = modified\n";
 close($fh);
@@ -84,21 +100,24 @@ ok(@$diff > 0, 'diff: non-empty after modification');
 like(join("\n", @$diff), qr/modified/, 'diff: contains modification');
 like(join("\n", @$diff), qr/^\+\+\+/m, 'diff: looks like unified diff');
 
-# ── checkin modified file ─────────────────────────────────────────────────────
-
+########################################################################
+# Checkin Modified File
+########################################################################
 $err = do { local $@; eval { $vcs->checkin($test_file, 'Modification') }; $@ };
 is($err, '', 'checkin modified file: no error');
 ok(!$vcs->is_dirty($test_file), 'is_dirty: false after second checkin');
 
-# ── log_history ───────────────────────────────────────────────────────────────
-
+########################################################################
+# Log_History
+########################################################################
 my $log = $vcs->log_history($test_file);
 ok(@$log > 0, 'log_history: returns lines');
 like(join("\n", @$log), qr/Initial checkin/, 'log_history: contains first commit msg');
 like(join("\n", @$log), qr/Modification/,    'log_history: contains second commit msg');
 
-# ── add and commit are no-ops for RCS ────────────────────────────────────────
-
+########################################################################
+# Add And Commit Are No-Ops For RCS
+########################################################################
 my $add_err    = do { local $@; eval { $vcs->add($test_file) };    $@ };
 my $commit_err = do { local $@; eval { $vcs->commit('batch msg') }; $@ };
 is($add_err,    '', 'add: no-op, no error');

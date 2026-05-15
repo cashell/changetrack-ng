@@ -8,4 +8,4 @@ Target = *
 [Action]
 Description = changetrack-ng: recording post-transaction state
 When = PostTransaction
-Exec = @BINDIR@/changetrack-ng run --quiet -m "post-install: pacman"
+Exec = @BINDIR@/changetrack-ng run --system --quiet -m "post-install: pacman"

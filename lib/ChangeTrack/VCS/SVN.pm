@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::VCS::SVN - Whole-repo with local file:// svnadmin
+#   repository.
+#
+
 package ChangeTrack::VCS::SVN;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::VCS::SVN - Subversion VCS backend for changetrack-ng
@@ -12,8 +24,6 @@ an svn working copy.
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak);
 use File::Basename qw(dirname);
@@ -21,31 +31,35 @@ use File::Path qw(make_path);
 use Cwd qw(getcwd);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 sub model { 'whole-repo' }
 
+# _repo_path -- Return the path to the svnadmin repository directory.
 sub _repo_path {
     my ($self) = @_;
     return $self->{options}{svn_repo} // "$self->{output_dir}-svnrepo";
 }
 
-# /etc/passwd  →  $output_dir/etc/passwd  (mirror tree)
+# output_path -- Map a real path to its mirror location.
+# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
     (my $rel = $real_path) =~ s{^/}{};
     return "$self->{output_dir}/$rel";
 }
 
+# _rel_path -- Strip the output_dir prefix to get the working-copy-relative path.
 sub _rel_path {
     my ($self, $mirror) = @_;
     (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/?}{};
     return $rel;
 }
 
-# Run an SVN command from within the output_dir (the working copy root).
+# _run -- Run an svn command from within the output_dir working copy.
+# Uses getcwd/chdir to switch context; restores the original directory
+# even if the command fails.  Necessary because svn commands are
+# path-relative to the working copy root.
 sub _run {
     my ($self, @cmd) = @_;
     my $old = getcwd();
@@ -63,6 +77,8 @@ sub _run {
     return $r;
 }
 
+# init -- Create a local svnadmin repository and check it out into output_dir.
+# Uses file:// URI for the local repo (three slashes: file:///abs/path).
 sub init {
     my ($self) = @_;
     my $repo = $self->_repo_path;
@@ -73,28 +89,33 @@ sub init {
     croak "svn checkout failed: $r->{stderr}" unless $r->{success};
 }
 
+# is_initialized -- Return true if a .svn directory exists in output_dir.
 sub is_initialized {
     my ($self) = @_;
     return -d "$self->{output_dir}/.svn";
 }
 
+# add -- Copy the real file to the mirror and register it with svn add.
+# --force is idempotent for already-versioned paths; --parents creates
+# intermediate directories as needed.
 sub add {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
     my $rel    = $self->_rel_path($mirror);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
-
-    # --force is idempotent for already-versioned paths and adds missing parents.
     my $r = $self->_run('svn', 'add', '--parents', '--force', $rel);
     croak "svn add failed: $r->{stderr}" unless $r->{success};
 }
 
+# checkin -- Stage the file for the next batch commit (whole-repo model).
 sub checkin {
     my ($self, $real_path, $msg) = @_;
     $self->add($real_path);
 }
 
+# commit -- Commit all pending changes with $msg.
+# SVN commit is inherently a push (no separate push step needed).
 sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
@@ -105,12 +126,14 @@ sub commit {
 
     my $r = $self->_run('svn', 'commit', '-m', $msg);
     croak "svn commit failed: $r->{stderr}" unless $r->{success};
-    # SVN commit is push — no separate push step needed.
+    # SVN commit is push  --  no separate push step needed.
 }
 
 # SVN has no native push_remote concept; the checkout URL is the repository.
 # To use a remote SVN repo, point output_dir at a checkout of that URL.
 
+# diff -- Return unified diff lines for $real_path.
+# Returns ['(new file)'] for unversioned or newly-added files; [] if unchanged.
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -127,11 +150,13 @@ sub diff {
     return [split /\n/, $r->{stdout}];
 }
 
+# is_dirty -- Return true if $real_path has uncommitted changes.
 sub is_dirty {
     my ($self, $real_path) = @_;
     return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
+# log_history -- Return svn log lines for the mirror path of $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -142,6 +167,8 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
+# revert -- Restore $real_path to revision $rev using svn cat,
+# then copy the content back to the live file.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;

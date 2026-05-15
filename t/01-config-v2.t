@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 01-config-v2.t - Tests for config v2.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -10,8 +19,9 @@ use_ok('ChangeTrack::Config');
 
 sub fixture { File::Spec->catfile($RealBin, 'fixtures', @_) }
 
-# ── basic config ──────────────────────────────────────────────────────────────
-
+########################################################################
+# Basic Config
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v2-basic.ini'));
 
@@ -31,8 +41,9 @@ sub fixture { File::Spec->catfile($RealBin, 'fixtures', @_) }
     is_deeply($tracks->[1]{emails}, [], 'basic: second has no emails');
 }
 
-# ── full config ───────────────────────────────────────────────────────────────
-
+########################################################################
+# Full Config
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v2-full.ini'));
 
@@ -55,8 +66,9 @@ sub fixture { File::Spec->catfile($RealBin, 'fixtures', @_) }
     is($ssl->{options}{sensitive}, 'yes', 'full: sensitive option preserved');
 }
 
-# ── known global keys are preserved ──────────────────────────────────────────
-
+########################################################################
+# Known Global Keys Are Preserved
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v2-full.ini'));
     is($cfg->global('lock_timeout'), '0', 'global: lock_timeout preserved');
@@ -64,8 +76,9 @@ sub fixture { File::Spec->catfile($RealBin, 'fixtures', @_) }
     ok(!defined $cfg->global('no_such_key'), 'global: missing key returns undef');
 }
 
-# ── unknown global keys are rejected ─────────────────────────────────────────
-
+########################################################################
+# Unknown Global Keys Are Rejected
+########################################################################
 {
     my ($fh, $tmp) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh} <<'INI';
@@ -84,8 +97,9 @@ INI
         'error message includes unsupported key name');
 }
 
-# ── round-trip: parse → dump → parse → compare ───────────────────────────────
-
+########################################################################
+# Round-Trip: Parse -> Dump -> Parse -> Compare
+########################################################################
 {
     my $cfg1 = ChangeTrack::Config->load(fixture('config-v2-full.ini'));
 
@@ -109,15 +123,17 @@ INI
     }
 }
 
-# ── case-insensitive key lookup ───────────────────────────────────────────────
-
+########################################################################
+# Case-Insensitive Key Lookup
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(fixture('config-v2-basic.ini'));
     is($cfg->global('VCS'), $cfg->global('vcs'), 'global: case-insensitive key lookup');
 }
 
-# ── value validation (booleans/ints/enums) ──────────────────────────────────
-
+########################################################################
+# Value Validation (Booleans/Ints/Enums)
+########################################################################
 {
     my ($fh, $tmp) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh} <<'INI';
@@ -196,8 +212,9 @@ INI
     like($@, qr/invalid value/i, 'enum validation message');
 }
 
-# ── env expansion in scalar + array globals ─────────────────────────────────
-
+########################################################################
+# Env Expansion In Scalar + Array Globals
+########################################################################
 {
     local $ENV{CT_TEST_TOKEN} = 's3cr3t';
     local $ENV{CT_TEST_HOST}  = 'hooks.example.test';
@@ -242,8 +259,9 @@ INI
     like($@, qr/undefined environment variable/i, 'missing env message');
 }
 
-# ── track path expansion (~/ and env vars) ─────────────────────────────────
-
+########################################################################
+# Track Path Expansion (~/ And Env Vars)
+########################################################################
 {
     local $ENV{HOME} = '/tmp/ct-home';
     local $ENV{CT_TEST_DOTDIR} = '.config/demo';

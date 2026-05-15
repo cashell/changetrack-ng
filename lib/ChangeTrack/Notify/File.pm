@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Notify::File - Append-only JSON log notifier with optional
+#   heartbeat.
+#
+
 package ChangeTrack::Notify::File;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Notify::File - append-only JSON log notifier for changetrack-ng
@@ -12,8 +24,6 @@ heartbeat flag.  Configurable heartbeat (default off).
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::Notify::Base';
 use Fcntl qw(:flock);
 use POSIX qw(strftime);
@@ -21,10 +31,9 @@ use JSON::PP ();
 
 use ChangeTrack::Util qw(hostname);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct the notifier with defaults for log_path, heartbeat, and diff output.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
@@ -35,6 +44,7 @@ sub new {
     return $self;
 }
 
+# heartbeat_enabled -- Return true when the file_heartbeat config key is set.
 sub heartbeat_enabled {
     my ($self) = @_;
     return $self->{file_heartbeat} ? 1 : 0;
@@ -42,9 +52,10 @@ sub heartbeat_enabled {
 
 sub name { 'file' }
 
-# config_keys — the set of constructor args this notifier reads from config.
+# config_keys -- The set of constructor args this notifier reads from config.
 sub config_keys { qw(log_path file_heartbeat file_full_diff) }
 
+# validate_config -- Return an error string when notify_log_path is not set.
 sub validate_config {
     my ($self) = @_;
     my $path = $self->{log_path} // '';
@@ -52,16 +63,21 @@ sub validate_config {
     return ('file notifier requires non-empty notify_log_path');
 }
 
+# send_changes -- Append a per-run change record to the log file.
 sub send_changes {
     my ($self, $report) = @_;
     $self->_append_record($self->_build_record($report, 0));
 }
 
+# send_heartbeat -- Append a heartbeat record when no changes were detected.
 sub send_heartbeat {
     my ($self, $report) = @_;
     $self->_append_record($self->_build_record($report, 1));
 }
 
+# _build_record -- Construct the JSON object for one run.
+# Includes metadata, list of changed files, optional diff content, and
+# duration.  When $is_heartbeat is true, the files list is omitted.
 sub _build_record {
     my ($self, $report, $is_heartbeat) = @_;
 
@@ -102,6 +118,8 @@ sub _build_record {
     return \%rec;
 }
 
+# _append_record -- Serialize $record to JSON and append it to the log file.
+# Holds an exclusive flock during the write to prevent interleaved entries.
 sub _append_record {
     my ($self, $record) = @_;
     my $path = $self->{log_path};

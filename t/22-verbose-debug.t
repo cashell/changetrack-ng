@@ -1,5 +1,11 @@
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 22-verbose-debug.t - Tests for verbose debug.
+#
 
 use strict;
 use warnings;
@@ -13,8 +19,9 @@ use IO::Pipe;
 use_ok('ChangeTrack::Runner');
 use_ok('ChangeTrack::Util');
 
-# ── helpers ────────────────────────────────────────────────────────────────────
-
+########################################################################
+# Helpers
+########################################################################
 # Write a minimal v2 config and return the path.
 sub make_config {
     my ($output_dir) = @_;
@@ -52,8 +59,9 @@ sub capture_both {
     return ($out, $err, $@);
 }
 
-# ── test: implication chain in Runner constructor ──────────────────────────────
-
+########################################################################
+# Test: Implication Chain In Runner Constructor
+########################################################################
 {
     my $r = ChangeTrack::Runner->new(trace => 1, quiet => 1);
     ok($r->{trace},   'trace flag stored');
@@ -75,8 +83,9 @@ sub capture_both {
     ok($r->{verbose}, 'verbose flag stored');
 }
 
-# ── test: Util::set_debug and $DEBUG ──────────────────────────────────────────
-
+########################################################################
+# Test: Util::Set_Debug And $DEBUG
+########################################################################
 {
     is($ChangeTrack::Util::DEBUG, 0, 'DEBUG starts at 0');
     ChangeTrack::Util::set_debug(1);
@@ -85,8 +94,9 @@ sub capture_both {
     is($ChangeTrack::Util::DEBUG, 0, 'set_debug(0) resets');
 }
 
-# ── test: no diagnostic output when verbose=0 debug=0 ────────────────────────
-
+########################################################################
+# Test: No Diagnostic Output When Verbose=0 Debug=0
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $cfg = make_config($dir);
@@ -100,8 +110,9 @@ sub capture_both {
     unlike($stderr, qr/\[TRACE\]/,   'no [TRACE] without --trace');
 }
 
-# ── test: verbose emits [VERBOSE] but not [DEBUG] or [TRACE] ─────────────────
-
+########################################################################
+# Test: Verbose Emits [VERBOSE] But Not [DEBUG] Or [TRACE]
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $cfg = make_config($dir);
@@ -118,8 +129,9 @@ sub capture_both {
     like($stderr,    qr/Run complete/,         'verbose shows run summary');
 }
 
-# ── test: debug emits [VERBOSE] + [DEBUG] but not [TRACE] ────────────────────
-
+########################################################################
+# Test: Debug Emits [VERBOSE] + [DEBUG] But Not [TRACE]
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $cfg = make_config($dir);
@@ -135,8 +147,9 @@ sub capture_both {
     like($stderr,   qr/Hostname resolved/,'debug shows resolved hostname');
 }
 
-# ── test: debug run_cmd emits [DEBUG] exec: lines ────────────────────────────
-
+########################################################################
+# Test: Debug Run_Cmd Emits [DEBUG] Exec: Lines
+########################################################################
 {
     # Set DEBUG on Util and run a command, verify [DEBUG] exec: line appears on STDERR
     ChangeTrack::Util::set_debug(1);
@@ -149,8 +162,9 @@ sub capture_both {
     like($stderr, qr/\[DEBUG\] exec: echo changetrack-test/, 'run_cmd emits [DEBUG] exec: line when DEBUG=1');
 }
 
-# ── test: debug does not emit [DEBUG] exec: without DEBUG flag ───────────────
-
+########################################################################
+# Test: Debug Does Not Emit [DEBUG] Exec: Without DEBUG Flag
+########################################################################
 {
     my $stderr = '';
     open(local *STDERR, '>', \$stderr);
@@ -160,8 +174,9 @@ sub capture_both {
     unlike($stderr, qr/\[DEBUG\] exec:/, 'run_cmd silent without DEBUG flag');
 }
 
-# ── test: secrets redacted in debug config dump ───────────────────────────────
-
+########################################################################
+# Test: Secrets Redacted In Debug Config Dump
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my ($fh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
@@ -179,8 +194,9 @@ sub capture_both {
     like($stderr,   qr/REDACTED/,           'redacted placeholder appears in debug output');
 }
 
-# ── test: trace emits [VERBOSE] + [DEBUG] + [TRACE] ─────────────────────────
-
+########################################################################
+# Test: Trace Emits [VERBOSE] + [DEBUG] + [TRACE]
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my ($fh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
@@ -194,11 +210,11 @@ sub capture_both {
     print {$fh} "$tracked_file\n";
     close($fh);
 
-    # First run: commit the file into VCS (no trace yet — it's all actions)
+    # First run: commit the file into VCS (no trace yet  --  it's all actions)
     my $r1 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
     capture_stderr(sub { $r1->run });
 
-    # Second run: file is unchanged, so fast-path skip fires → [TRACE] output
+    # Second run: file is unchanged, so fast-path skip fires -> [TRACE] output
     my $r2 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1, trace => 1);
     my ($stderr, $err) = capture_stderr(sub { $r2->run });
 
@@ -208,8 +224,9 @@ sub capture_both {
     like($stderr, qr/skipped \(mtime\+size unchanged\)/, 'trace shows skip reason');
 }
 
-# ── test: diagnostic output goes to STDERR, not STDOUT ───────────────────────
-
+########################################################################
+# Test: Diagnostic Output Goes To STDERR, Not STDOUT
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $cfg = make_config($dir);

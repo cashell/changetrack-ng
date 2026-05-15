@@ -1,3 +1,18 @@
+changetrack-ng (0.5.5) unstable; urgency=medium
+
+  * Add --system and --user flags for explicit config scope declaration.
+    The two flags are mutually exclusive; --user without HOME set exits 64.
+  * Add CHANGETRACK_CONFIG environment variable: overrides default config location;
+    lower priority than -c/--config, higher than --system/--user scope flags.
+  * Source /etc/default/changetrack-ng (Debian) or /etc/sysconfig/changetrack-ng
+    (RHEL) from cron script, systemd service, and all package manager hooks.
+    Template defaults file installed by make install-hooks.
+  * Add DEFAULTSDIR Makefile variable (auto-detected: /etc/default on Debian,
+    /etc/sysconfig on RHEL via 'command -v dnf').
+  * Add t/23-config-resolution.t: 8-test suite for config resolution priority.
+
+ -- Christopher Cashell <topher@zyp.org>  Thu, 15 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.4) unstable; urgency=medium
 
   * Add three-tier diagnostic system: --verbose/-v (high-level run structure),

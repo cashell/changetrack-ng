@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Runner - Main orchestration engine: config -> lock -> file
+#   list -> process -> commit -> notify.
+#
+
 package ChangeTrack::Runner;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Runner - main orchestration for changetrack-ng
@@ -63,8 +75,6 @@ Restore I<$path> to VCS revision I<$rev>.
 
 =cut
 
-use strict;
-use warnings;
 use feature qw(say);
 use Carp qw(croak);
 use File::Find qw(find);
@@ -78,9 +88,11 @@ use ChangeTrack::Metadata;
 use ChangeTrack::Report;
 use ChangeTrack::Util qw(hostname set_debug);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
+
+########################################################################
+# Module-level data
+########################################################################
 
 my %VCS_CLASSES = (
     rcs       => 'ChangeTrack::VCS::RCS',
@@ -117,10 +129,14 @@ sub builtin_ignore_patterns {
     return @BUILTIN_IGNORE;
 }
 
+# new -- Construct a Runner.
+# Accepts: config, message, no_auto_init, quiet, verbose, debug, trace,
+#          dry_run, force, warn_special_files.
+# Enforces the implication chain: trace -> debug -> verbose.
 sub new {
     my ($class, %args) = @_;
 
-    # Enforce implication chain: trace → debug → verbose
+    # Enforce implication chain: trace -> debug -> verbose
     my $trace   = $args{trace}   // 0;
     my $debug   = $args{debug}   // 0;
     my $verbose = $args{verbose} // 0;
@@ -141,6 +157,15 @@ sub new {
     }, $class;
 }
 
+########################################################################
+# Main run
+########################################################################
+
+# run -- Perform a full scan-commit-notify cycle.
+# Loads config, acquires lock, resolves file list, processes each file,
+# saves metadata, commits the VCS (for whole-repo backends), dispatches
+# notifications, and returns the ChangeTrack::Report.
+# Croaks on VCS-level or lock configuration failure.
 sub run {
     my ($self) = @_;
     my $start_time = time();
@@ -159,7 +184,7 @@ sub run {
     $self->_verbose("VCS: $vcs_name, output_dir: $output_dir");
     $self->_verbose("Notify: " . (@notify_names ? join(', ', @notify_names) : 'none'));
 
-    # Acquire run lock — silently skip if another instance is running (safe for cron)
+    # Acquire run lock  --  silently skip if another instance is running (safe for cron)
     my $lock_path = $cfg->global('lock_path');
     unless (defined($lock_path) && $lock_path =~ /\S/) {
         $lock_path = _default_lock_path();
@@ -318,6 +343,14 @@ sub run {
     return $report;
 }
 
+########################################################################
+# Per-file processing
+########################################################################
+
+# _process_file -- Process a single tracked path for one run.
+# Handles: missing files, fast-path skips, type classification,
+# and per-type actions (new/changed/removed, VCS checkin, Report entry).
+# Per-file errors are caught by the caller and added as warnings.
 sub _process_file {
     my ($self, $entry, $vcs, $md, $report, $commit_msg) = @_;
     my $real_path = $entry->{path};
@@ -331,7 +364,7 @@ sub _process_file {
     my $existing = $md->record_for($real_path);
     my $prev_type = defined($existing) ? ($existing->{type} // '') : '';
 
-    # ── File no longer on disk ────────────────────────────────────────────────
+    # File no longer on disk
     unless (-e $real_path || -l $real_path) {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
@@ -344,7 +377,7 @@ sub _process_file {
         return;
     }
 
-    # ── Fast path: metadata unchanged → skip entirely ─────────────────────────
+    # Fast path: if metadata is unchanged, skip without touching VCS.
     # For known files where mtime+size (or symlink target) haven't changed,
     # there is nothing to process regardless of type.
     if (defined $existing && $md->can_skip_content_diff($real_path)
@@ -355,12 +388,12 @@ sub _process_file {
         return;
     }
 
-    # ── Classify the file (stat it once, determine type) ──────────────────────
+    # Classify the file (stat it once, determine type)
     $md->update_from_stat($real_path);
     my $rec  = $md->record_for($real_path);
     my $type = $rec->{type};
 
-    # ── Non-trackable types: special, unreadable, binary, empty ───────────────
+    # Non-trackable types: special, unreadable, binary, empty
     if ($type eq 'special') {
         $self->_trace("$real_path: classified as special, metadata only");
         unless ($prev_type eq 'special' && !$md->changed_since_load($real_path)) {
@@ -432,11 +465,11 @@ sub _process_file {
     if ($type eq 'file') {
         my @st = stat($real_path);
         if (@st && $st[3] > 1) {
-            $self->_warn("$real_path has $st[3] hard links — changes via other names will not be tracked");
+            $self->_warn("$real_path has $st[3] hard links  --  changes via other names will not be tracked");
         }
     }
 
-    # ── Trackable types: file, symlink ────────────────────────────────────────
+    # Trackable types: file, symlink
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
         defined($rec->{mode}) ? oct($rec->{mode}) : undef);
 
@@ -454,7 +487,7 @@ sub _process_file {
         $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
         $self->_info("New: $real_path");
     } else {
-        # Existing file / symlink — check for changes
+        # Existing file / symlink  --  check for changes
         my $meta_changed = $md->changed_since_load($real_path);
         my $meta_summary = $meta_changed ? $md->diff_summary($real_path) : '';
 
@@ -483,6 +516,13 @@ sub _process_file {
     }
 }
 
+########################################################################
+# File list building
+########################################################################
+
+# _build_file_list -- Resolve all track entries into a sorted list of
+# { path, sensitive, recipients } hashrefs, applying ignore and exclude
+# patterns.  Directory entries are expanded recursively via File::Find.
 sub _build_file_list {
     my ($self, $tracks, $ignore_pats, $exclude_paths) = @_;
     my @entries;
@@ -535,6 +575,8 @@ sub _build_file_list {
     return @entries;
 }
 
+# _internal_exclude_paths -- Return paths that should never be tracked
+# (the output_dir itself and the metadata sidecar).
 sub _internal_exclude_paths {
     my ($cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
@@ -548,6 +590,8 @@ sub _internal_exclude_paths {
     return \@exclude;
 }
 
+# _is_excluded_path -- Return true if $path equals or is a child of any
+# path in $exclude_paths.  Handles path-separator normalization.
 sub _is_excluded_path {
     my ($path, $exclude_paths) = @_;
     my $norm_path = $path;
@@ -562,6 +606,8 @@ sub _is_excluded_path {
     return 0;
 }
 
+# _should_ignore -- Return true if $full_path or its basename matches
+# any compiled ignore pattern.
 sub _should_ignore {
     my ($full_path, $base, $compiled_patterns) = @_;
     if (@$compiled_patterns && ref($compiled_patterns->[0]) ne 'HASH') {
@@ -579,6 +625,10 @@ sub _should_ignore {
     return 0;
 }
 
+# _compile_ignore_patterns -- Convert a list of glob strings to an
+# arrayref of { path => bool, re => qr// } hashrefs.
+# Path-containing patterns (with /) match as a path suffix;
+# plain patterns match only the filename.
 sub _compile_ignore_patterns {
     my ($patterns) = @_;
     my @compiled;
@@ -595,12 +645,16 @@ sub _compile_ignore_patterns {
     return \@compiled;
 }
 
+# _glob_match -- Test a single glob string against a plain string.
+# Used in tests; not called in the main run path.
 sub _glob_match {
     my ($glob, $str) = @_;
     my $re = _glob_to_re($glob);
     return $str =~ /^${re}$/;
 }
 
+# _glob_to_re -- Convert a simple glob pattern to a regex fragment.
+# Handles *, ?, and escapes regex metacharacters.  Does not support ** or [].
 sub _glob_to_re {
     my ($glob) = @_;
     my $re = '';
@@ -614,6 +668,13 @@ sub _glob_to_re {
     return $re;
 }
 
+########################################################################
+# Helpers: sensitive detection, config parsing, locking
+########################################################################
+
+# _resolve_sensitive -- Determine whether a file should be treated as sensitive.
+# Priority: per-track 'sensitive' option (yes/no) > auto-detection by mode.
+# Auto-detection: files with no world-read bit (mode & 0004 == 0) are sensitive.
 sub _resolve_sensitive {
     my ($real_path, $override, $auto_enabled, $mode_oct) = @_;
     if (defined $override) {
@@ -632,6 +693,8 @@ sub _resolve_sensitive {
     return (($mode_oct & 0004) == 0) ? 1 : 0;
 }
 
+# _bool_or_default -- Parse a config boolean string to 1/0.
+# Returns $default if $raw is undef or unrecognized.
 sub _bool_or_default {
     my ($raw, $default) = @_;
     return $default unless defined $raw;
@@ -640,6 +703,9 @@ sub _bool_or_default {
     return $default;
 }
 
+# _default_lock_path -- Return the appropriate lock file path.
+# root gets /var/run/changetrack-ng.lock;
+# unprivileged users get $XDG_CACHE_HOME/changetrack-ng.lock.
 sub _default_lock_path {
     return '/var/run/changetrack-ng.lock' if $> == 0;
 
@@ -656,6 +722,8 @@ sub _default_lock_path {
     return "$cache_dir/changetrack-ng.lock";
 }
 
+# _ensure_lock_parent_dir -- Create the parent directory for $lock_path
+# if it does not already exist (mode 0700).
 sub _ensure_lock_parent_dir {
     my ($lock_path) = @_;
     return unless defined($lock_path) && $lock_path =~ /\S/;
@@ -667,9 +735,12 @@ sub _ensure_lock_parent_dir {
     make_path($dir, { mode => 0700 });
 }
 
-# ── Subcommand helpers ────────────────────────────────────────────────────────
+########################################################################
+# Subcommand helpers
+########################################################################
 
-# Load config, instantiate VCS.  Croaks if VCS is not yet initialized.
+# _setup -- Load config and instantiate the VCS backend.
+# Croaks if the VCS repository is not yet initialized.
 sub _setup {
     my ($self) = @_;
     my $cfg        = ChangeTrack::Config->load($self->{config_path});
@@ -691,6 +762,8 @@ sub _setup {
     return ($vcs, $cfg);
 }
 
+# _tracked_entries -- Resolve all track entries for the current config,
+# applying ignore and exclude patterns.  Returns an arrayref.
 sub _tracked_entries {
     my ($self, $cfg) = @_;
     my @user_ignore = @{ $cfg->global('ignore') // [] };
@@ -699,6 +772,9 @@ sub _tracked_entries {
     return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg))];
 }
 
+# _build_notifier -- Instantiate the notifier class $nclass with config values.
+# Passes only the keys each notifier declares via config_keys(), plus
+# the shared sensitive_notify key.
 sub _build_notifier {
     my ($self, $nclass, $cfg) = @_;
 
@@ -743,7 +819,7 @@ sub _build_notifier {
     return $nclass->new(%args);
 }
 
-# Returns arrayref of { path, diff } for every tracked file with pending changes.
+# status -- Return an arrayref of { path, diff } for all tracked files with pending changes.
 sub status {
     my ($self) = @_;
     my ($vcs, $cfg) = $self->_setup;
@@ -764,7 +840,7 @@ sub status {
     return \@results;
 }
 
-# Returns hashref of path => diff_lines.
+# diff_path -- Return a hashref of path => diff_lines for tracked files with pending diffs.
 # If $path is defined, only that file is checked.
 sub diff_path {
     my ($self, $path) = @_;
@@ -795,7 +871,7 @@ sub diff_path {
     return \%result;
 }
 
-# Returns hashref of path => log_lines.
+# log_path -- Return a hashref of path => log_lines for tracked files.
 # If $path is defined, only that file's history is returned.
 sub log_path {
     my ($self, $path) = @_;
@@ -818,15 +894,15 @@ sub log_path {
     return \%result;
 }
 
-# Load the metadata sidecar for the configured output_dir.
+# _load_metadata -- Load the metadata sidecar for the configured output_dir.
 sub _load_metadata {
     my ($self, $cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
     return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
 }
 
-# _is_non_diffable($path) — true for files that cannot produce meaningful diffs
-# (binary, empty, special, unreadable).  Does NOT open/read the file for symlinks.
+# _is_non_diffable -- Return true for file types that cannot produce meaningful diffs.
+# (binary, empty, special, unreadable).  Symlinks are always diffable (target is text).
 sub _is_non_diffable {
     my ($path) = @_;
     return 1 unless defined $path;
@@ -837,7 +913,8 @@ sub _is_non_diffable {
     return (-B $path) ? 1 : 0;     # binary
 }
 
-# Reverts $path to $rev in both the VCS mirror and the real file.
+# revert_path -- Revert $path to $rev via the VCS, preserving original
+# file mode and ownership after the VCS restore.
 sub revert_path {
     my ($self, $path, $rev) = @_;
     my ($vcs) = $self->_setup;
@@ -847,6 +924,8 @@ sub revert_path {
     _restore_file_metadata($self, $path, $pre) if $pre;
 }
 
+# _snapshot_existing_file -- Capture the current mode/uid/gid of $path
+# before a VCS revert so ownership can be restored afterwards.
 sub _snapshot_existing_file {
     my ($path) = @_;
     return undef unless defined $path && (-e $path || -l $path);
@@ -862,6 +941,8 @@ sub _snapshot_existing_file {
     };
 }
 
+# _restore_file_metadata -- Re-apply pre-revert mode and ownership to $path.
+# chown is only attempted when running as root (uid 0).
 sub _restore_file_metadata {
     my ($self, $path, $pre) = @_;
     return unless defined $pre;
@@ -879,6 +960,9 @@ sub _restore_file_metadata {
     }
 }
 
+# _validate_notifier_startup -- Instantiate and validate all configured
+# notifiers at startup, before any files are processed.
+# Croaks with a user-facing error if any notifier's config is invalid.
 sub _validate_notifier_startup {
     my ($self, $cfg, $notify_names) = @_;
     return unless $notify_names && @$notify_names;
@@ -897,6 +981,8 @@ sub _validate_notifier_startup {
     }
 }
 
+# _warn_insecure_config_permissions -- Warn if the config file is world-readable
+# and contains notifier secrets (OTLP headers, webhook URLs).
 sub _warn_insecure_config_permissions {
     my ($self, $cfg, $path) = @_;
     return unless defined $path && -e $path;
@@ -927,37 +1013,46 @@ sub _warn_insecure_config_permissions {
     ));
 }
 
-# ── Private helpers ───────────────────────────────────────────────────────────
+########################################################################
+# Logging helpers
+########################################################################
 
+# _info -- Print an informational message to STDOUT (suppressed with --quiet).
 sub _info {
     my ($self, $msg) = @_;
     return if $self->{quiet};
     $self->_log('INFO', $msg);
 }
 
+# _verbose -- Emit a [VERBOSE] message to STDERR (only with --verbose/-v).
 sub _verbose {
     my ($self, $msg) = @_;
     return unless $self->{verbose};
     $self->_log('VERBOSE', $msg, 1);
 }
 
+# _debug -- Emit a [DEBUG] message to STDERR (only with --debug/-d).
 sub _debug {
     my ($self, $msg) = @_;
     return unless $self->{debug};
     $self->_log('DEBUG', $msg, 1);
 }
 
+# _trace -- Emit a [TRACE] message to STDERR (only with --trace/-t).
 sub _trace {
     my ($self, $msg) = @_;
     return unless $self->{trace};
     $self->_log('TRACE', $msg, 1);
 }
 
+# _warn -- Emit a [WARN] message to STDERR unconditionally.
 sub _warn {
     my ($self, $msg) = @_;
     $self->_log('WARN', $msg, 1);
 }
 
+# _log -- Format and emit a timestamped log line.
+# $to_stderr=1 sends to STDERR; otherwise to STDOUT.
 sub _log {
     my ($self, $level, $msg, $to_stderr) = @_;
     my $ts = strftime('%Y-%m-%dT%H:%M:%S%z', localtime(time()));

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.5.4
+VERSION    := 0.5.5
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
@@ -11,15 +11,16 @@ SYSCONFDIR ?= $(if $(filter /usr,$(PREFIX)),/etc,$(PREFIX)/etc)
 DATADIR    ?= /var/lib/$(NAME)
 MANDIR     ?= $(PREFIX)/share/man
 DOCDIR     ?= $(PREFIX)/share/doc/$(NAME)
-SYSTEMDDIR ?= /etc/systemd/system
-HOOKSDIR   ?= $(LIBDIR)/hooks
-CRONDIR    ?= /etc/cron.hourly
-DESTDIR    ?=
+SYSTEMDDIR  ?= /etc/systemd/system
+HOOKSDIR    ?= $(LIBDIR)/hooks
+CRONDIR     ?= /etc/cron.hourly
+DEFAULTSDIR ?= $(if $(shell command -v dnf 2>/dev/null),/etc/sysconfig,/etc/default)
+DESTDIR     ?=
 
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup
+.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -188,16 +189,23 @@ debian-build-cleanup:
 		echo "debian/ symlink not found (nothing to remove)"; \
 	fi
 
-install-hooks:
+install-hooks: _install_defaults
 	@if command -v apt-get >/dev/null 2>&1; then \
 		echo "Detected apt; installing hooks..."; \
-		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-pre  /etc/apt/apt.conf.d/80$(NAME)-pre  || true; \
-		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-post /etc/apt/apt.conf.d/80$(NAME)-post || true; \
+		if [ -d packaging/hooks ]; then \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/apt-pre  > /etc/apt/apt.conf.d/80$(NAME)-pre; \
+			chmod 644 /etc/apt/apt.conf.d/80$(NAME)-pre; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/apt-post > /etc/apt/apt.conf.d/80$(NAME)-post; \
+			chmod 644 /etc/apt/apt.conf.d/80$(NAME)-post; \
+		fi; \
 	elif command -v dnf >/dev/null 2>&1; then \
 		echo "Detected dnf; installing plugin hooks..."; \
 		if [ -d packaging/hooks/dnf ]; then \
 			install -d /etc/dnf/plugins; \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/dnf/changetrack_ng.py > /etc/dnf/plugins/changetrack_ng.py; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/dnf/changetrack_ng.py > /etc/dnf/plugins/changetrack_ng.py; \
 			chmod 644 /etc/dnf/plugins/changetrack_ng.py; \
 			install -m 644 packaging/hooks/dnf/changetrack_ng.conf /etc/dnf/plugins/changetrack_ng.conf; \
 		fi; \
@@ -212,30 +220,47 @@ install-hooks:
 		echo "No supported package manager detected; install hooks manually from packaging/hooks/"; \
 	fi
 
-install-debug-hooks:
+install-debug-hooks: _install_defaults
 	@if command -v apt-get >/dev/null 2>&1; then \
 		echo "Detected apt; installing debug hooks..."; \
-		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-pre-debug  /etc/apt/apt.conf.d/80$(NAME)-pre  || true; \
-		[ -d packaging/hooks ] && install -m 644 packaging/hooks/apt-post-debug /etc/apt/apt.conf.d/80$(NAME)-post || true; \
+		if [ -d packaging/hooks ]; then \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/apt-pre-debug  > /etc/apt/apt.conf.d/80$(NAME)-pre; \
+			chmod 644 /etc/apt/apt.conf.d/80$(NAME)-pre; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/apt-post-debug > /etc/apt/apt.conf.d/80$(NAME)-post; \
+			chmod 644 /etc/apt/apt.conf.d/80$(NAME)-post; \
+		fi; \
 		echo "Debug hooks installed. Run 'apt update && apt upgrade' then check /var/log/changetrack-ng-apt-debug.log"; \
 		echo "Restore production hooks with: make install-hooks"; \
 	else \
 		echo "Debug hooks are only supported for apt; no action taken"; \
 	fi
 
-install-systemd:
+install-systemd: _install_defaults
 	install -d $(DESTDIR)$(SYSTEMDDIR)
-	sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/systemd/$(NAME).service > $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
+	sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+	    packaging/systemd/$(NAME).service > $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
 	chmod 644 $(DESTDIR)$(SYSTEMDDIR)/$(NAME).service
 	install -m 644 packaging/systemd/$(NAME).timer   $(DESTDIR)$(SYSTEMDDIR)/
 	systemctl daemon-reload
 	@echo "Enable with: systemctl enable --now $(NAME).timer"
 
-install-cron:
+install-cron: _install_defaults
 	install -d $(DESTDIR)$(CRONDIR)
-	sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/cron/$(NAME) > $(DESTDIR)$(CRONDIR)/$(NAME)
+	sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+	    packaging/cron/$(NAME) > $(DESTDIR)$(CRONDIR)/$(NAME)
 	chmod 755 $(DESTDIR)$(CRONDIR)/$(NAME)
 	@echo "Installed: $(DESTDIR)$(CRONDIR)/$(NAME)"
+
+_install_defaults:
+	install -d $(DESTDIR)$(DEFAULTSDIR)
+	@if [ ! -f $(DESTDIR)$(DEFAULTSDIR)/$(NAME) ]; then \
+		install -m 644 packaging/etc/$(NAME).default $(DESTDIR)$(DEFAULTSDIR)/$(NAME); \
+		echo "Installed defaults: $(DESTDIR)$(DEFAULTSDIR)/$(NAME)"; \
+	else \
+		echo "Skipping defaults (already exists): $(DESTDIR)$(DEFAULTSDIR)/$(NAME)"; \
+	fi
 
 
 install-user: _install_dirs_user _install_bin_user _install_lib_user _install_conf_user _install_examples_user

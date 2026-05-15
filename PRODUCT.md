@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.5.4
+Version: 0.5.5
 
 ---
 
@@ -25,6 +25,7 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 - **Heartbeat signaling** — Configurable "no changes" heartbeats for monitoring systems that alert on silence.
 - **Zero non-core dependencies** — Runs on any Perl 5.20+ system with no CPAN modules required.
 - **Cron-safe locking** — `flock`-based; overlapping invocations silently skip rather than corrupt state.
+- **Flexible config loading** — explicit `-c` path, `$CHANGETRACK_CONFIG` env var, `--system`/`--user` scope flags, or convention-based defaults. Cron, systemd, and package manager hooks source a distro-native defaults file (`/etc/default/changetrack-ng` or `/etc/sysconfig/changetrack-ng`) so admins can override config path or add extra flags without editing unit or hook files.
 
 ---
 
@@ -158,9 +159,16 @@ changetrack-ng --debug --dry-run run
 /usr/local/bin/changetrack-ng              Executable
 /usr/local/lib/changetrack-ng/             Library modules
 /etc/changetrack-ng/changetrack-ng.conf    Configuration (mode 0640)
+/etc/default/changetrack-ng                Defaults file (Debian/Ubuntu)
+/etc/sysconfig/changetrack-ng              Defaults file (RHEL/Fedora)
 /var/lib/changetrack-ng/                   VCS repository + mirror tree
 /var/run/changetrack-ng.lock               Lock file (root)
 ```
+
+The defaults file (`/etc/default/changetrack-ng` or `/etc/sysconfig/changetrack-ng`) is
+shell-sourceable and sets `CHANGETRACK_CONFIG` and `CHANGETRACK_EXTRA_ARGS`. It is
+sourced by the cron script, systemd service, and package manager hooks. The distro
+variant is selected automatically by `make install-hooks`.
 
 Packages available for Debian (`.deb`), RPM (`.spec`), standalone tarball, and single-file fatpack.
 

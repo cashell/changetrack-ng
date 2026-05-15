@@ -6,6 +6,7 @@ After=local-fs.target
 [Service]
 Type=oneshot
 WorkingDirectory=/
-ExecStart=@BINDIR@/changetrack-ng run --quiet
+EnvironmentFile=-@DEFAULTSDIR@/changetrack-ng
+ExecStart=@BINDIR@/changetrack-ng run --system --quiet $CHANGETRACK_EXTRA_ARGS
 StandardOutput=journal
 StandardError=journal

@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 16-subcommands.t - Tests for subcommands.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -22,8 +31,9 @@ my $output_dir  = tempdir(CLEANUP => 1);
 my $tracked_dir = tempdir(CLEANUP => 1);
 my $bin         = File::Spec->catfile($RealBin, '..', 'bin', 'changetrack-ng');
 
-# ── Config helper ─────────────────────────────────────────────────────────────
-
+########################################################################
+# Config Helper
+########################################################################
 sub write_config {
     my (@track_lines) = @_;
     my ($cfh, $cpath) = tempfile(SUFFIX => '.ini', UNLINK => 1);
@@ -33,8 +43,9 @@ sub write_config {
     return $cpath;
 }
 
-# ── Setup: tracked file + initial committed state ─────────────────────────────
-
+########################################################################
+# Setup: Tracked File + Initial Committed State
+########################################################################
 my $test_file = "$tracked_dir/test.conf";
 open(my $fh, '>', $test_file) or die $!;
 print $fh "color = blue\n";
@@ -63,8 +74,9 @@ close($fh);
 
 # File is now clean (both runs committed their state)
 
-# ── status: clean working state ───────────────────────────────────────────────
-
+########################################################################
+# Status: Clean Working State
+########################################################################
 {
     my $runner  = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $changed = $runner->status;
@@ -92,8 +104,9 @@ close($fh);
     ok(@{ $changed->[0]{diff} } > 0, 'status: diff lines present');
 }
 
-# ── diff_path: single file ────────────────────────────────────────────────────
-
+########################################################################
+# Diff_Path: Single File
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $diffs  = $runner->diff_path($test_file);
@@ -103,8 +116,9 @@ close($fh);
     like(join("\n", @{ $diffs->{$test_file} }), qr/^\+\+\+/m, 'diff_path(file): unified diff format');
 }
 
-# ── diff_path: all files (undef path) ────────────────────────────────────────
-
+########################################################################
+# Diff_Path: All Files (Undef Path)
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $diffs  = $runner->diff_path(undef);
@@ -112,8 +126,9 @@ close($fh);
     ok(@{ $diffs->{$test_file} } > 0, 'diff_path(undef): diff lines present');
 }
 
-# ── log_path: single file ────────────────────────────────────────────────────
-
+########################################################################
+# Log_Path: Single File
+########################################################################
 {
     my $runner  = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $logs    = $runner->log_path($test_file);
@@ -124,8 +139,9 @@ close($fh);
     like($joined, qr/changetrack-ng run/, 'log_path(file): commit messages in log');
 }
 
-# ── log_path: all files (undef path) ─────────────────────────────────────────
-
+########################################################################
+# Log_Path: All Files (Undef Path)
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $logs   = $runner->log_path(undef);
@@ -133,8 +149,9 @@ close($fh);
     ok(@{ $logs->{$test_file} } > 0, 'log_path(undef): log lines present');
 }
 
-# ── revert_path ───────────────────────────────────────────────────────────────
-
+########################################################################
+# Revert_Path
+########################################################################
 {
     # Commit the current green state first so revert has a clean base
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
@@ -157,8 +174,9 @@ close($fh);
     is($after_mode, $before_mode, 'revert_path: preserves existing mode on target file');
 }
 
-# ── CLI: status exit codes ────────────────────────────────────────────────────
-
+########################################################################
+# CLI: Status Exit Codes
+########################################################################
 # First commit the reverted state so status starts clean
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
@@ -181,8 +199,9 @@ close($fh);
     is($rc >> 8, 1, 'CLI status: exits 1 when dirty');
 }
 
-# ── CLI: run --dry-run (no commit, no metadata persistence) ─────────────────
-
+########################################################################
+# CLI: Run --Dry-Run (No Commit, No Metadata Persistence)
+########################################################################
 {
     # Capture current committed content (still red from setup history),
     # then make an uncommitted change and dry-run.
@@ -204,8 +223,9 @@ close($fh);
     ok(@$changed >= 1, 'CLI run --dry-run: leaves working state unchanged');
 }
 
-# ── CLI: diff ─────────────────────────────────────────────────────────────────
-
+########################################################################
+# CLI: Diff
+########################################################################
 # Reset file to purple and commit so diff test has expected state
 open($fh, '>', $test_file) or die $!;
 print $fh "color = purple\n";
@@ -216,15 +236,17 @@ close($fh);
     like($output, qr/purple/, 'CLI diff <path>: shows modification in output');
 }
 
-# ── CLI: log ─────────────────────────────────────────────────────────────────
-
+########################################################################
+# CLI: Log
+########################################################################
 {
     my $output = `$^X $bin --config $cfg -q log \Q$test_file\E 2>&1`;
     like($output, qr/changetrack-ng run/, 'CLI log <path>: shows commit history');
 }
 
-# ── CLI: revert --force ───────────────────────────────────────────────────────
-
+########################################################################
+# CLI: Revert --Force
+########################################################################
 {
     # Commit the purple state so we have something to revert from
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
@@ -238,10 +260,11 @@ close($fh);
     unlike($reverted, qr/purple/, 'CLI revert --force: file content changed');
 }
 
-# ── CLI: revert confirmation prompt (abort) ───────────────────────────────────
-
+########################################################################
+# CLI: Revert Confirmation Prompt (Abort)
+########################################################################
 {
-    # Answer 'n' to the prompt — file should be unchanged
+    # Answer 'n' to the prompt  --  file should be unchanged
     my $before = do { open(my $f, '<', $test_file) or die $!; local $/; <$f> };
 
     open(my $proc, '|-',
@@ -256,8 +279,9 @@ close($fh);
     isnt($rc, 0, 'CLI revert: non-zero exit when aborted');
 }
 
-# ── CLI: revert symlink target end-to-end ─────────────────────────────────────
-
+########################################################################
+# CLI: Revert Symlink Target End-To-End
+########################################################################
 {
     my $target_a = "$tracked_dir/target-a.txt";
     my $target_b = "$tracked_dir/target-b.txt";
@@ -291,8 +315,9 @@ close($fh);
     is($rev, $target_a, 'CLI revert symlink: target restored to previous revision');
 }
 
-# ── status fast-path: only changed file surfaces when multiple are tracked ─────
-
+########################################################################
+# Status Fast-Path: Only Changed File Surfaces When Multiple Are Tracked
+########################################################################
 {
     my $file_a = "$tracked_dir/alpha.conf";
     my $file_b = "$tracked_dir/beta.conf";

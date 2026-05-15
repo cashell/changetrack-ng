@@ -1,5 +1,16 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Lock - flock-based run locking to prevent concurrent runs.
+#
+
 package ChangeTrack::Lock;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Lock - flock-based run lock for changetrack-ng
@@ -37,15 +48,14 @@ Release the lock and close the file.
 
 =cut
 
-use strict;
-use warnings;
 use Fcntl qw(:flock);
 use Carp qw(croak);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct a lock object. Does not acquire the lock.
+# Args: path => $path (lock file path), timeout => $seconds,
+#       force => $bool (acquire even if another instance holds it).
 sub new {
     my ($class, %args) = @_;
     return bless {
@@ -56,6 +66,11 @@ sub new {
     }, $class;
 }
 
+# acquire -- Try to obtain an exclusive flock on the lock file.
+# With timeout=0 (default): returns 0 immediately if lock is held (cron-safe).
+# With force=1: warns and blocks until acquired regardless of contention.
+# With timeout>0: retries until deadline, then croaks.
+# Returns 1 on success, 0 if skipped.
 sub acquire {
     my ($self) = @_;
 
@@ -97,6 +112,7 @@ sub acquire {
     }
 }
 
+# release -- Release the flock and close the lock file.
 sub release {
     my ($self) = @_;
     return unless defined $self->{_fh};
@@ -105,11 +121,13 @@ sub release {
     $self->{_fh} = undef;
 }
 
+# DESTROY -- Auto-release the lock when the object goes out of scope.
 sub DESTROY {
     my ($self) = @_;
     $self->release if defined $self->{_fh};
 }
 
+# _sleep -- Wrapper around sleep() for testability (tests redefine this).
 sub _sleep { sleep($_[1]) }
 
 1;

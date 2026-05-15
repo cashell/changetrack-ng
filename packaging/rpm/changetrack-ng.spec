@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.5.4
+Version:        0.5.5
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -109,6 +109,14 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Thu May 15 2026 Christopher Cashell <topher@zyp.org> - 0.5.5-1
+- Add --system and --user flags for explicit config scope declaration
+- Add CHANGETRACK_CONFIG env var (beats --system/--user; loses to -c)
+- Source /etc/default/changetrack-ng (Debian) or /etc/sysconfig/changetrack-ng (RHEL)
+  from cron, systemd, and all package manager hooks; template installed by make install-hooks
+- Add DEFAULTSDIR Makefile variable with auto-detection via 'command -v dnf'
+- Add t/23-config-resolution.t: 8-test suite for config resolution priority
+
 * Wed May 14 2026 Christopher Cashell <topher@zyp.org> - 0.5.4-1
 - Add three-tier diagnostic system: --verbose/-v (high-level run structure),
   --debug/-d (external commands + effective config with secrets redacted),

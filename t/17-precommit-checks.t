@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 17-precommit-checks.t - Tests for precommit checks.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -17,8 +26,9 @@ use_ok('ChangeTrack::Report');
 my $tmpdir   = tempdir(CLEANUP => 1);
 my $have_fifo = eval { require POSIX; defined &POSIX::mkfifo };
 
-# ── Minimal VCS stub ─────────────────────────────────────────────────────────
-
+########################################################################
+# Minimal VCS Stub
+########################################################################
 package MockVCS;
 sub new      { bless {}, shift }
 sub model    { 'per-file' }
@@ -43,8 +53,9 @@ sub make_ctx {
     return ($md, $report);
 }
 
-# ── FIFO: special file warning emitted ───────────────────────────────────────
-
+########################################################################
+# FIFO: Special File Warning Emitted
+########################################################################
 SKIP: {
     skip 'POSIX::mkfifo not available', 2 unless $have_fifo;
 
@@ -69,8 +80,9 @@ SKIP: {
     unlink $fifo;
 }
 
-# ── warn_special_files=0: no warning on special file ─────────────────────────
-
+########################################################################
+# Warn_Special_Files=0: No Warning On Special File
+########################################################################
 SKIP: {
     skip 'POSIX::mkfifo not available', 1 unless $have_fifo;
 
@@ -89,8 +101,9 @@ SKIP: {
     unlink $fifo;
 }
 
-# ── hardlinked file: warning emitted ─────────────────────────────────────────
-
+########################################################################
+# Hardlinked File: Warning Emitted
+########################################################################
 {
     my ($fh, $src) = tempfile(DIR => $tmpdir, SUFFIX => '.txt');
     print $fh "data\n";
@@ -114,8 +127,9 @@ SKIP: {
     unlink $src;
 }
 
-# ── regular file (nlink=1): no hardlink warning ───────────────────────────────
-
+########################################################################
+# Regular File (Nlink=1): No Hardlink Warning
+########################################################################
 {
     my ($fh, $src) = tempfile(DIR => $tmpdir, SUFFIX => '.txt');
     print $fh "data\n";

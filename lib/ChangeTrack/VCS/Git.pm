@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::VCS::Git - Whole-repo mirror model with batch commits and
+#   optional push_remote.
+#
+
 package ChangeTrack::VCS::Git;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::VCS::Git - Git VCS backend for changetrack-ng
@@ -12,34 +24,34 @@ Supports optional push to one or more remotes after each commit.
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 sub model { 'whole-repo' }
 
-# /etc/passwd  →  $output_dir/etc/passwd  (mirror tree)
+# output_path -- Map a real absolute path to its mirror location.
+# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
     (my $rel = $real_path) =~ s{^/}{};
     return "$self->{output_dir}/$rel";
 }
 
-# Relative path within the git repo (strip output_dir prefix).
+# _rel_path -- Strip the output_dir prefix to get the repo-relative path.
+# Used when passing paths to git commands that need relative names.
 sub _rel_path {
     my ($self, $mirror) = @_;
     (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/}{};
     return $rel;
 }
 
+# init -- Initialize a new git repository in output_dir and configure a
+# minimal user identity so commits succeed without a global git config.
 sub init {
     my ($self) = @_;
     make_path($self->{output_dir}, { mode => 0700 }) unless -d $self->{output_dir};
@@ -51,12 +63,13 @@ sub init {
     run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.email', $email]);
 }
 
+# is_initialized -- Return true if a .git directory exists in output_dir.
 sub is_initialized {
     my ($self) = @_;
     return -d "$self->{output_dir}/.git";
 }
 
-# Copy real file to mirror tree and stage it.
+# add -- Copy the real file to the mirror tree and stage it with git add.
 sub add {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -66,14 +79,16 @@ sub add {
     croak "git add failed: $r->{stderr}" unless $r->{success};
 }
 
-# For whole-repo VCS, checkin just stages (commits are deferred until commit()).
+# checkin -- Stage the file for the next batch commit (whole-repo model).
+# Commits are deferred until commit() is called at end-of-run.
 sub checkin {
     my ($self, $real_path, $msg) = @_;
     $self->add($real_path);
 }
 
-# Commit all staged changes.  No-op if nothing is staged.
-# If push_remote is configured, push after commit (best-effort).
+# commit -- Commit all staged changes with $msg.
+# No-ops if nothing is staged.  After a successful commit, pushes to
+# each configured push_remote (best-effort; failures only warn).
 sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
@@ -97,9 +112,8 @@ sub commit {
     }
 }
 
-# Diff real file against HEAD (copies to mirror first).
-# Returns ['(new file)'] if no HEAD exists or file not yet committed.
-# Returns [] if unchanged.
+# diff -- Return unified diff lines for $real_path vs HEAD.
+# Returns ['(new file)'] if the file has no prior commit; [] if unchanged.
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -118,11 +132,13 @@ sub diff {
     return [split /\n/, $r->{stdout}];
 }
 
+# is_dirty -- Return true if $real_path has uncommitted changes.
 sub is_dirty {
     my ($self, $real_path) = @_;
     return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
+# log_history -- Return git log lines for the mirror path of $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -131,6 +147,8 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
+# revert -- Restore $real_path to revision $rev via git checkout,
+# then copy the mirror content back to the live file.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;

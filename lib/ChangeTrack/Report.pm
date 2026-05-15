@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Report - Per-run change record accumulator passed to
+#   notifiers.
+#
+
 package ChangeTrack::Report;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Report - accumulates per-file change records during a run
@@ -61,13 +73,10 @@ Unix timestamps for the run.
 
 =cut
 
-use strict;
-use warnings;
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct a fresh Report for a run starting at time().
 sub new {
     my ($class, %args) = @_;
     return bless {
@@ -80,6 +89,9 @@ sub new {
     }, $class;
 }
 
+# add_change -- Append a change record for a modified or new file.
+# Recognized keys: path, is_new, is_removed, is_sensitive, diff,
+# meta_change, recipients.
 sub add_change {
     my ($self, %args) = @_;
     push @{ $self->{changes} }, {
@@ -93,6 +105,7 @@ sub add_change {
     };
 }
 
+# add_removed -- Append a change record for a file that vanished from disk.
 sub add_removed {
     my ($self, %args) = @_;
     push @{ $self->{changes} }, {
@@ -106,47 +119,53 @@ sub add_removed {
     };
 }
 
+# add_warning -- Record a non-fatal warning encountered during the run.
+# Also sets the has_errors flag, suppressing heartbeat eligibility.
 sub add_warning {
     my ($self, $msg) = @_;
     push @{ $self->{warnings} }, $msg;
     $self->{has_errors} = 1;
 }
 
+# increment_tracked -- Increment the count of files examined this run.
 sub increment_tracked {
     my ($self) = @_;
     $self->{files_tracked}++;
 }
 
+# set_end_time -- Record the Unix timestamp when the run completed.
 sub set_end_time {
     my ($self, $t) = @_;
     $self->{end_time} = $t;
 }
 
-# has_changes() — true if at least one file changed, was added, or was removed.
+# has_changes()  --  true if at least one file changed, was added, or was removed.
 sub has_changes {
     my ($self) = @_;
     return scalar @{ $self->{changes} } > 0;
 }
 
-# is_heartbeat_eligible() — true if the run completed cleanly (no errors/warnings).
+# is_heartbeat_eligible()  --  true if the run completed cleanly (no errors/warnings).
 sub is_heartbeat_eligible {
     my ($self) = @_;
     return !$self->{has_errors};
 }
 
+# Accessors -- Simple read accessors for the report fields.
 sub changes       { $_[0]->{changes}       }
 sub warnings      { $_[0]->{warnings}      }
 sub files_tracked { $_[0]->{files_tracked} }
 sub start_time    { $_[0]->{start_time}    }
 sub end_time      { $_[0]->{end_time}      }
 
+# duration_ms -- Return run duration in milliseconds, or undef if not finished.
 sub duration_ms {
     my ($self) = @_;
     return undef unless defined $self->{end_time};
     return ($self->{end_time} - $self->{start_time}) * 1000;
 }
 
-# to_text() — human-readable run summary for stdout output.
+# to_text()  --  human-readable run summary for stdout output.
 sub to_text {
     my ($self) = @_;
     my @out;

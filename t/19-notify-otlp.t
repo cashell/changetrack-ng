@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 19-notify-otlp.t - Tests for notify otlp.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -25,12 +34,11 @@ use warnings 'redefine';
 
 my $tmpdir = tempdir(CLEANUP => 1);
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Mock OTLP HTTP receiver.
 # Accepts N requests (one per code in @$codes).  Saves the last body to
 # $body_file; also saves request headers to $headers_file if given.
 # Returns ($port, $pid).
-# ─────────────────────────────────────────────────────────────────────────────
 
 sub start_server {
     my (%opts) = @_;
@@ -161,8 +169,9 @@ sub make_report {
     return $r;
 }
 
-# ── name / heartbeat_enabled defaults ─────────────────────────────────────────
-
+########################################################################
+# Name / Heartbeat_Enabled Defaults
+########################################################################
 {
     my $n = ChangeTrack::Notify::OTLP->new;
     is($n->name, 'otlp', 'name() returns otlp');
@@ -174,8 +183,9 @@ sub make_report {
     ok(!$n->heartbeat_enabled, 'heartbeat_enabled false when otlp_heartbeat=0');
 }
 
-# ── no POST when no endpoint configured ───────────────────────────────────────
-
+########################################################################
+# No POST When No Endpoint Configured
+########################################################################
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
@@ -188,8 +198,9 @@ sub make_report {
     pass('send() returns without dying when endpoint is empty');
 }
 
-# ── OTLP payload structure ────────────────────────────────────────────────────
-
+########################################################################
+# OTLP Payload Structure
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'structure.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -218,8 +229,9 @@ sub make_report {
     is(scalar @{ $sl->{logRecords} }, 1,                 'Payload: one logRecord for one change');
 }
 
-# ── resource attributes ───────────────────────────────────────────────────────
-
+########################################################################
+# Resource Attributes
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'resource.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -244,8 +256,9 @@ sub make_report {
     like($ra{'service.version'}{stringValue}, qr/\d/, 'resource: service.version is non-empty');
 }
 
-# ── typed attribute values and timeUnixNano as string ────────────────────────
-
+########################################################################
+# Typed Attribute Values And Timeunixnano As String
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'typed.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -275,8 +288,9 @@ sub make_report {
     is(ref($a{'ct.files_tracked'}{intValue}), '', 'ct.files_tracked intValue is a scalar (string)');
 }
 
-# ── ct.heartbeat=false on change records ─────────────────────────────────────
-
+########################################################################
+# Ct.Heartbeat=False On Change Records
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'hb_false.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -297,8 +311,9 @@ sub make_report {
     ok(!$a{'ct.heartbeat'}{boolValue}, 'ct.heartbeat=false on change record');
 }
 
-# ── ct.files_tracked and ct.run_duration_ms present ──────────────────────────
-
+########################################################################
+# Ct.Files_Tracked And Ct.Run_Duration_Ms Present
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'fields.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -319,8 +334,9 @@ sub make_report {
     ok(exists $a{'ct.run_duration_ms'},  'ct.run_duration_ms present');
 }
 
-# ── heartbeat record: ct.heartbeat=true ───────────────────────────────────────
-
+########################################################################
+# Heartbeat Record: Ct.Heartbeat=True
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'hb_record.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -346,8 +362,9 @@ sub make_report {
     like($rec->{body}{stringValue}, qr/heartbeat/i, 'Heartbeat: body message mentions heartbeat');
 }
 
-# ── heartbeat=0: no POST on clean run ─────────────────────────────────────────
-
+########################################################################
+# Heartbeat=0: No POST On Clean Run
+########################################################################
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
@@ -364,8 +381,9 @@ sub make_report {
     ok(!grep { /failed|error/i } @w, 'No POST on clean run when heartbeat=0');
 }
 
-# ── endpoint normalization warning ────────────────────────────────────────────
-
+########################################################################
+# Endpoint Normalization Warning
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'epnorm.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -401,8 +419,9 @@ sub make_report {
     is($warn_count, 1, 'Endpoint normalization warning fires only once per object');
 }
 
-# ── env var: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT takes precedence ───────────────
-
+########################################################################
+# Env Var: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT Takes Precedence
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'envlogs.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -419,8 +438,9 @@ sub make_report {
     ok(defined $p, 'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT used when set (highest precedence)');
 }
 
-# ── env var: OTEL_EXPORTER_OTLP_ENDPOINT overrides config ────────────────────
-
+########################################################################
+# Env Var: OTEL_EXPORTER_OTLP_ENDPOINT Overrides Config
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'envep.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -437,8 +457,9 @@ sub make_report {
     ok(defined $p, 'OTEL_EXPORTER_OTLP_ENDPOINT overrides otlp_endpoint config');
 }
 
-# ── env var: OTEL_EXPORTER_OTLP_HEADERS merged into request headers ──────────
-
+########################################################################
+# Env Var: OTEL_EXPORTER_OTLP_HEADERS Merged Into Request Headers
+########################################################################
 {
     my $headers_file = File::Spec->catfile($tmpdir, 'envhdrs.txt');
     my $body_file    = File::Spec->catfile($tmpdir, 'envhdrs.json');
@@ -462,8 +483,9 @@ sub make_report {
     is($hdrs{'x-tenant'},       'myorg',     'OTEL_EXPORTER_OTLP_HEADERS: x-tenant forwarded');
 }
 
-# ── env var headers take precedence over config headers ───────────────────────
-
+########################################################################
+# Env Var Headers Take Precedence Over Config Headers
+########################################################################
 {
     my $headers_file = File::Spec->catfile($tmpdir, 'hdrpref.txt');
     my ($port, $pid) = start_server(
@@ -485,8 +507,9 @@ sub make_report {
     is($hdrs{'x-auth'}, 'env-value', 'Env-var header takes precedence over config header');
 }
 
-# ── config header parsing accepts arrayref and hashref values ─────────────────
-
+########################################################################
+# Config Header Parsing Accepts Arrayref And Hashref Values
+########################################################################
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_HEADERS};
     my $n = ChangeTrack::Notify::OTLP->new(
@@ -508,8 +531,9 @@ sub make_report {
     is($hdrs{'x-api-key'}, 'abc123', 'Hashref otlp_headers parsed correctly');
 }
 
-# ── resource attributes accept arrayref and hashref values ────────────────────
-
+########################################################################
+# Resource Attributes Accept Arrayref And Hashref Values
+########################################################################
 {
     my $n = ChangeTrack::Notify::OTLP->new(
         otlp_resource_attributes => ['deployment.environment=prod', 'service.name=custom-svc'],
@@ -529,8 +553,9 @@ sub make_report {
     is($attrs{'team.name'}, 'platform', 'Hashref resource attr parsed correctly');
 }
 
-# ── gzip compression ──────────────────────────────────────────────────────────
-
+########################################################################
+# Gzip Compression
+########################################################################
 SKIP: {
     eval { require IO::Compress::Gzip; require IO::Compress::Gunzip; 1 }
         or skip 'IO::Compress::Gzip not available', 3;
@@ -567,8 +592,9 @@ SKIP: {
     ok(exists $p->{resourceLogs}, 'Gzip: decompressed body is valid OTLP JSON');
 }
 
-# ── 503 response: retries and succeeds on third attempt ───────────────────────
-
+########################################################################
+# 503 Response: Retries And Succeeds On Third Attempt
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'retry.json');
     my ($port, $pid) = start_server(
@@ -592,8 +618,9 @@ SKIP: {
     ok(exists $p->{resourceLogs}, '503 retry: OTLP structure intact');
 }
 
-# ── 503 × 3: warn after exhausting retries ────────────────────────────────────
-
+########################################################################
+# 503 x 3: Warn After Exhausting Retries
+########################################################################
 {
     my ($port, $pid) = start_server(codes => [503, 503, 503]);
 
@@ -614,8 +641,9 @@ SKIP: {
     pass('Does not die after exhausting 503 retries');
 }
 
-# ── 400 response: no retry, warning logged ────────────────────────────────────
-
+########################################################################
+# 400 Response: No Retry, Warning Logged
+########################################################################
 {
     my ($port, $pid) = start_server(codes => [400]);
 
@@ -636,8 +664,9 @@ SKIP: {
     pass('Does not die on 400 response');
 }
 
-# ── sensitive file: ct.diff omitted with otlp_full_diff=1 + suppress ─────────
-
+########################################################################
+# Sensitive File: Ct.Diff Omitted With Otlp_Full_Diff=1 + Suppress
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'sens_suppress.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -660,8 +689,9 @@ SKIP: {
     ok(!exists $a{'ct.diff'},            'Sensitive suppress: ct.diff omitted');
 }
 
-# ── sensitive_notify=allow: ct.diff included ─────────────────────────────────
-
+########################################################################
+# Sensitive_Notify=Allow: Ct.Diff Included
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'sens_allow.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -684,8 +714,9 @@ SKIP: {
     like($a{'ct.diff'}{stringValue}, qr/old_hash/, 'sensitive_notify=allow: diff content included');
 }
 
-# ── otlp_full_diff=1: ct.diff present for non-sensitive files ─────────────────
-
+########################################################################
+# Otlp_Full_Diff=1: Ct.Diff Present For Non-Sensitive Files
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'full_diff.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -707,8 +738,9 @@ SKIP: {
     like($a{'ct.diff'}{stringValue}, qr/\+root/, 'Full diff: diff content included');
 }
 
-# ── no ct.diff without otlp_full_diff ─────────────────────────────────────────
-
+########################################################################
+# No Ct.Diff Without Otlp_Full_Diff
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'no_diff.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -729,8 +761,9 @@ SKIP: {
     ok(!exists $a{'ct.diff'}, 'No ct.diff attr without otlp_full_diff');
 }
 
-# ── warning records emitted as WARN severity ──────────────────────────────────
-
+########################################################################
+# Warning Records Emitted As WARN Severity
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'warn_rec.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);

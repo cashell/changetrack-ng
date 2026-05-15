@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 08-notify-webhook.t - Tests for notify webhook.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -27,11 +36,11 @@ use warnings 'redefine';
 
 my $tmpdir = tempdir(CLEANUP => 1);
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Helper: start a minimal HTTP server that accepts N requests (one per response
 # code in @$codes), saves the last request body to $body_file if given, and exits.
 # Returns ($port, $pid).
-# ─────────────────────────────────────────────────────────────────────────────
+
 sub start_server {
     my (%opts) = @_;
     my $codes     = $opts{codes}     // [200];
@@ -130,16 +139,18 @@ sub make_report {
     return $r;
 }
 
-# ── name / defaults ───────────────────────────────────────────────────────────
-
+########################################################################
+# Name / Defaults
+########################################################################
 {
     my $n = ChangeTrack::Notify::Webhook->new(webhook_url => '');
     is($n->name, 'webhook', 'name() returns webhook');
     ok(!$n->heartbeat_enabled, 'heartbeat disabled by default');
 }
 
-# ── no POST on clean run with heartbeat off ───────────────────────────────────
-
+########################################################################
+# No POST On Clean Run With Heartbeat Off
+########################################################################
 {
     # No server started; if a POST were attempted, HTTP::Tiny would warn.
     my $n      = ChangeTrack::Notify::Webhook->new(webhook_url => '');
@@ -151,8 +162,9 @@ sub make_report {
     pass('send() returns without dying on empty URL list');
 }
 
-# ── single URL: summary payload on changes ────────────────────────────────────
-
+########################################################################
+# Single URL: Summary Payload On Changes
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'single.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -179,8 +191,9 @@ sub make_report {
     ok(defined $p->{files_tracked},             'files_tracked present');
 }
 
-# ── diff counters ignore unified header lines ───────────────────────────────
-
+########################################################################
+# Diff Counters Ignore Unified Header Lines
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'header_count.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -214,8 +227,9 @@ sub make_report {
     is($p->{files}[0]{diff_lines_removed}, 1, 'Header counter: --- header is excluded');
 }
 
-# ── webhook_full_diff=1 includes diff content ─────────────────────────────────
-
+########################################################################
+# Webhook_Full_Diff=1 Includes Diff Content
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'fulldiff.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -233,8 +247,9 @@ sub make_report {
     like($p->{files}[0]{diff}, qr/\+root/, 'diff content included');
 }
 
-# ── multiple URLs all receive payload ─────────────────────────────────────────
-
+########################################################################
+# Multiple Urls All Receive Payload
+########################################################################
 {
     my $body1 = File::Spec->catfile($tmpdir, 'multi1.json');
     my $body2 = File::Spec->catfile($tmpdir, 'multi2.json');
@@ -255,8 +270,9 @@ sub make_report {
     is($p2->{tool}, 'changetrack-ng', 'Second URL payload valid');
 }
 
-# ── URL arrayref is accepted and split correctly ─────────────────────────────
-
+########################################################################
+# URL Arrayref Is Accepted And Split Correctly
+########################################################################
 {
     my $body1 = File::Spec->catfile($tmpdir, 'multi_array_1.json');
     my $body2 = File::Spec->catfile($tmpdir, 'multi_array_2.json');
@@ -277,8 +293,9 @@ sub make_report {
     ok(-e $body2, 'Arrayref URL #2 received payload');
 }
 
-# ── 500 response: retries then logs warning ───────────────────────────────────
-
+########################################################################
+# 500 Response: Retries Then Logs Warning
+########################################################################
 {
     # Server returns 500 three times (one per retry attempt)
     my ($port, $pid) = start_server(codes => [500, 500, 500]);
@@ -298,8 +315,9 @@ sub make_report {
     pass('Run did not die on 500 response');
 }
 
-# ── 404 response: no retry, warning logged ────────────────────────────────────
-
+########################################################################
+# 404 Response: No Retry, Warning Logged
+########################################################################
 {
     my ($port, $pid) = start_server(codes => [404]);
 
@@ -318,8 +336,9 @@ sub make_report {
     pass('Run did not die on 404 response');
 }
 
-# ── unreachable host: run continues, no exception ────────────────────────────
-
+########################################################################
+# Unreachable Host: Run Continues, No Exception
+########################################################################
 {
     # Use a port that should not be listening
     my $n = ChangeTrack::Notify::Webhook->new(
@@ -330,8 +349,9 @@ sub make_report {
     ok(!$@, 'No exception on unreachable host');
 }
 
-# ── heartbeat_enabled with webhook_heartbeat=1 ────────────────────────────────
-
+########################################################################
+# Heartbeat_Enabled With Webhook_Heartbeat=1
+########################################################################
 {
     my $n = ChangeTrack::Notify::Webhook->new(
         webhook_url       => '',
@@ -340,8 +360,9 @@ sub make_report {
     ok($n->heartbeat_enabled, 'heartbeat_enabled true when webhook_heartbeat=1');
 }
 
-# ── heartbeat=1: POST with heartbeat=true on clean run ───────────────────────
-
+########################################################################
+# Heartbeat=1: POST With Heartbeat=True On Clean Run
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'heartbeat.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -362,8 +383,9 @@ sub make_report {
     like($p->{message}, qr/heartbeat/i,  'Heartbeat: message field set');
 }
 
-# ── heartbeat=0 (default): no POST on clean run ───────────────────────────────
-
+########################################################################
+# Heartbeat=0 (Default): No POST On Clean Run
+########################################################################
 {
     my $n = ChangeTrack::Notify::Webhook->new(
         webhook_url       => 'http://127.0.0.1:19754/',
@@ -379,8 +401,9 @@ sub make_report {
     ok(!grep { /failed|error/i } @w, 'No POST warning on clean run when heartbeat=0');
 }
 
-# ── sensitive file: diff omitted even with webhook_full_diff=1 ───────────────
-
+########################################################################
+# Sensitive File: Diff Omitted Even With Webhook_Full_Diff=1
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'sensitive.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
@@ -399,8 +422,9 @@ sub make_report {
     ok(!exists $p->{files}[0]{diff},            'Sensitive: diff field omitted');
 }
 
-# ── sensitive_notify=allow: diff included ─────────────────────────────────────
-
+########################################################################
+# Sensitive_Notify=Allow: Diff Included
+########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'sens-allow.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);

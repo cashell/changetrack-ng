@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 10-sensitive.t - Tests for sensitive.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -18,8 +27,9 @@ use_ok('ChangeTrack::Notify::File');
 use_ok('ChangeTrack::Report');
 use_ok('ChangeTrack::Test::MockSendmail');
 
-# ── _resolve_sensitive() unit tests (via Runner internals) ───────────────────
-
+########################################################################
+# _Resolve_Sensitive() Unit Tests (Via Runner Internals)
+########################################################################
 # We call the private function directly by importing it.
 # It's a package sub so we can call it as ChangeTrack::Runner::_resolve_sensitive().
 
@@ -30,23 +40,24 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     chmod(0644, $file);
     ok(!ChangeTrack::Runner::_resolve_sensitive($file, undef),
-        '_resolve_sensitive: 0644 → not sensitive (world-readable)');
+        '_resolve_sensitive: 0644 -> not sensitive (world-readable)');
 
     chmod(0640, $file);
     ok(ChangeTrack::Runner::_resolve_sensitive($file, undef),
-        '_resolve_sensitive: 0640 → sensitive (no world read)');
+        '_resolve_sensitive: 0640 -> sensitive (no world read)');
 
     chmod(0600, $file);
     ok(ChangeTrack::Runner::_resolve_sensitive($file, undef),
-        '_resolve_sensitive: 0600 → sensitive (no world read)');
+        '_resolve_sensitive: 0600 -> sensitive (no world read)');
 
     chmod(0604, $file);
     ok(!ChangeTrack::Runner::_resolve_sensitive($file, undef),
-        '_resolve_sensitive: 0604 → not sensitive (world-readable)');
+        '_resolve_sensitive: 0604 -> not sensitive (world-readable)');
 }
 
-# ── sensitive override: yes/no/1/0 ───────────────────────────────────────────
-
+########################################################################
+# Sensitive Override: Yes/No/1/0
+########################################################################
 {
     my ($fh, $file) = tempfile(UNLINK => 1, SUFFIX => '.conf');
     print $fh "data\n"; close($fh);
@@ -64,8 +75,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
         'override 0: forces not-sensitive');
 }
 
-# ── VCS still gets full diff; notification suppresses ────────────────────────
-
+########################################################################
+# VCS Still Gets Full Diff; Notification Suppresses
+########################################################################
 {
     # Build a report where a file is sensitive
     my $report = ChangeTrack::Report->new(start_time => time());
@@ -101,8 +113,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     like($diff_str,   qr/suppressed/i, 'Notification: suppression placeholder present');
 }
 
-# ── sensitive_notify=allow: full diff in notification ────────────────────────
-
+########################################################################
+# Sensitive_Notify=Allow: Full Diff In Notification
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $log = "$dir/allow.log";
@@ -130,8 +143,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     like($diff_str, qr/old_hash/, 'sensitive_notify=allow: full diff in notification');
 }
 
-# ── metadata loosening is always reported ─────────────────────────────────────
-
+########################################################################
+# Metadata Loosening Is Always Reported
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $log = "$dir/perm-loosen.log";
@@ -159,8 +173,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
         'Permission loosening: meta_change always present in notification');
 }
 
-# ── sensitive_auto × sensitive_notify interaction matrix ─────────────────────
-
+########################################################################
+# Sensitive_Auto x Sensitive_Notify Interaction Matrix
+########################################################################
 {
     my ($fh, $file) = tempfile(UNLINK => 1, SUFFIX => '.secret');
     print $fh "token=abcd\n";
@@ -211,8 +226,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     }
 }
 
-# ── email notifier: sensitive suppression ────────────────────────────────────
-
+########################################################################
+# Email Notifier: Sensitive Suppression
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 

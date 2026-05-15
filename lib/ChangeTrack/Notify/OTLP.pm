@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Notify::OTLP - OTLP/HTTP+JSON logs with gzip, env-var
+#   precedence, heartbeat default ON.
+#
+
 package ChangeTrack::Notify::OTLP;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Notify::OTLP - OpenTelemetry (OTLP/HTTP) notifier for changetrack-ng
@@ -14,8 +26,6 @@ and heartbeat enabled by default.
 
 =cut
 
-use strict;
-use warnings;
 use feature qw(state);
 use parent 'ChangeTrack::Notify::Base';
 use JSON::PP ();
@@ -23,10 +33,9 @@ use HTTP::Tiny ();
 
 use ChangeTrack::Util qw(hostname);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct the notifier with OTLP config defaults.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
@@ -43,6 +52,7 @@ sub new {
     return $self;
 }
 
+# heartbeat_enabled -- Return true when otlp_heartbeat is set (default on).
 sub heartbeat_enabled {
     my ($self) = @_;
     return $self->{otlp_heartbeat} ? 1 : 0;
@@ -50,9 +60,10 @@ sub heartbeat_enabled {
 
 sub name { 'otlp' }
 
-# config_keys — the set of constructor args this notifier reads from config.
+# config_keys -- The set of constructor args this notifier reads from config.
 sub config_keys { qw(otlp_endpoint otlp_headers otlp_compression otlp_full_diff otlp_heartbeat otlp_timeout otlp_insecure otlp_resource_attributes) }
 
+# validate_config -- Return an error string when no endpoint is configured.
 sub validate_config {
     my ($self) = @_;
     my $ep = $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
@@ -63,6 +74,7 @@ sub validate_config {
     return ('otlp notifier requires otlp_endpoint or OTEL_EXPORTER_OTLP[_LOGS]_ENDPOINT');
 }
 
+# send_changes -- Build and POST an OTLP change payload.
 sub send_changes {
     my ($self, $report) = @_;
     my $ep = $self->_resolve_endpoint;
@@ -70,6 +82,7 @@ sub send_changes {
     $self->_post_with_retry($ep, $self->_build_payload($report, 0));
 }
 
+# send_heartbeat -- Build and POST an OTLP heartbeat payload.
 sub send_heartbeat {
     my ($self, $report) = @_;
     my $ep = $self->_resolve_endpoint;
@@ -77,6 +90,9 @@ sub send_heartbeat {
     $self->_post_with_retry($ep, $self->_build_payload($report, 1));
 }
 
+# _build_payload -- Construct the OTLP LogsData JSON payload for one run.
+# Heartbeat runs emit a single INFO log record with ct.heartbeat=true.
+# Change runs emit one record per changed file plus records for warnings.
 sub _build_payload {
     my ($self, $report, $is_heartbeat) = @_;
 
@@ -175,6 +191,9 @@ sub _build_payload {
     };
 }
 
+# _resource_attrs -- Build the OTLP resource attributes array.
+# Merges fixed host/service attributes with any custom otlp_resource_attributes.
+# Reads /etc/machine-id once per process (cached via state).
 sub _resource_attrs {
     my ($self) = @_;
 
@@ -202,6 +221,8 @@ sub _resource_attrs {
     return [ map { { key => $_, value => { stringValue => $attrs{$_} } } } sort keys %attrs ];
 }
 
+# _resolve_endpoint -- Return the OTLP endpoint URL, checking env vars first.
+# Appends /v1/logs if absent (with a one-time warning).
 sub _resolve_endpoint {
     my ($self) = @_;
 
@@ -224,6 +245,8 @@ sub _resolve_endpoint {
     return $ep;
 }
 
+# _resolve_headers -- Merge Content-Type, config headers, and OTEL_EXPORTER_OTLP_HEADERS.
+# Environment headers take precedence over config headers.
 sub _resolve_headers {
     my ($self) = @_;
 
@@ -241,6 +264,9 @@ sub _resolve_headers {
     return %headers;
 }
 
+# _post_with_retry -- POST the OTLP payload to $ep with up to 3 attempts.
+# Applies gzip compression when otlp_compression=gzip is set.
+# Client errors (4xx) are not retried; network/5xx errors use exponential back-off.
 sub _post_with_retry {
     my ($self, $ep, $payload) = @_;
 
@@ -303,9 +329,11 @@ sub _post_with_retry {
     }
 }
 
+# _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
 sub _sleep { sleep($_[1]) }
 
-# Space-separated k=v pairs; backslash escapes spaces in values.
+# _parse_config_headers -- Parse space-separated key=value pairs from config.
+# Backslash-escaped spaces in values are supported.
 sub _parse_config_headers {
     my ($str) = @_;
     my %h;
@@ -317,7 +345,9 @@ sub _parse_config_headers {
     return %h;
 }
 
-# Comma-separated k=v pairs; values are percent-encoded.
+# _parse_env_headers -- Parse comma-separated key=value pairs from an
+# OTEL_EXPORTER_OTLP_HEADERS-style environment variable string.
+# Values are percent-decoded per the OpenTelemetry spec.
 sub _parse_env_headers {
     my ($str) = @_;
     my %h;
@@ -334,6 +364,8 @@ sub _parse_env_headers {
     return %h;
 }
 
+# _parse_kv_config_value -- Normalize a config key=value setting into a plain
+# Perl hash.  Accepts a hashref, arrayref of 'k=v' strings, or a raw string.
 sub _parse_kv_config_value {
     my ($raw) = @_;
     return () unless defined $raw;

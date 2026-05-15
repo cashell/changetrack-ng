@@ -1,6 +1,14 @@
 #!/usr/bin/perl
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# changetrack-ng - Main CLI entry point; parses options and dispatches to
+#   subcommands (run, init, status, diff, log, revert, update-ignore,
+#   migrate-config).
+#
 
 use strict;
 use warnings;
@@ -13,23 +21,23 @@ use ChangeTrack::Version;
 our $VERSION = $ChangeTrack::Version::VERSION;
 
 my %opts = (
-    config      => ($> == 0)
-        ? '/etc/changetrack-ng/changetrack-ng.conf'
-        : (($ENV{HOME} // '') =~ /\S/
-            ? "$ENV{HOME}/.config/changetrack-ng/changetrack-ng.conf"
-            : '/etc/changetrack-ng/changetrack-ng.conf'),
-    quiet       => 0,
-    verbose     => 0,
-    debug       => 0,
-    trace       => 0,
+    config       => undef,
+    system_mode  => 0,
+    user_mode    => 0,
+    quiet        => 0,
+    verbose      => 0,
+    debug        => 0,
+    trace        => 0,
     no_auto_init => 0,
-    dry_run     => 0,
-    message     => '',
-    force       => 0,
+    dry_run      => 0,
+    message      => '',
+    force        => 0,
 );
 
 GetOptions(
     'config|c=s'     => \$opts{config},
+    'system'         => \$opts{system_mode},
+    'user'           => \$opts{user_mode},
     'message|m=s'    => \$opts{message},
     'no-auto-init'   => \$opts{no_auto_init},
     'dry-run|n'      => \$opts{dry_run},
@@ -42,7 +50,28 @@ GetOptions(
     'help|h'         => sub { _usage(); exit 0 },
 ) or do { _usage(\*STDERR); exit 64 };
 
-# Implication chain: trace → debug → verbose
+if ($opts{system_mode} && $opts{user_mode}) {
+    warn "changetrack-ng: --system and --user are mutually exclusive\n";
+    exit 64;
+}
+
+# Config path resolution (priority: -c > $CHANGETRACK_CONFIG > --user/--system > default)
+unless (defined $opts{config}) {
+    if (defined $ENV{CHANGETRACK_CONFIG} && $ENV{CHANGETRACK_CONFIG} =~ /\S/) {
+        $opts{config} = $ENV{CHANGETRACK_CONFIG};
+    } elsif ($opts{user_mode}) {
+        my $home = $ENV{HOME} // '';
+        if ($home !~ /\S/) {
+            warn "changetrack-ng: --user requires HOME to be set\n";
+            exit 64;
+        }
+        $opts{config} = "$home/.config/changetrack-ng/changetrack-ng.conf";
+    } else {
+        $opts{config} = '/etc/changetrack-ng/changetrack-ng.conf';
+    }
+}
+
+# Implication chain: trace -> debug -> verbose
 $opts{debug}   = 1 if $opts{trace};
 $opts{verbose} = 1 if $opts{debug};
 
@@ -67,8 +96,11 @@ unless (exists $dispatch{$subcommand}) {
 
 exit($dispatch{$subcommand}->());
 
-# ── subcommand stubs ──────────────────────────────────────────────────────────
+########################################################################
+# Subcommand Implementations
+########################################################################
 
+# cmd_run -- Instantiate Runner and execute a full tracked-file scan.
 sub cmd_run {
     require ChangeTrack::Runner;
     my $runner = ChangeTrack::Runner->new(
@@ -87,6 +119,7 @@ sub cmd_run {
     return 0;
 }
 
+# cmd_init -- Initialize the VCS output directory without running a scan.
 sub cmd_init {
     require ChangeTrack::Runner;
     require ChangeTrack::Config;
@@ -119,6 +152,7 @@ sub cmd_init {
     return 0;
 }
 
+# cmd_status -- List files that have pending changes without committing.
 sub cmd_status {
     require ChangeTrack::Runner;
     my $runner = ChangeTrack::Runner->new(
@@ -135,6 +169,7 @@ sub cmd_status {
     return @$changed ? 1 : 0;
 }
 
+# cmd_diff -- Print the pending unified diff for one file or all tracked paths.
 sub cmd_diff {
     require ChangeTrack::Runner;
     my $path   = @ARGV ? shift @ARGV : undef;
@@ -153,6 +188,7 @@ sub cmd_diff {
     return 0;
 }
 
+# cmd_log -- Print VCS history for one file or all tracked paths.
 sub cmd_log {
     require ChangeTrack::Runner;
     my $path   = @ARGV ? shift @ARGV : undef;
@@ -171,6 +207,8 @@ sub cmd_log {
     return 0;
 }
 
+# cmd_revert -- Restore a tracked file to a specific revision.
+# Prompts for confirmation unless --force is given.
 sub cmd_revert {
     require ChangeTrack::Runner;
     my ($path, $rev) = @ARGV;
@@ -200,6 +238,7 @@ sub cmd_revert {
     return 0;
 }
 
+# cmd_update_ignore -- Write VCS-native ignore patterns for the configured backend.
 sub cmd_update_ignore {
     require ChangeTrack::Config;
     require ChangeTrack::Runner;
@@ -224,6 +263,7 @@ sub cmd_update_ignore {
     return 0;
 }
 
+# _update_gitignore -- Write/replace the managed block in output_dir/.gitignore.
 sub _update_gitignore {
     my ($dir, $patterns) = @_;
     my $path         = "$dir/.gitignore";
@@ -254,6 +294,7 @@ sub _update_gitignore {
     say "Updated: $path" unless $opts{quiet};
 }
 
+# cmd_migrate_config -- Convert a v1 config file to v2 format.
 sub cmd_migrate_config {
     require ChangeTrack::Config;
 
@@ -274,18 +315,22 @@ sub cmd_migrate_config {
         return 1;
     }
 
-    say "Migrated: $v1_path → $v2_path" unless $opts{quiet};
+    say "Migrated: $v1_path -> $v2_path" unless $opts{quiet};
     return 0;
 }
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+########################################################################
+# Helpers
+########################################################################
 
+# _info -- Print an informational message to STDERR (suppressed when quiet).
 sub _info {
     my ($msg) = @_;
     return if $opts{quiet};
     warn "[changetrack-ng] $msg\n";
 }
 
+# _usage -- Print usage text to $fh (defaults to STDOUT).
 sub _usage {
     my ($fh) = @_;
     $fh //= \*STDOUT;
@@ -303,8 +348,9 @@ Subcommands:
   migrate-config <v1> [<v2>]  Convert v1 config to v2 format
 
 Options:
-    -c, --config <file>    Config file  [default: /etc/changetrack-ng/... for root,
-                                                                                ~/.config/changetrack-ng/... for non-root]
+    -c, --config <file>    Config file path (overrides all other config resolution)
+        --system           Use system config: /etc/changetrack-ng/changetrack-ng.conf (default)
+        --user             Use user config:   ~/.config/changetrack-ng/changetrack-ng.conf
   -m, --message <msg>    Extra annotation appended to commit message
       --no-auto-init     Disable implicit VCS initialization on first run
     -n, --dry-run          Detect and report changes without committing/notifying
@@ -315,6 +361,12 @@ Options:
   -t, --trace            Show per-file processing decisions (implies --debug)
   -V, --version          Print version and exit
   -h, --help             Print this help and exit
+
+Config resolution order (highest to lowest priority):
+  1. -c / --config explicit path
+  2. \$CHANGETRACK_CONFIG environment variable
+  3. --user / --system flag
+  4. Default: system config (/etc/changetrack-ng/changetrack-ng.conf)
 USAGE
 }
 
@@ -343,17 +395,17 @@ By default, C<run> scans configured tracked paths, detects metadata and
 content changes, commits updates to the configured backend repository, and
 sends notifications.
 
-Default config path behavior:
+Config path resolution order (highest to lowest priority):
 
 =over 4
 
-=item * root user
+=item 1. C<-c> / C<--config> explicit path
 
-C</etc/changetrack-ng/changetrack-ng.conf>
+=item 2. C<CHANGETRACK_CONFIG> environment variable
 
-=item * non-root user
+=item 3. C<--user> / C<--system> flag
 
-C<$HOME/.config/changetrack-ng/changetrack-ng.conf>
+=item 4. Default: system config (C</etc/changetrack-ng/changetrack-ng.conf>)
 
 =back
 
@@ -402,7 +454,17 @@ Convert legacy v1 configuration to v2 format.
 
 =item C<-c, --config E<lt>fileE<gt>>
 
-Configuration file to load.
+Configuration file to load. Overrides all other config path resolution.
+
+=item C<--system>
+
+Use the system-wide config: C</etc/changetrack-ng/changetrack-ng.conf>. This
+is the default when neither C<--system> nor C<--user> is given.
+
+=item C<--user>
+
+Use the invoking user's personal config:
+C<~/.config/changetrack-ng/changetrack-ng.conf>. Requires C<HOME> to be set.
 
 =item C<-m, --message E<lt>msgE<gt>>
 
@@ -437,6 +499,18 @@ Print version and exit.
 =item C<-h, --help>
 
 Print help and exit.
+
+=back
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item C<CHANGETRACK_CONFIG>
+
+When set to a non-empty path, overrides the default config location.
+Takes precedence over C<--system> and C<--user> flags but is overridden by
+an explicit C<-c>/C<--config> argument.
 
 =back
 

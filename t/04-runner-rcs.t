@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 04-runner-rcs.t - Tests for runner rcs.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -31,8 +40,9 @@ sub write_config {
     return $cpath;
 }
 
-# ── setup: create a test file ────────────────────────────────────────────────
-
+########################################################################
+# Setup: Create A Test File
+########################################################################
 my $file1 = "$tracked_dir/app.conf";
 open(my $fh, '>', $file1) or die $!;
 print $fh "color = blue\nsize = 10\n";
@@ -41,8 +51,9 @@ chmod(0644, $file1);
 
 my $cfg_path = write_config([$file1]);
 
-# ── first run: new file detected ─────────────────────────────────────────────
-
+########################################################################
+# First Run: New File Detected
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
     my $report = $runner->run;
@@ -54,8 +65,9 @@ my $cfg_path = write_config([$file1]);
     ok(-d "$output_dir/RCS", 'first run: RCS dir exists');
 }
 
-# ── second run: no changes ────────────────────────────────────────────────────
-
+########################################################################
+# Second Run: No Changes
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
     my $report = $runner->run;
@@ -64,8 +76,9 @@ my $cfg_path = write_config([$file1]);
     is($report->files_tracked, 1, 'second run: one file tracked');
 }
 
-# ── modify content → change detected ─────────────────────────────────────────
-
+########################################################################
+# Modify Content -> Change Detected
+########################################################################
 {
     open(my $fh, '>', $file1) or die $!;
     print $fh "color = red\nsize = 10\n";
@@ -81,16 +94,18 @@ my $cfg_path = write_config([$file1]);
     like(join("\n", @{ $c->{diff} }), qr/red/, 'content change: diff contains new value');
 }
 
-# ── no changes on repeat run after content change ────────────────────────────
-
+########################################################################
+# No Changes On Repeat Run After Content Change
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
     my $report = $runner->run;
     ok(!$report->has_changes, 'after content change: second run is clean');
 }
 
-# ── metadata-only change (permission) ────────────────────────────────────────
-
+########################################################################
+# Metadata-Only Change (Permission)
+########################################################################
 {
     chmod(0600, $file1);
 
@@ -103,16 +118,18 @@ my $cfg_path = write_config([$file1]);
     like($c->{meta_change}, qr/mode/, 'perm change: meta mentions mode');
 }
 
-# ── no changes after metadata already updated ────────────────────────────────
-
+########################################################################
+# No Changes After Metadata Already Updated
+########################################################################
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
     my $report = $runner->run;
     ok(!$report->has_changes, 'after perm update: second run is clean');
 }
 
-# ── removed file ─────────────────────────────────────────────────────────────
-
+########################################################################
+# Removed File
+########################################################################
 {
     unlink $file1 or die "Cannot remove test file: $!";
 
@@ -125,8 +142,9 @@ my $cfg_path = write_config([$file1]);
     is($c->{path}, $file1, 'removed: correct path');
 }
 
-# ── DIRECTORY tracking ────────────────────────────────────────────────────────
-
+########################################################################
+# DIRECTORY Tracking
+########################################################################
 {
     my $dir2     = tempdir(CLEANUP => 1, DIR => $tracked_dir);
     my $output2  = tempdir(CLEANUP => 1);
@@ -153,8 +171,9 @@ my $cfg_path = write_config([$file1]);
     is_deeply(\@paths, [sort @paths], 'DIRECTORY: change entries are emitted in deterministic sorted order');
 }
 
-# ── Track recipients are propagated into report changes ───────────────────────
-
+########################################################################
+# Track Recipients Are Propagated Into Report Changes
+########################################################################
 {
     my $output4 = tempdir(CLEANUP => 1);
     my $file4   = "$tracked_dir/notify-test.conf";
@@ -175,8 +194,9 @@ my $cfg_path = write_config([$file1]);
         'RECIPIENTS: track recipients propagated to report change');
 }
 
-# ── BINARY file handling ──────────────────────────────────────────────────────
-
+########################################################################
+# BINARY File Handling
+########################################################################
 {
     my $dir3    = tempdir(CLEANUP => 1, DIR => $tracked_dir);
     my $output3 = tempdir(CLEANUP => 1);

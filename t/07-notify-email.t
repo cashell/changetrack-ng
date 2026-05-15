@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 07-notify-email.t - Tests for notify email.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -11,16 +20,18 @@ use_ok('ChangeTrack::Notify::Email');
 use_ok('ChangeTrack::Report');
 use_ok('ChangeTrack::Test::MockSendmail');
 
-# ── heartbeat contract ────────────────────────────────────────────────────────
-
+########################################################################
+# Heartbeat Contract
+########################################################################
 {
     my $n = ChangeTrack::Notify::Email->new;
     ok(!$n->heartbeat_enabled, 'Email heartbeat_enabled always false');
     is($n->name, 'email', 'name returns email');
 }
 
-# ── no mail sent when no changes ─────────────────────────────────────────────
-
+########################################################################
+# No Mail Sent When No Changes
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -40,8 +51,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── mail sent for single change ───────────────────────────────────────────────
-
+########################################################################
+# Mail Sent For Single Change
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -76,8 +88,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── per-file recipients ───────────────────────────────────────────────────────
-
+########################################################################
+# Per-File Recipients
+########################################################################
 {
     my ($script1, $capture1) = ChangeTrack::Test::MockSendmail->create;
 
@@ -105,8 +118,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script1, $capture1;
 }
 
-# ── sensitive file: diff suppressed ──────────────────────────────────────────
-
+########################################################################
+# Sensitive File: Diff Suppressed
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -135,8 +149,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── sensitive_notify = allow: full diff sent ──────────────────────────────────
-
+########################################################################
+# Sensitive_Notify = Allow: Full Diff Sent
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -162,8 +177,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── default email_to fallback when per-file recipients missing ────────────────
-
+########################################################################
+# Default Email_To Fallback When Per-File Recipients Missing
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -191,8 +207,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── per-file recipients override global default ───────────────────────────────
-
+########################################################################
+# Per-File Recipients Override Global Default
+########################################################################
 {
     my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
 
@@ -222,8 +239,9 @@ use_ok('ChangeTrack::Test::MockSendmail');
     unlink $script, $capture;
 }
 
-# ── no sendmail found: graceful warning ───────────────────────────────────────
-
+########################################################################
+# No Sendmail Found: Graceful Warning
+########################################################################
 {
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => '/nonexistent/sendmail',
@@ -236,7 +254,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
         diff => [], meta_change => '',
     );
 
-    # send() must not die — just warn
+    # send() must not die  --  just warn
     my $died = 0;
     eval { $n->send($report) };
     $died = 1 if $@;

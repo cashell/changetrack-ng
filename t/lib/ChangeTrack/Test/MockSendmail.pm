@@ -1,4 +1,4 @@
-package ChangeTrack::Test::MockSendmail;
+﻿package ChangeTrack::Test::MockSendmail;
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -10,7 +10,7 @@ use File::Path qw(make_path);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
-# create() — write a mock sendmail script that captures its invocation.
+# create()  --  write a mock sendmail script that captures its invocation.
 # Returns the path to the script and the path to the capture file.
 sub create {
     my ($class, %args) = @_;
@@ -43,7 +43,7 @@ END_SCRIPT
     return ($script_path, $capture_path);
 }
 
-# read_capture($path) — returns a hashref with keys: args (arrayref), headers (hashref), body (string).
+# read_capture($path)  --  returns a hashref with keys: args (arrayref), headers (hashref), body (string).
 sub read_capture {
     my ($class, $capture_path) = @_;
 

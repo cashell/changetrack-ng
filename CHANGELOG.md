@@ -6,6 +6,31 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-05-15
+
+### Added
+- `--system` and `--user` flags to explicitly declare which config scope to load.
+  - `--system` (default): `/etc/changetrack-ng/changetrack-ng.conf`
+  - `--user`: `$HOME/.config/changetrack-ng/changetrack-ng.conf`
+  - The two flags are mutually exclusive; specifying both exits with code 64.
+  - `--user` without `HOME` set exits with code 64 and an actionable error.
+- `CHANGETRACK_CONFIG` environment variable: when set, overrides the default config
+  location. Takes precedence over `--system`/`--user` but is superseded by an explicit
+  `-c`/`--config` argument. Useful for per-invocation config overrides in scripts.
+- Defaults file support: package manager hooks, cron, and systemd timer now source
+  `/etc/default/changetrack-ng` (Debian/Ubuntu) or `/etc/sysconfig/changetrack-ng`
+  (RHEL/Fedora) before invoking the CLI. This allows administrators to set
+  `CHANGETRACK_CONFIG` or `CHANGETRACK_EXTRA_ARGS` system-wide without modifying
+  hook or unit files. Template installed by `make install-hooks`.
+- `DEFAULTSDIR` Makefile variable (default: `/etc/default` on Debian-like systems,
+  `/etc/sysconfig` on RHEL-like systems; auto-detected via `command -v dnf`).
+- `packaging/etc/changetrack-ng.default`: template defaults file with commented-out
+  `CHANGETRACK_CONFIG` and `CHANGETRACK_EXTRA_ARGS` variables and inline documentation.
+- `t/23-config-resolution.t`: 8-test suite covering the full config resolution priority
+  chain: `-c` explicit, `$CHANGETRACK_CONFIG` env var, `-c` beats env var, `--user` flag,
+  env var beats `--user`, default=system path, `--system`+`--user` conflict, `--user`
+  without `HOME`.
+
 ## [0.5.4] - 2026-05-14
 
 ### Added

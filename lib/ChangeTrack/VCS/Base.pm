@@ -1,5 +1,16 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::VCS::Base - Abstract base class for all VCS backends.
+#
+
 package ChangeTrack::VCS::Base;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::VCS::Base - abstract base class for changetrack-ng VCS backends
@@ -56,13 +67,11 @@ Restore I<$path> to revision I<$rev>.
 
 =cut
 
-use strict;
-use warnings;
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct a VCS backend object with output_dir, options, and
+# verbosity flags.  Not called directly; use the subclass constructor.
 sub new {
     my ($class, %args) = @_;
     return bless {
@@ -74,6 +83,7 @@ sub new {
     }, $class;
 }
 
+# _unimpl -- Die with a 'not implemented' message for unoverridden abstract methods.
 sub _unimpl { die ref(shift) . "::$_[0] not implemented\n" }
 
 sub init           { _unimpl(shift, 'init')           }

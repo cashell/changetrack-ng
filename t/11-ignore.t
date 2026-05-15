@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 11-ignore.t - Tests for ignore.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -12,8 +21,9 @@ require ChangeTrack::Runner;
 sub should_ignore { ChangeTrack::Runner::_should_ignore(@_) }
 sub glob_match    { ChangeTrack::Runner::_glob_match(@_) }
 
-# ── _glob_match ───────────────────────────────────────────────────────────────
-
+########################################################################
+# _Glob_Match
+########################################################################
 ok( glob_match('*.swp',  'foo.swp'),      '*.swp matches foo.swp');
 ok(!glob_match('*.swp',  'foo.swp.bak'),  '*.swp does not match foo.swp.bak');
 ok( glob_match('*~',     'passwd~'),      '*~ matches passwd~');
@@ -21,8 +31,9 @@ ok( glob_match('#*#',    '#foo#'),        '#*# matches #foo#');
 ok(!glob_match('#*#',    'foo'),          '#*# does not match plain foo');
 ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
 
-# ── _should_ignore: basename patterns ────────────────────────────────────────
-
+########################################################################
+# _Should_Ignore: Basename Patterns
+########################################################################
 {
     my @pats = ('*.swp', '*~');
     ok( should_ignore('/etc/passwd.swp',  'passwd.swp',  \@pats), 'basename *.swp ignored');
@@ -30,8 +41,9 @@ ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
     ok(!should_ignore('/etc/passwd',      'passwd',      \@pats), '/etc/passwd not ignored');
 }
 
-# ── _should_ignore: path-containing patterns match as suffix ─────────────────
-
+########################################################################
+# _Should_Ignore: Path-Containing Patterns Match As Suffix
+########################################################################
 {
     my @pats = ('udev/hwdb.bin');
     ok( should_ignore('/etc/udev/hwdb.bin', 'hwdb.bin', \@pats),
@@ -40,8 +52,9 @@ ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
         'udev/hwdb.bin does not match unrelated path');
 }
 
-# ── _should_ignore: glob in path pattern ─────────────────────────────────────
-
+########################################################################
+# _Should_Ignore: Glob In Path Pattern
+########################################################################
 {
     my @pats = ('init.d/.depend.*');
     ok( should_ignore('/etc/init.d/.depend.boot',  '.depend.boot',  \@pats),
@@ -52,8 +65,9 @@ ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
         'init.d/.depend.* does not match networking');
 }
 
-# ── BUILTIN_IGNORE contains expected patterns ────────────────────────────────
-
+########################################################################
+# BUILTIN_IGNORE Contains Expected Patterns
+########################################################################
 {
     my @builtins = ChangeTrack::Runner->builtin_ignore_patterns;
     ok(scalar @builtins > 0, 'BUILTIN_IGNORE is non-empty');
@@ -69,8 +83,9 @@ ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
     ok(scalar(grep { $_ eq 'lvm/cache'    } @builtins), 'BUILTIN_IGNORE contains lvm/cache');
 }
 
-# ── internal exclusions prevent self-tracking of output repo artifacts ──────
-
+########################################################################
+# Internal Exclusions Prevent Self-Tracking Of Output Repo Artifacts
+########################################################################
 {
     my $root = tempdir(CLEANUP => 1);
     my $track_dir = "$root/tracked";

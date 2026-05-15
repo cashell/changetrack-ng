@@ -143,6 +143,9 @@ These flags apply to all subcommands:
 
 | Flag | Short | Description |
 |---|---|---|
+| `--system` | | Load `/etc/changetrack-ng/changetrack-ng.conf` (default when no flag is given). |
+| `--user` | | Load `$HOME/.config/changetrack-ng/changetrack-ng.conf`. `--system` and `--user` are mutually exclusive. |
+| `--config <path>` | `-c` | Load the specified config file directly. Overrides `--system`, `--user`, and `$CHANGETRACK_CONFIG`. |
 | `--verbose` | `-v` | Show high-level run structure: config path, VCS backend, lock status, file counts, commit and notify outcomes |
 | `--debug` | `-d` | Show all external commands run, effective config values (secrets redacted), per-file actions taken. Implies `--verbose`. |
 | `--trace` | `-t` | Show per-file disposition for every tracked path (O(N): fast-path skips, type classifications, ignore matches). Implies `--debug`. |
@@ -150,6 +153,21 @@ These flags apply to all subcommands:
 | `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications. |
 
 All diagnostic output (`--verbose`, `--debug`, `--trace`) goes to **STDERR**. STDOUT remains clean and contains only subcommand data (diffs, status listings, log output), making it safe to pipe.
+
+### Config resolution order
+
+The config file is selected in this priority order (highest wins):
+
+1. `-c <path>` / `--config <path>` — explicit path on the command line
+2. `$CHANGETRACK_CONFIG` — environment variable (useful in scripts and hook overrides)
+3. `--system` / `--user` — explicit scope flag
+4. Default: system config (`/etc/changetrack-ng/changetrack-ng.conf`)
+
+The **defaults file** (`/etc/default/changetrack-ng` on Debian-like systems,
+`/etc/sysconfig/changetrack-ng` on RHEL-like systems) is sourced by cron, systemd,
+and package manager hooks before invoking the CLI. It lets administrators set
+`CHANGETRACK_CONFIG` or `CHANGETRACK_EXTRA_ARGS` system-wide without editing hook or
+unit files. The template is installed by `make install-hooks`.
 
 ## Subcommands
 
@@ -201,6 +219,7 @@ Appends individual JSON objects (one per run) to a local log file, ensuring a ma
 | `SYSCONFDIR` | `$(PREFIX)/etc` (or `/etc` for `/usr`) | Config dir |
 | `DATADIR` | `/var/lib/changetrack-ng` | VCS output dir |
 | `MANDIR` | `$(PREFIX)/share/man` | Man pages |
+| `DEFAULTSDIR` | `/etc/default` (Debian) or `/etc/sysconfig` (RHEL, auto-detected) | Defaults file directory |
 
 Override any variable on the `make` command line:
 

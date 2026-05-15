@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 03-metadata.t - Tests for metadata.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -8,8 +17,9 @@ use lib File::Spec->catdir($RealBin, '..', 'lib');
 
 use_ok('ChangeTrack::Metadata');
 
-# ── empty load (no file) ──────────────────────────────────────────────────────
-
+########################################################################
+# Empty Load (No File)
+########################################################################
 {
     my $md = ChangeTrack::Metadata->load('/nonexistent/path/to/metadata.jsonl');
     ok(defined $md, 'load: returns object even if file missing');
@@ -17,8 +27,9 @@ use_ok('ChangeTrack::Metadata');
     ok(!$md->changed_since_load('/etc/passwd'), 'changed_since_load: false for untracked file');
 }
 
-# ── update_from_stat and record_for ──────────────────────────────────────────
-
+########################################################################
+# Update_From_Stat And Record_For
+########################################################################
 {
     my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.conf');
     print $fh "key = value\n";
@@ -41,8 +52,9 @@ use_ok('ChangeTrack::Metadata');
     ok(defined $rec->{size},  'record: size present for regular file');
 }
 
-# ── changed_since_load ───────────────────────────────────────────────────────
-
+########################################################################
+# Changed_Since_Load
+########################################################################
 {
     my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.conf');
     print $fh "key = value\n";
@@ -75,8 +87,9 @@ use_ok('ChangeTrack::Metadata');
     like($summary, qr/0600/, 'diff_summary: shows old mode');
 }
 
-# ── no change detected when metadata matches ─────────────────────────────────
-
+########################################################################
+# No Change Detected When Metadata Matches
+########################################################################
 {
     my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.conf');
     print $fh "key = value\n";
@@ -101,8 +114,9 @@ use_ok('ChangeTrack::Metadata');
     ok(!$md->can_skip_content_diff($test_file), 'can_skip_content_diff: false when content fingerprint changed');
 }
 
-# ── can_skip_content_diff true for zero-byte → zero-byte ─────────────────────
-
+########################################################################
+# Can_Skip_Content_Diff True For Zero-Byte -> Zero-Byte
+########################################################################
 {
     my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.log');
     close($fh);   # leave it empty (0 bytes)
@@ -120,8 +134,9 @@ use_ok('ChangeTrack::Metadata');
     ok($md->can_skip_content_diff($test_file), 'can_skip_content_diff: true for zero-byte file after mtime bump');
 }
 
-# ── can_skip_content_diff false for legacy records without mtime/size ───────
-
+########################################################################
+# Can_Skip_Content_Diff False For Legacy Records Without Mtime/Size
+########################################################################
 {
     my ($fh, $test_file) = tempfile(UNLINK => 1, SUFFIX => '.conf');
     print $fh "legacy\n";
@@ -152,8 +167,9 @@ use_ok('ChangeTrack::Metadata');
     ok(!$md->can_skip_content_diff($test_file), 'legacy records without mtime/size do not use diff fast-path');
 }
 
-# ── save and reload ───────────────────────────────────────────────────────────
-
+########################################################################
+# Save And Reload
+########################################################################
 {
     my $dir      = tempdir(CLEANUP => 1);
     my $meta_path = "$dir/.changetrack-metadata";
@@ -176,8 +192,9 @@ use_ok('ChangeTrack::Metadata');
     is($rec->{mode}, $md->record_for($test_file)->{mode}, 'reload: mode preserved');
 }
 
-# ── symlink metadata lifecycle ───────────────────────────────────────────────
-
+########################################################################
+# Symlink Metadata Lifecycle
+########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     my $target_a = "$dir/target-a.txt";
@@ -218,8 +235,9 @@ use_ok('ChangeTrack::Metadata');
     ok(!$md->can_skip_content_diff($link), 'symlink: cannot skip when target changed');
 }
 
-# ── mark_removed ─────────────────────────────────────────────────────────────
-
+########################################################################
+# Mark_Removed
+########################################################################
 {
     my $md = bless {
         records  => { '/etc/passwd' => { path => '/etc/passwd', type => 'file' } },

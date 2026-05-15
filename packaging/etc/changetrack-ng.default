@@ -1,0 +1,23 @@
+# /etc/default/changetrack-ng  (Debian/Ubuntu)
+# /etc/sysconfig/changetrack-ng (RHEL/Fedora/Arch)
+#
+# Shell-sourceable defaults file for changetrack-ng.
+# Also read as a systemd EnvironmentFile (KEY=VALUE format is compatible).
+#
+# All variables are optional. Uncomment and set to override defaults.
+
+# CHANGETRACK_CONFIG
+#   Path to the changetrack-ng configuration file.
+#   Overrides the built-in default (/etc/changetrack-ng/changetrack-ng.conf)
+#   but is itself overridden by an explicit -c/--config argument on the
+#   command line.
+#
+#CHANGETRACK_CONFIG=/etc/changetrack-ng/changetrack-ng.conf
+
+# CHANGETRACK_EXTRA_ARGS
+#   Additional command-line arguments passed to every changetrack-ng
+#   invocation (hooks, cron, systemd timer).  Useful for site-wide flags
+#   such as --verbose, --debug, or --dry-run during troubleshooting.
+#   Leave empty for normal operation.
+#
+#CHANGETRACK_EXTRA_ARGS=

@@ -1,5 +1,16 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Notify::Base - Abstract base class for all notifiers.
+#
+
 package ChangeTrack::Notify::Base;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Notify::Base - abstract base class for changetrack-ng notifiers
@@ -29,20 +40,18 @@ notifier's heartbeat option is enabled.
 
 =cut
 
-use strict;
-use warnings;
 use Carp qw(carp);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct a notifier with the provided config hash.
 sub new {
     my ($class, %args) = @_;
     return bless { %args }, $class;
 }
 
-# send() — best-effort dispatcher; never dies.
+# send -- Best-effort dispatcher; catches errors from send_changes/send_heartbeat.
+# On failure, emits a carp warning but never dies.
 sub send {
     my ($self, $report) = @_;
     eval {
@@ -64,20 +73,24 @@ sub send_heartbeat { return }   # default: no-op
 
 sub heartbeat_enabled { 0 }     # default: off; subclasses override
 
-# validate_config() — return list of user-facing validation errors.
+# validate_config -- Return a list of user-facing validation errors.
 # Called by Runner before a notifier is used.
 sub validate_config { return }
 
+# name -- Return a human-readable label for this notifier (defaults to class name).
 sub name { ref(shift) }
 
-# _sensitive_notify() — true if config says to allow diffs of sensitive files.
+# _sensitive_notify_allowed -- Return true when the config allows sending
+# diffs for sensitive files.  Defaults to 'suppress' (not allowed).
 sub _sensitive_notify_allowed {
     my ($self) = @_;
     my $v = $self->{sensitive_notify} // 'suppress';
     return lc($v) eq 'allow';
 }
 
-# _diff_text_for() — returns diff lines for a change entry, applying sensitive suppression.
+# _diff_text_for -- Return diff lines for a change entry.
+# Suppresses the diff content and returns a placeholder when the file is
+# sensitive and sensitive_notify is not 'allow'.
 sub _diff_text_for {
     my ($self, $change) = @_;
     if ($change->{is_sensitive} && !$self->_sensitive_notify_allowed) {

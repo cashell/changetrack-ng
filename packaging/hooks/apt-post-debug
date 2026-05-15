@@ -1,4 +1,4 @@
 // changetrack-ng post-install debug hook for apt
 // Installed to /etc/apt/apt.conf.d/80changetrack-ng-post by `make install-debug-hooks`
 // Captures verbose debug output to /var/log/changetrack-ng-apt-debug.log
-DPkg::Post-Invoke {"changetrack-ng run --debug -m 'post-install: apt' >> /var/log/changetrack-ng-apt-debug.log 2>&1 || true";};
+DPkg::Post-Invoke {"[ -f @DEFAULTSDIR@/changetrack-ng ] && . @DEFAULTSDIR@/changetrack-ng; @BINDIR@/changetrack-ng run --system --debug ${CHANGETRACK_EXTRA_ARGS:-} -m 'post-install: apt' >> /var/log/changetrack-ng-apt-debug.log 2>&1 || true";};

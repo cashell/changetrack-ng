@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Notify::Webhook - HTTP POST JSON with 3-attempt
+#   exponential retry, TLS bypass option.
+#
+
 package ChangeTrack::Notify::Webhook;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::Notify::Webhook - HTTP webhook notifier for changetrack-ng
@@ -12,8 +24,6 @@ unified diff.  Configurable heartbeat (default off).
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::Notify::Base';
 use POSIX qw(strftime);
 use JSON::PP ();
@@ -21,10 +31,9 @@ use HTTP::Tiny ();
 
 use ChangeTrack::Util qw(hostname);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
+# new -- Construct the notifier, parsing webhook_url into the internal URL list.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
@@ -37,6 +46,7 @@ sub new {
     return $self;
 }
 
+# heartbeat_enabled -- Return true when webhook_heartbeat is set.
 sub heartbeat_enabled {
     my ($self) = @_;
     return $self->{webhook_heartbeat} ? 1 : 0;
@@ -44,25 +54,31 @@ sub heartbeat_enabled {
 
 sub name { 'webhook' }
 
-# config_keys — the set of constructor args this notifier reads from config.
+# config_keys -- The set of constructor args this notifier reads from config.
 sub config_keys { qw(webhook_url webhook_full_diff webhook_heartbeat webhook_insecure webhook_timeout) }
 
+# validate_config -- Return an error string when no webhook URLs are configured.
 sub validate_config {
     my ($self) = @_;
     return () if @{ $self->{_urls} // [] };
     return ('webhook notifier requires non-empty webhook_url');
 }
 
+# send_changes -- POST a change payload to all configured URLs.
 sub send_changes {
     my ($self, $report) = @_;
     $self->_post_to_all($self->_build_payload($report, 0));
 }
 
+# send_heartbeat -- POST a heartbeat payload to all configured URLs.
 sub send_heartbeat {
     my ($self, $report) = @_;
     $self->_post_to_all($self->_build_payload($report, 1));
 }
 
+# _build_payload -- Construct the JSON payload hashref for one run.
+# When $is_heartbeat is true, the files list is empty.
+# diff content is only included when webhook_full_diff is set.
 sub _build_payload {
     my ($self, $report, $is_heartbeat) = @_;
 
@@ -108,6 +124,7 @@ sub _build_payload {
     return \%payload;
 }
 
+# _post_to_all -- Encode the payload as JSON and POST it to every configured URL.
 sub _post_to_all {
     my ($self, $payload) = @_;
     return unless @{ $self->{_urls} };
@@ -126,6 +143,8 @@ sub _post_to_all {
     }
 }
 
+# _post_with_retry -- POST $json to $url with up to 3 attempts and
+# exponential back-off.  Client errors (4xx) are not retried.
 sub _post_with_retry {
     my ($self, $http, $url, $json) = @_;
 
@@ -162,8 +181,10 @@ sub _post_with_retry {
     }
 }
 
+# _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
 sub _sleep { sleep($_[1]) }
 
+# _count_added -- Count lines added (starting with '+', not '+++') in a diff.
 sub _count_added {
     my ($lines) = @_;
     my $n = 0;
@@ -171,6 +192,7 @@ sub _count_added {
     return $n;
 }
 
+# _count_removed -- Count lines removed (starting with '-', not '---') in a diff.
 sub _count_removed {
     my ($lines) = @_;
     my $n = 0;
@@ -178,6 +200,8 @@ sub _count_removed {
     return $n;
 }
 
+# _parse_urls -- Normalize webhook_url config (string, array, or undef)
+# into an arrayref of non-empty URL strings.
 sub _parse_urls {
     my ($raw) = @_;
 

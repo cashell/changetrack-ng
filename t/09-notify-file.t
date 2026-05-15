@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 09-notify-file.t - Tests for notify file.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -23,16 +32,18 @@ sub last_record {
     return eval { JSON::PP->new->decode($last) };
 }
 
-# ── heartbeat_enabled default off ─────────────────────────────────────────────
-
+########################################################################
+# Heartbeat_Enabled Default Off
+########################################################################
 {
     my $n = ChangeTrack::Notify::File->new(log_path => "$dir/test.log");
     ok(!$n->heartbeat_enabled, 'file_heartbeat default off');
     is($n->name, 'file', 'name returns file');
 }
 
-# ── no append when no changes and heartbeat off ───────────────────────────────
-
+########################################################################
+# No Append When No Changes And Heartbeat Off
+########################################################################
 {
     my $log = "$dir/no-hb.log";
     my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 0);
@@ -43,8 +54,9 @@ sub last_record {
     ok(!-e $log, 'No log file created when no changes and heartbeat off');
 }
 
-# ── appends record on changes ─────────────────────────────────────────────────
-
+########################################################################
+# Appends Record On Changes
+########################################################################
 {
     my $log = "$dir/changes.log";
     my $n   = ChangeTrack::Notify::File->new(log_path => $log);
@@ -72,8 +84,9 @@ sub last_record {
     ok(defined $rec->{run_duration_ms},       'run_duration_ms present');
 }
 
-# ── heartbeat appends when file_heartbeat=1, no changes ──────────────────────
-
+########################################################################
+# Heartbeat Appends When File_Heartbeat=1, No Changes
+########################################################################
 {
     my $log = "$dir/hb.log";
     my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 1);
@@ -89,8 +102,9 @@ sub last_record {
     is(scalar @{ $rec->{files} }, 0, 'Heartbeat: empty files array');
 }
 
-# ── heartbeat off: no append on clean run ────────────────────────────────────
-
+########################################################################
+# Heartbeat Off: No Append On Clean Run
+########################################################################
 {
     my $log = "$dir/hb-off.log";
     my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 0);
@@ -101,8 +115,9 @@ sub last_record {
     ok(!-e $log, 'Heartbeat off: no log file on clean run');
 }
 
-# ── multiple appends: each run adds one line ──────────────────────────────────
-
+########################################################################
+# Multiple Appends: Each Run Adds One Line
+########################################################################
 {
     my $log = "$dir/multi.log";
     my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 1);
@@ -128,8 +143,9 @@ sub last_record {
     ok($all_valid, 'All lines are valid JSON');
 }
 
-# ── sensitive file: diff suppressed in log ───────────────────────────────────
-
+########################################################################
+# Sensitive File: Diff Suppressed In Log
+########################################################################
 {
     my $log = "$dir/sensitive.log";
     my $n   = ChangeTrack::Notify::File->new(

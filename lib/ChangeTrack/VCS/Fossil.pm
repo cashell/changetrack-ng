@@ -1,5 +1,17 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::VCS::Fossil - Whole-repo with chdir-based commands and
+#   UTF-8 handling.
+#
+
 package ChangeTrack::VCS::Fossil;
 
+use strict;
+use warnings;
 =head1 NAME
 
 ChangeTrack::VCS::Fossil - Fossil VCS backend for changetrack-ng
@@ -12,8 +24,6 @@ Fossil working directory.
 
 =cut
 
-use strict;
-use warnings;
 use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
 use File::Basename qw(dirname);
@@ -21,33 +31,36 @@ use File::Path qw(make_path);
 use File::Spec ();
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
-# SPDX-License-Identifier: GPL-3.0-or-later
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 sub model { 'whole-repo' }
 
+# _repo_path -- Return the path to the Fossil repository file (.fossil).
 sub _repo_path {
     my ($self) = @_;
     return $self->{options}{fossil_repo} // "$self->{output_dir}.fossil";
 }
 
-# /etc/passwd  →  $output_dir/etc/passwd  (mirror tree)
+# output_path -- Map a real path to its mirror location.
+# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
     (my $rel = $real_path) =~ s{^/}{};
     return "$self->{output_dir}/$rel";
 }
 
+# _rel_path -- Strip the output_dir prefix to get the repo-relative path.
 sub _rel_path {
     my ($self, $mirror) = @_;
     (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/?}{};
     return $rel;
 }
 
-# Run a fossil command inside the checkout by using fossil's own --chdir option.
-# This avoids relying on Perl's chdir(), which is unreliable under systemd where
-# the process CWD may not be set to a usable directory.
+# _run -- Run a Fossil command inside the checkout using fossil's --chdir option.
+# Using --chdir avoids calling Perl's chdir(), which is unreliable under
+# systemd where the process CWD may not be a usable directory.
+# Also sets FOSSIL_HOME to output_dir when HOME is unset, so Fossil can
+# create/find its .fossil user database alongside the checkout state files.
 sub _run {
     my ($self, @cmd) = @_;
     my ($prog, @rest) = @cmd;
@@ -81,12 +94,16 @@ sub _run {
     return $r;
 }
 
+# _ensure_crlf_setting -- Set crlf-glob=* in fossil settings to prevent
+# commit failures from CR/LF line-ending checks.
 sub _ensure_crlf_setting {
     my ($self) = @_;
     my $r = $self->_run('fossil', 'settings', 'crlf-glob', '*');
     carp "fossil settings crlf-glob failed: $r->{stderr}" unless $r->{success};
 }
 
+# _extract_invalid_utf8_path -- Parse a fossil error message to extract
+# the offending path when a commit fails due to invalid UTF-8 content.
 sub _extract_invalid_utf8_path {
     my ($self, $stderr) = @_;
     return undef unless defined $stderr && length $stderr;
@@ -100,6 +117,8 @@ sub _extract_invalid_utf8_path {
     return length($path) ? $path : undef;
 }
 
+# _merge_glob_list -- Merge $entry into a comma-separated glob list,
+# deduplicating existing entries.  Returns the merged string.
 sub _merge_glob_list {
     my ($self, $existing, $entry) = @_;
     my %seen;
@@ -116,14 +135,16 @@ sub _merge_glob_list {
     return join(',', @parts);
 }
 
+# _fossil_settings_dir -- Return the path to the .fossil-settings directory.
 sub _fossil_settings_dir {
     my ($self) = @_;
     return File::Spec->catdir($self->{output_dir}, '.fossil-settings');
 }
 
-# Write binary-glob directly as a versioned .fossil-settings file.
-# This is more reliable than `fossil settings binary-glob` which varies by
-# fossil version and may not persist across checkouts.
+# _set_binary_glob_for_path -- Add $rel_path to the versioned binary-glob
+# settings file so Fossil skips UTF-8 validation for that file.
+# Writing directly to .fossil-settings/binary-glob is more reliable than
+# 'fossil settings binary-glob', which behaves differently across versions.
 sub _set_binary_glob_for_path {
     my ($self, $rel_path) = @_;
     return 0 unless defined $rel_path && length $rel_path;
@@ -164,6 +185,8 @@ sub _set_binary_glob_for_path {
     return 1;
 }
 
+# init -- Create the Fossil repository, open it as a working checkout,
+# and configure CR/LF handling.
 sub init {
     my ($self) = @_;
     make_path($self->{output_dir}, { mode => 0700 }) unless -d $self->{output_dir};
@@ -181,11 +204,13 @@ sub init {
     $self->_ensure_crlf_setting();
 }
 
+# is_initialized -- Return true if the checkout manifest file exists.
 sub is_initialized {
     my ($self) = @_;
     return -f "$self->{output_dir}/.fslckout" || -f "$self->{output_dir}/_FOSSIL_";
 }
 
+# add -- Copy the real file to the mirror and register it with fossil add.
 sub add {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -198,11 +223,15 @@ sub add {
     croak "fossil add failed for '$real_path': $r->{stderr}" unless $r->{success};
 }
 
+# checkin -- Stage the file for the next batch commit (whole-repo model).
 sub checkin {
     my ($self, $real_path, $msg) = @_;
     $self->add($real_path);
 }
 
+# commit -- Commit all pending changes with $msg.
+# If the commit fails due to invalid UTF-8, retries after flagging the
+# offending file as binary in .fossil-settings/binary-glob.
 sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
@@ -249,6 +278,8 @@ sub commit {
     }
 }
 
+# diff -- Return unified diff lines for $real_path.
+# Returns ['(new file)'] if the file is newly added; [] if unchanged.
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -267,11 +298,13 @@ sub diff {
     return [split /\n/, $r->{stdout}];
 }
 
+# is_dirty -- Return true if $real_path has uncommitted changes.
 sub is_dirty {
     my ($self, $real_path) = @_;
     return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
+# log_history -- Return fossil finfo -l lines for $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
@@ -281,6 +314,7 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
+# revert -- Restore $real_path to revision $rev and copy back to live file.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;

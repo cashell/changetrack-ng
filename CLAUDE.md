@@ -113,6 +113,92 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 - **Per-file errors** skip with warning; VCS errors abort the run.
 - **Config validation** — strict key whitelist; unknown keys = fatal parse error.
 
+## Comment Style Guidelines
+
+All Perl code in this repository follows these comment conventions:
+
+- **No Unicode or ANSI** in comments or section decorations. Dividers use `#` marks only (no em-dashes, box-drawing characters, or arrows).
+- **Every function/method** has at least a one-line comment. Larger or complex functions include the function name, inputs, outputs, and a brief description.
+- **Major section dividers** use a line of 72 `#` marks before (and optionally after) the section heading. Minor sections use a single `#` comment line or blank comment lines.
+- **Every non-trivial code file** has a structured header block (see examples below).
+- **Documentation focus**: *what* not *how*. Tag non-obvious implementations with `# COMPLEX:`. Include *why* for design decisions.
+- **Accuracy**: fix inaccurate comments outright when the correct behavior is clear.
+- **POD**: all `lib/` modules have accurate, comprehensive POD. `t/*.t` files get a header comment block but no POD.
+
+### File header format
+
+All code files start with: vim modeline → perltidy directive → SPDX divider block → description.
+
+The description line is mandatory and must start with the file/module name, then ` - `, then a concise description.
+
+**bin/ (executable) file:**
+
+```perl
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# changetrack-ng - Main CLI entry point; parses options and dispatches
+#   to subcommands (run, init, status, diff, log, revert, update-ignore,
+#   migrate-config).
+#
+use strict;
+use warnings;
+```
+
+**lib/ (module) file:**
+
+```perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Runner - Orchestration: config -> lock -> file list ->
+#   process -> commit -> notify
+#
+package ChangeTrack::Runner;
+
+use strict;
+use warnings;
+
+=head1 NAME
+
+ChangeTrack::Runner - Main orchestration engine
+```
+
+**t/ (test) file:**
+
+```perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 01-config-v2.t - Tests for v2 INI config parsing (ChangeTrack::Config).
+#
+use strict;
+use warnings;
+use Test::More;
+```
+
+### Section divider format (72 `#` marks)
+
+```perl
+########################################################################
+# Major Section Name
+########################################################################
+```
+
+Minor sections use a single `#` line or blank comment lines around the heading.
+
+---
+
 ## Agent Workflow
 
 - For small fixes: inspect minimal scope, patch only affected files, run targeted tests first.

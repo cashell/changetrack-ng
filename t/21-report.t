@@ -1,5 +1,12 @@
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 21-report.t - Tests for report.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -9,8 +16,9 @@ use lib File::Spec->catdir($RealBin, '..', 'lib');
 
 use ChangeTrack::Report;
 
-# ── Construction ──────────────────────────────────────────────────────────────
-
+########################################################################
+# Construction
+########################################################################
 {
     my $t0 = time();
     my $r = ChangeTrack::Report->new;
@@ -29,8 +37,9 @@ use ChangeTrack::Report;
     is($r->start_time, 1000, 'start_time accepts explicit value');
 }
 
-# ── add_change / has_changes ──────────────────────────────────────────────────
-
+########################################################################
+# Add_Change / Has_Changes
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/passwd', diff => ['+foo'], is_sensitive => 0);
@@ -54,8 +63,9 @@ use ChangeTrack::Report;
     is_deeply($c->{recipients}, ['admin@example.com'], 'recipients stored');
 }
 
-# ── Multiple changes accumulate in order ──────────────────────────────────────
-
+########################################################################
+# Multiple Changes Accumulate In Order
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/a', diff => [], is_sensitive => 0);
@@ -66,8 +76,9 @@ use ChangeTrack::Report;
     is($r->changes->[2]{path}, '/etc/c', 'last change in order');
 }
 
-# ── add_removed ───────────────────────────────────────────────────────────────
-
+########################################################################
+# Add_Removed
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_removed(path => '/etc/gone');
@@ -80,8 +91,9 @@ use ChangeTrack::Report;
     is_deeply($c->{diff},  [],                         'no diff for removal');
 }
 
-# ── Sensitive flag stored correctly ───────────────────────────────────────────
-
+########################################################################
+# Sensitive Flag Stored Correctly
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/shadow', diff => ['+secrethash'], is_sensitive => 1);
@@ -90,8 +102,9 @@ use ChangeTrack::Report;
     is_deeply($c->{diff},  ['+secrethash'], 'diff still stored internally when sensitive');
 }
 
-# ── add_warning / is_heartbeat_eligible ───────────────────────────────────────
-
+########################################################################
+# Add_Warning / Is_Heartbeat_Eligible
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     ok($r->is_heartbeat_eligible, 'heartbeat eligible before any warnings');
@@ -108,16 +121,18 @@ use ChangeTrack::Report;
     is(scalar @{ $r->warnings }, 2, 'multiple warnings accumulate');
 }
 
-# ── increment_tracked / files_tracked ─────────────────────────────────────────
-
+########################################################################
+# Increment_Tracked / Files_Tracked
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->increment_tracked for 1..5;
     is($r->files_tracked, 5, 'files_tracked increments correctly');
 }
 
-# ── set_end_time / duration_ms ────────────────────────────────────────────────
-
+########################################################################
+# Set_End_Time / Duration_Ms
+########################################################################
 {
     my $r = ChangeTrack::Report->new(start_time => 1000);
     is($r->duration_ms, undef, 'duration_ms undef before end_time set');
@@ -125,8 +140,9 @@ use ChangeTrack::Report;
     is($r->duration_ms, 2000, 'duration_ms correct after set_end_time');
 }
 
-# ── to_text — no changes ──────────────────────────────────────────────────────
-
+########################################################################
+# To_Text  --  No Changes
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->increment_tracked for 1..3;
@@ -135,8 +151,9 @@ use ChangeTrack::Report;
     like($text, qr/3 file/, 'to_text includes tracked count');
 }
 
-# ── to_text — with changes ────────────────────────────────────────────────────
-
+########################################################################
+# To_Text  --  With Changes
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/hosts', diff => ['+127.0.0.1 myhost'], is_sensitive => 0);
@@ -150,8 +167,9 @@ use ChangeTrack::Report;
     like($text, qr/2 change\(s\)/, 'to_text includes change count');
 }
 
-# ── to_text — sensitive file suppression label ────────────────────────────────
-
+########################################################################
+# To_Text  --  Sensitive File Suppression Label
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/shadow', diff => ['+hash'], is_sensitive => 1);
@@ -160,8 +178,9 @@ use ChangeTrack::Report;
     unlike($text, qr/\+hash/,        'sensitive diff content NOT leaked in to_text');
 }
 
-# ── to_text — metadata-only change ───────────────────────────────────────────
-
+########################################################################
+# To_Text  --  Metadata-Only Change
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/passwd', diff => [], is_sensitive => 0,
@@ -170,8 +189,9 @@ use ChangeTrack::Report;
     like($text, qr/meta:.*mode 0644/, 'to_text includes meta_change description');
 }
 
-# ── to_text — removal ─────────────────────────────────────────────────────────
-
+########################################################################
+# To_Text  --  Removal
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_removed(path => '/etc/gone');
@@ -180,8 +200,9 @@ use ChangeTrack::Report;
     like($text, qr|/etc/gone|,   'to_text includes removed path');
 }
 
-# ── to_text — warnings section ───────────────────────────────────────────────
-
+########################################################################
+# To_Text  --  Warnings Section
+########################################################################
 {
     my $r = ChangeTrack::Report->new;
     $r->add_change(path => '/etc/a', diff => [], is_sensitive => 0);

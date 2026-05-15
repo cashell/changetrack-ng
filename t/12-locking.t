@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 12-locking.t - Tests for locking.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -21,8 +30,9 @@ no warnings 'redefine';
 *ChangeTrack::Lock::_sleep = sub {};
 use warnings 'redefine';
 
-# ── basic acquire / release ───────────────────────────────────────────────────
-
+########################################################################
+# Basic Acquire / Release
+########################################################################
 {
     my $lock = ChangeTrack::Lock->new(path => $lock_path, timeout => 0);
     my $got = $lock->acquire;
@@ -31,8 +41,9 @@ use warnings 'redefine';
     $lock->release;
 }
 
-# ── release allows re-acquire ─────────────────────────────────────────────────
-
+########################################################################
+# Release Allows Re-Acquire
+########################################################################
 {
     my $lock = ChangeTrack::Lock->new(path => $lock_path, timeout => 0);
     $lock->acquire;
@@ -42,21 +53,23 @@ use warnings 'redefine';
     $lock2->release;
 }
 
-# ── DESTROY auto-releases ─────────────────────────────────────────────────────
-
+########################################################################
+# DESTROY Auto-Releases
+########################################################################
 {
     {
         my $lock = ChangeTrack::Lock->new(path => $lock_path, timeout => 0);
         $lock->acquire;
-    }   # $lock goes out of scope → DESTROY
+    }   # $lock goes out of scope -> DESTROY
 
     my $lock2 = ChangeTrack::Lock->new(path => $lock_path, timeout => 0);
     ok($lock2->acquire, 'acquire succeeds after DESTROY auto-releases');
     $lock2->release;
 }
 
-# ── non-blocking returns 0 when another process holds lock ────────────────────
-
+########################################################################
+# Non-Blocking Returns 0 When Another Process Holds Lock
+########################################################################
 {
     pipe(my $pr, my $pw);
 
@@ -85,8 +98,9 @@ use warnings 'redefine';
     waitpid($pid, 0);
 }
 
-# ── timeout exceeded → dies ───────────────────────────────────────────────────
-
+########################################################################
+# Timeout Exceeded -> Dies
+########################################################################
 {
     pipe(my $pr, my $pw);
 
@@ -116,8 +130,9 @@ use warnings 'redefine';
     waitpid($pid, 0);
 }
 
-# ── force=1 acquires even when lock is held ───────────────────────────────────
-
+########################################################################
+# Force=1 Acquires Even When Lock Is Held
+########################################################################
 {
     pipe(my $pr, my $pw);
 

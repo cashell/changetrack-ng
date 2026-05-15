@@ -14,6 +14,110 @@ No build step is needed — modules are loaded directly from `lib/`. Tests run v
 
 ---
 
+## File Headers
+
+All Perl code files start with a structured header containing vim configuration, perltidy directives, SPDX metadata, and a file description. The format differs by file type:
+
+The description line must start with the file/module name, then ` - `, then a concise description.
+
+### bin/ (executable) files
+
+```perl
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# changetrack-ng - Main CLI entry point; parses options and dispatches
+#   to subcommands (run, init, status, diff, log, revert, update-ignore,
+#   migrate-config).
+#
+use strict;
+use warnings;
+```
+
+### lib/ (module) files
+
+```perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# ChangeTrack::Runner - Orchestration: config -> lock -> file list ->
+#   process -> commit -> notify
+#
+package ChangeTrack::Runner;
+
+use strict;
+use warnings;
+
+=head1 NAME
+
+ChangeTrack::Runner - Main orchestration engine
+
+=head1 DESCRIPTION
+
+...
+```
+
+### t/ (test) files
+
+```perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 01-config-v2.t - Tests for v2 INI config parsing (ChangeTrack::Config).
+#
+use strict;
+use warnings;
+use Test::More;
+```
+
+### Header format notes
+
+- **Vim modeline** (line 2): `ts=4` (tabs = 4 spaces), `sw=4` (shift width), `et` (expand tabs to spaces), `sm` (show matching brackets), `ai` (auto-indent), `smd` (show mode), `sc` (showcmd), `bg=dark`
+- **Perltidy directive** (line 3): Standard 4-space indent with void context, minimal vertical tightness, left paren on opening lines, cuddled braces, no blank lines before close brace, paren space, and continuation indent as specified
+- **SPDX divider** (lines 4, 7): 72 `#` marks provide visual separation
+- **Description** (line 9+): Must begin with the script/module/test file name, then ` - `, then description text. Wrap continuation lines with `#   ` (hash + 3 spaces); aim for ~70 chars per line. End with blank comment line (`#`) to close the header.
+
+---
+
+## Comment Style
+
+All Perl code in this repository follows these comment conventions:
+
+- **No Unicode or ANSI** in comments or section decorations. Dividers use `#` marks only; no em-dashes, box-drawing characters, or arrows.
+- **Every function/method** has at least a one-line comment. Larger or complex functions include the function name, inputs, outputs, and a brief description.
+- **Major section dividers** use a line of 72 `#` marks before (and optionally after) the section heading. Minor sections use a single `#` comment line or blank comment lines before/after.
+- **Documentation focus**: comments explain *what* the code does, not *how*. Unless the implementation is non-obvious, in which case tag it with `# COMPLEX:` to flag it for future cleanup. Include a *why* note for significant design decisions.
+- **Accuracy**: comments must accurately reflect the code they describe. Fix inaccurate comments outright where the correct behavior is clear.
+- **POD**: all `lib/` modules include POD covering `NAME`, `SYNOPSIS`, `DESCRIPTION`, and all public methods. POD must be accurate and kept in sync with the implementation. Test files (`t/*.t`) do not use POD, but do get a file-header comment block.
+
+### Section dividers
+
+Major sections (72 `#` marks):
+
+```perl
+########################################################################
+# Section Name
+########################################################################
+```
+
+Minor sections (single line or surrounding blank comment lines):
+
+```perl
+# Minor heading
+```
+
+---
+
 ## Code Style
 
 This project uses modern, idiomatic Perl 5.20+:

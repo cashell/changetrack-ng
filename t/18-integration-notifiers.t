@@ -1,3 +1,12 @@
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+#######################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+#######################################################################
+# 18-integration-notifiers.t - Tests for integration notifiers.
+#
+
 use strict;
 use warnings;
 use Test::More;
@@ -22,7 +31,9 @@ sub write_cfg {
     return $path;
 }
 
-# ── happy path: full fixture validates through Config -> Runner -> Notifier ──
+########################################################################
+# Happy Path: Full Fixture Validates Through Config -> Runner -> Notifier
+########################################################################
 {
     my $cfg = ChangeTrack::Config->load(File::Spec->catfile($RealBin, 'fixtures', 'config-v2-full.ini'));
     my $runner = ChangeTrack::Runner->new(config => '/nonexistent', quiet => 1);
@@ -35,7 +46,9 @@ sub write_cfg {
     ok($ok, 'fixture config passes notifier startup validation');
 }
 
-# ── webhook required setting enforced ─────────────────────────────────────────
+########################################################################
+# Webhook Required Setting Enforced
+########################################################################
 {
     my $path = write_cfg("notify = webhook\nwebhook_url =\n");
     my $cfg = ChangeTrack::Config->load($path);
@@ -51,7 +64,9 @@ sub write_cfg {
     like($@, qr/webhook notifier requires non-empty webhook_url/i, 'webhook error is actionable');
 }
 
-# ── otlp required setting enforced ────────────────────────────────────────────
+########################################################################
+# Otlp Required Setting Enforced
+########################################################################
 {
     my $path = write_cfg("notify = otlp\notlp_endpoint =\n");
     my $cfg = ChangeTrack::Config->load($path);
@@ -69,7 +84,9 @@ sub write_cfg {
     like($@, qr/otlp notifier requires otlp_endpoint/i, 'otlp error is actionable');
 }
 
-# ── file required setting enforced ────────────────────────────────────────────
+########################################################################
+# File Required Setting Enforced
+########################################################################
 {
     my $path = write_cfg("notify = file\nnotify_log_path =\n");
     my $cfg = ChangeTrack::Config->load($path);
@@ -85,7 +102,9 @@ sub write_cfg {
     like($@, qr/file notifier requires non-empty notify_log_path/i, 'file notifier error is actionable');
 }
 
-# ── SEC-2: world-readable secret-bearing config warns ────────────────────────
+########################################################################
+# SEC-2: World-Readable Secret-Bearing Config Warns
+########################################################################
 {
     my $path = write_cfg("notify = otlp\notlp_headers = Authorization=Bearer\\ token\n");
     chmod 0644, $path or die "chmod $path: $!";
