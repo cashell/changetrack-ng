@@ -309,6 +309,7 @@ sub import_from_v1_statistics {
 }
 
 # _username / _groupname -- Resolve uid/gid to name strings; fall back to the numeric id.
+sub _username { $^O eq 'MSWin32' ? $_[0] : ((getpwuid($_[0]))[0] // $_[0]) }
 sub _groupname { $^O eq 'MSWin32' ? $_[0] : ((getgrgid($_[0]))[0] // $_[0]) }
 
 1;
