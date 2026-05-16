@@ -129,7 +129,10 @@ sub run_cli {
 # default uses system config path (no flags, no env var)
 ###############################################################################
 
-{
+SKIP: {
+    skip 'system config exists on this host; cannot test default fallback', 3
+        if -f '/etc/changetrack-ng/changetrack-ng.conf';
+
     local $ENV{HOME};
     delete $ENV{HOME};
     delete $ENV{CHANGETRACK_CONFIG};
