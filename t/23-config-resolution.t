@@ -26,8 +26,9 @@ plan skip_all => 'bin/changetrack-ng not found' unless -f $bin;
 ###############################################################################
 
 # Write a minimal config whose VCS name acts as a unique sentinel.
-# When this config is loaded and run, Runner will croak "Unknown VCS '<sentinel>'",
-# proving the correct config file was opened.
+# When this config is loaded and the lock-free status path runs, Runner
+# will croak "Unknown VCS '<sentinel>'", proving the correct config file
+# was opened.
 sub make_config {
     my ($sentinel) = @_;
     my ($fh, $path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
@@ -57,7 +58,7 @@ sub run_cli {
 
 {
     my $cfg = make_config('sentinel_explicit');
-    my ($rc, $out) = run_cli('-c', $cfg, 'run');
+    my ($rc, $out) = run_cli('-c', $cfg, 'status');
     like($out, qr/sentinel_explicit/, '-c: loads the named config file');
 }
 
@@ -69,7 +70,7 @@ sub run_cli {
     my $cfg = make_config('sentinel_envvar');
     local $ENV{CHANGETRACK_CONFIG} = $cfg;
     delete $ENV{HOME};
-    my ($rc, $out) = run_cli('run');
+    my ($rc, $out) = run_cli('status');
     like($out, qr/sentinel_envvar/, 'CHANGETRACK_CONFIG env var: loaded when -c not given');
 }
 
@@ -81,7 +82,7 @@ sub run_cli {
     my $cfg_c   = make_config('sentinel_dashc');
     my $cfg_env = make_config('sentinel_envvar2');
     local $ENV{CHANGETRACK_CONFIG} = $cfg_env;
-    my ($rc, $out) = run_cli('-c', $cfg_c, 'run');
+    my ($rc, $out) = run_cli('-c', $cfg_c, 'status');
     like($out,   qr/sentinel_dashc/,   '-c beats CHANGETRACK_CONFIG: correct config used');
     unlike($out, qr/sentinel_envvar2/, '-c beats CHANGETRACK_CONFIG: env var config not used');
 }
@@ -100,7 +101,7 @@ sub run_cli {
 
     local $ENV{HOME} = $fake_home;
     delete $ENV{CHANGETRACK_CONFIG};
-    my ($rc, $out) = run_cli('--user', 'run');
+    my ($rc, $out) = run_cli('--user', 'status');
     like($out, qr/sentinel_user/, '--user: loads ~/.config/changetrack-ng/changetrack-ng.conf');
 }
 
@@ -119,7 +120,7 @@ sub run_cli {
     my $cfg_env = make_config('sentinel_envvar3');
     local $ENV{HOME}               = $fake_home;
     local $ENV{CHANGETRACK_CONFIG} = $cfg_env;
-    my ($rc, $out) = run_cli('--user', 'run');
+    my ($rc, $out) = run_cli('--user', 'status');
     like($out,   qr/sentinel_envvar3/, 'CHANGETRACK_CONFIG beats --user: env var config used');
     unlike($out, qr/sentinel_user2/,   'CHANGETRACK_CONFIG beats --user: user config not used');
 }
@@ -132,7 +133,7 @@ sub run_cli {
     local $ENV{HOME};
     delete $ENV{HOME};
     delete $ENV{CHANGETRACK_CONFIG};
-    my ($rc, $out) = run_cli('run');
+    my ($rc, $out) = run_cli('status');
     like($out,   qr{/etc/changetrack-ng}, 'default: uses system config path');
     unlike($out, qr{\.config/changetrack-ng}, 'default: does not use user config path');
     is($rc, 2, 'default: exits 2 when system config is missing (not a usage error)');
@@ -143,7 +144,7 @@ sub run_cli {
 ###############################################################################
 
 {
-    my ($rc, $out) = run_cli('--system', '--user', 'run');
+    my ($rc, $out) = run_cli('--system', '--user', 'status');
     is($rc, 64, '--system --user: exits 64');
     like($out, qr/mutually exclusive/, '--system --user: error message is descriptive');
 }
@@ -156,7 +157,7 @@ sub run_cli {
     local $ENV{HOME};
     delete $ENV{HOME};
     delete $ENV{CHANGETRACK_CONFIG};
-    my ($rc, $out) = run_cli('--user', 'run');
+    my ($rc, $out) = run_cli('--user', 'status');
     is($rc, 64, '--user without HOME: exits 64');
     like($out, qr/HOME/, '--user without HOME: error message mentions HOME');
 }
