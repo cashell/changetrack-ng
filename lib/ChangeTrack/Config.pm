@@ -4,86 +4,80 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 #######################################################################
-# ChangeTrack::Config - INI v2 config parser with v1 migration support,
-#   validation, and dumping.
+# ChangeTrack::Config - INI config parser with subsection-based notifier
+#   instances, drop-in directory support, and @include directives.
 #
-
 package ChangeTrack::Config;
 
 use strict;
 use warnings;
+
 =head1 NAME
 
-ChangeTrack::Config - INI v2 config parser and v1 migration for changetrack-ng
-
-=head1 SYNOPSIS
-
-  my $cfg = ChangeTrack::Config->load('/etc/changetrack-ng/changetrack-ng.conf');
-  my $vcs  = $cfg->global('vcs');          # 'git'
-  my @urls = @{ $cfg->global('webhook_url') // [] };
-  my @entries = $cfg->tracks;
+ChangeTrack::Config - configuration loader for changetrack-ng
 
 =head1 DESCRIPTION
 
-Parses the changetrack-ng INI v2 config file.  Array-valued keys
-(C<notify>, C<ignore>, C<webhook_url>, C<push_remote>, C<email_to>)
-are split on whitespace and returned as arrayrefs.  All other keys
-return scalar strings.
+Parses changetrack-ng INI configuration files.  Supports:
 
-Global keys are validated against a strict schema.  Unsupported keys
-raise a parse error to prevent silent misconfiguration.
+=over 4
 
-Detects a legacy v1 config by the absence of a C<[global]> section and
-auto-migrates via C<migrate_v1_to_v2()>.  C<HOSTNAME> tokens in values
-are expanded to the local FQDN; C<${VAR}> tokens are expanded from the
-environment.
+=item Sections
 
-=head1 CLASS METHODS
+C<[global]>, C<[track]>, C<[notifier:E<lt>typeE<gt>]> (name defaults to
+C<default>), and C<[notifier:E<lt>typeE<gt>:E<lt>nameE<gt>]>.
+
+=item Drop-in directories
+
+C<conf.d/> (global only), C<track.d/> (track only), C<notifier.d/>
+(notifier only) -- siblings of the main config file; C<*.conf> files
+processed in sorted order.
+
+=item Include directives
+
+C<@include E<lt>pathE<gt>>, C<@include-track E<lt>pathE<gt>>,
+C<@include-notifier E<lt>pathE<gt>>; file or directory path; recursion-safe.
+
+=back
+
+=head1 METHODS
 
 =over 4
 
 =item ChangeTrack::Config->load($path)
 
-Load and parse the config file at I<$path>.  Auto-detects v1 vs v2 format.
-Returns a new C<ChangeTrack::Config> object.  Croaks on parse error.
-
-=item ChangeTrack::Config->migrate_v1_to_v2($v1_path, $v2_path)
-
-Read a legacy changetrack v1 config and write an equivalent v2 INI to
-I<$v2_path>.  Croaks on read/write errors.
-
-=back
-
-=head1 INSTANCE METHODS
-
-=over 4
+Parse the config file at I<$path> (required), scan sibling drop-in
+directories, process C<@include> directives, and return a
+C<ChangeTrack::Config> object.  Croaks on any parse error, missing
+required field, or I/O failure.
 
 =item $cfg->global($key)
 
-Return the value of the named key in C<[global]>.  Array keys return an
-arrayref; all others return a scalar string or undef.
+Return the value for a C<[global]> key.  Array-valued keys (C<ignore>,
+C<push_remote>) return an arrayref.  All others return a scalar or undef.
 
 =item $cfg->tracks
 
-Return an arrayref of hashrefs, one per C<[track]> entry, each with keys:
-C<kind> (C<"file"> or C<"directory">), C<path> (absolute string),
-C<emails> (arrayref), and C<options> (hashref).
+Return an arrayref of hashrefs, one per C<[track]> entry.  Each hashref
+has keys: C<kind> (C<"file"> or C<"directory">), C<path> (absolute
+string), C<emails> (arrayref), and C<options> (hashref).
 
-=item $cfg->version
+=item $cfg->notifiers
 
-Return the config format version (integer: 1 or 2).
+Return a hashref keyed by notifier type, each value being an arrayref of
+per-instance config hashrefs for enabled instances only:
 
-=item $cfg->dump_v2($path)
+  { email => [\%inst, ...], webhook => [...], otlp => [...], file => [...] }
 
-Write the current config state as a v2 INI file to I<$path>.  Useful for
-persisting a migrated v1 config or a programmatically built config.
+Each instance hashref contains all keys from its C<[notifier:*]> section
+plus C<instance_name>.
 
 =back
 
 =cut
 
 use feature qw(say state);
-use Carp qw(croak carp);
+use Carp    qw(croak carp);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -91,317 +85,408 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 # Schema: allowed keys and their types
 ########################################################################
 
-# Keys whose values are split on whitespace into arrayrefs.
-my %ARRAY_KEYS = map { $_ => 1 } qw(
-    notify ignore webhook_url push_remote email_to
-);
-
 my %KNOWN_GLOBAL_KEYS = map { $_ => 1 } qw(
-    vcs output_dir notify
-    email_from email_to sendmail_path
-    push_remote
-    webhook_url webhook_full_diff webhook_heartbeat webhook_insecure
-    otlp_endpoint otlp_full_diff otlp_compression otlp_headers otlp_timeout
-    otlp_insecure otlp_resource_attributes otlp_heartbeat
-    notify_log_path file_heartbeat file_full_diff
-    ignore
+    vcs output_dir push_remote ignore
     sensitive_auto sensitive_notify
-    warn_special_files
-    interval
+    warn_special_files interval
     lock_path lock_timeout
 );
 
-my %BOOL_KEYS = map { $_ => 1 } qw(
-    webhook_full_diff webhook_heartbeat webhook_insecure
-    otlp_full_diff otlp_insecure otlp_heartbeat
-    file_heartbeat file_full_diff
-    sensitive_auto
-    warn_special_files
-);
+# Global keys whose values are split into arrayrefs (append across files).
+my %ARRAY_GLOBAL_KEYS = map { $_ => 1 } qw(ignore push_remote);
 
-my %INT_KEYS = map { $_ => 1 } qw(
-    lock_timeout otlp_timeout
-);
-
-my %PATH_KEYS = map { $_ => 1 } qw(
-    output_dir notify_log_path lock_path
-);
-
-my %ENUM_KEYS = (
+my %BOOL_GLOBAL_KEYS = map { $_ => 1 } qw(sensitive_auto warn_special_files);
+my %INT_GLOBAL_KEYS  = map { $_ => 1 } qw(lock_timeout interval);
+my %PATH_GLOBAL_KEYS = map { $_ => 1 } qw(output_dir lock_path);
+my %ENUM_GLOBAL_KEYS = (
     vcs              => { map { $_ => 1 } qw(rcs git fossil svn hg mercurial) },
     sensitive_notify => { map { $_ => 1 } qw(suppress allow) },
-    otlp_compression => { map { $_ => 1 } qw(gzip none) },
+);
+
+# Keys allowed in each notifier type.  'enabled' is universal (always required).
+my %KNOWN_NOTIFIER_KEYS = (
+    email => { map { $_ => 1 } qw(
+        enabled to from sendmail_path
+    ) },
+    webhook => { map { $_ => 1 } qw(
+        enabled url full_diff heartbeat insecure timeout
+    ) },
+    otlp => { map { $_ => 1 } qw(
+        enabled endpoint headers compression full_diff
+        heartbeat timeout insecure resource_attributes
+    ) },
+    file => { map { $_ => 1 } qw(
+        enabled path heartbeat full_diff
+    ) },
+);
+
+# Keys in a notifier section that hold space/comma-separated lists.
+my %ARRAY_NOTIFIER_KEYS = (
+    email   => { to  => 1 },
+    webhook => { url => 1 },
+    otlp    => {},
+    file    => {},
+);
+
+my %BOOL_NOTIFIER_KEYS = (
+    email   => { enabled => 1 },
+    webhook => { map { $_ => 1 } qw(enabled full_diff heartbeat insecure) },
+    otlp    => { map { $_ => 1 } qw(enabled full_diff heartbeat insecure) },
+    file    => { map { $_ => 1 } qw(enabled heartbeat full_diff) },
+);
+
+my %INT_NOTIFIER_KEYS = (
+    email   => {},
+    webhook => { timeout => 1 },
+    otlp    => { timeout => 1 },
+    file    => {},
+);
+
+my %PATH_NOTIFIER_KEYS = (
+    email   => { sendmail_path => 1 },
+    webhook => {},
+    otlp    => {},
+    file    => { path => 1 },
+);
+
+my %ENUM_NOTIFIER_KEYS = (
+    otlp => { compression => { map { $_ => 1 } qw(gzip none) } },
 );
 
 ########################################################################
 # Constructor and public loader
 ########################################################################
 
-# new -- Internal constructor; use load() in normal code.
+# new -- Internal constructor; use load() in production code.
 sub new {
     my ($class, %args) = @_;
     return bless {
-        version => $args{version} // 2,
-        global  => $args{global}  // {},
-        tracks  => $args{tracks}  // [],
+        global         => $args{global}    // {},
+        tracks         => $args{tracks}    // [],
+        notifiers      => $args{notifiers} // { email => [], webhook => [], otlp => [], file => [] },
+        _global_src    => {},   # key => source file path, for cross-file conflict detection
+        _notifier_seen => {},   # "type:name" => source path, for duplicate-instance detection
     }, $class;
 }
 
-# load -- Parse the config file at $path.
-# Auto-detects v1 (no [global] section) vs v2 format and dispatches accordingly.
-# Croaks on parse error or I/O failure.
+# load -- Parse the main config file, scan sibling drop-in directories, and
+# return a ChangeTrack::Config.  Croaks on I/O or parse errors.
 sub load {
     my ($class, $path) = @_;
-    open(my $fh, '<', $path) or croak "Cannot open config '$path': $!";
-    my @lines = <$fh>;
-    close($fh);
-    chomp @lines;
 
-    my $ver = _detect_version(\@lines);
-    return $ver == 1
-        ? $class->_parse_v1(\@lines, $path)
-        : $class->_parse_v2(\@lines, $path);
+    -f $path or croak "Config file not found: $path";
+
+    my $self    = $class->new;
+    my %visited;
+
+    $self->_load_file($path, undef, \%visited);
+
+    # Scan sibling drop-in directories.
+    (my $dir = $path) =~ s{/[^/]+$}{};
+    $dir = '.' unless length $dir;
+    $self->_scan_dropin_dir("$dir/conf.d",     'global',   \%visited);
+    $self->_scan_dropin_dir("$dir/track.d",    'track',    \%visited);
+    $self->_scan_dropin_dir("$dir/notifier.d", 'notifier', \%visited);
+
+    return $self;
 }
 
 ########################################################################
-# Parsing
+# Drop-in directory scanner
 ########################################################################
 
-# _detect_version -- Guess config file version from content.
-# Returns 2 if a [global] or [track] section header is found; 1 if the
-# content looks like bare v1 path/@ lines; defaults to 2 for empty files.
-sub _detect_version {
-    my ($lines) = @_;
-    for my $line (@$lines) {
-        return 2 if $line =~ /^\s*\[(global|track)\]\s*$/i;
+# _scan_dropin_dir -- Process *.conf files in $dir with the given section restriction.
+sub _scan_dropin_dir {
+    my ($self, $dir, $restrict, $visited) = @_;
+    return unless -d $dir;
+
+    opendir(my $dh, $dir) or return;
+    my @files = sort grep { /\.conf$/ } readdir($dh);
+    closedir($dh);
+
+    for my $f (@files) {
+        my $full = "$dir/$f";
+        next unless -f $full;
+        $self->_load_file($full, $restrict, $visited);
     }
-    for my $line (@$lines) {
-        next if $line =~ /^\s*(?:#.*)?$/;
-        return 1 if $line =~ /^[\/\@~]/;
-    }
-    return 2;
 }
 
-# _parse_v2 -- Parse a v2 INI file (arrayref of chomped lines).
-# Validates all global keys against the schema and applies HOSTNAME and
-# ${VAR} expansion.  Returns a ChangeTrack::Config object.
-sub _parse_v2 {
-    my ($class, $lines, $src) = @_;
+########################################################################
+# File parser
+########################################################################
 
-    my (%global, @tracks);
-    my $section = '';
-    my $lineno  = 0;
+# _load_file -- Parse one config file and merge its content into $self.
+# $restrict: undef (any section allowed), 'global', 'track', or 'notifier'.
+# $visited:  hashref of absolute paths already loaded (prevents recursion).
+sub _load_file {
+    my ($self, $path, $restrict, $visited) = @_;
 
-    for my $line (@$lines) {
+    my $abs = _abs_path($path);
+    return if $visited->{$abs}++;
+
+    open(my $fh, '<', $path)
+        or croak "Cannot open config '$path': $!";
+
+    # Parser state.
+    my $section  = undef;   # 'global', 'track', or 'notifier'
+    my $ntype    = undef;   # notifier type when $section eq 'notifier'
+    my $nname    = undef;   # notifier instance name
+    my %ncurrent;           # accumulator for current notifier section's key-value pairs
+    my $lineno   = 0;
+
+    # Flush the in-progress notifier section into $self->{notifiers}.
+    my $flush_notifier = sub {
+        return unless defined $ntype;
+        $self->_flush_notifier_section(\%ncurrent, $ntype, $nname, $path);
+        ($ntype, $nname, %ncurrent) = (undef, undef);
+    };
+
+    while (my $line = <$fh>) {
         $lineno++;
-        next if $line =~ /^\s*#/;
-        next if $line =~ /^\s*$/;
+        chomp $line;
+        $line =~ s/\s+$//;
 
-        if ($line =~ /^\s*\[(\w+)\]\s*$/) {
-            my $sec = lc $1;
-            if ($sec eq 'global' || $sec eq 'track') {
-                $section = $sec;
+        # Skip blank lines and comments.
+        next if $line =~ /^\s*(?:#.*)?$/;
+
+        # @include directives.
+        if ($line =~ /^\@include(-track|-notifier)?\s+(\S.*?)\s*$/) {
+            my ($variant, $inc_path) = ($1 // '', $2);
+            $inc_path = _expand_env_vars($inc_path, $path, $lineno);
+            $inc_path = _expand_home_path($inc_path, $path, $lineno);
+
+            my $eff_restrict = _include_restrict($restrict, $variant, $path, $lineno);
+
+            if (-d $inc_path) {
+                $self->_scan_dropin_dir($inc_path, $eff_restrict, $visited);
+            } elsif (-f $inc_path) {
+                $self->_load_file($inc_path, $eff_restrict, $visited);
             } else {
-                carp "changetrack-ng: unknown section [$1] at $src line $lineno";
-                $section = 'unknown';
+                croak "Config error in $path line $lineno: \@include path not found: $inc_path";
             }
             next;
         }
 
-        next if $section eq 'unknown';
+        # Section headers.
+        if ($line =~ /^\[(.+)\]\s*$/) {
+            $flush_notifier->();
+            my $hdr = $1;
+            $hdr =~ s/^\s+|\s+$//g;
 
-        if ($section eq '') {
-            croak "Config parse error at $src line $lineno: entry before any section: '$line'";
-        }
-
-        if ($section eq 'global') {
-            if ($line =~ /^\s*(\w+)\s*=\s*(.*?)\s*$/) {
-                my ($key, $val) = (lc $1, $2);
-                croak "Config parse error at $src line $lineno: unsupported global key '$key'"
-                    unless $KNOWN_GLOBAL_KEYS{$key};
-                $global{$key} = $ARRAY_KEYS{$key}
-                    ? (length $val ? [split /\s+/, $val] : [])
-                    : $val;
+            if ($hdr eq 'global') {
+                _check_section_allowed('global', $restrict, $path, $lineno);
+                $section = 'global';
+            } elsif ($hdr eq 'track') {
+                _check_section_allowed('track', $restrict, $path, $lineno);
+                $section = 'track';
+            } elsif ($hdr =~ /^notifier:([a-zA-Z]+)(?::(\S*))?$/) {
+                my ($t, $n) = (lc($1), $2);
+                $n = 'default' if !defined($n) || $n eq '';
+                _check_section_allowed('notifier', $restrict, $path, $lineno);
+                unless (exists $KNOWN_NOTIFIER_KEYS{$t}) {
+                    croak "Config error in $path line $lineno: unknown notifier type '$t'";
+                }
+                $section  = 'notifier';
+                $ntype    = $t;
+                $nname    = $n;
+                %ncurrent = (instance_name => $nname);
             } else {
-                croak "Config parse error at $src line $lineno: invalid global entry: '$line'";
+                croak "Config error in $path line $lineno: unknown section '[$hdr]'";
             }
-        } elsif ($section eq 'track') {
-            my $entry = _parse_track_line($line, $src, $lineno);
-            push @tracks, $entry if defined $entry;
-        }
-    }
-
-    my $host = _config_hostname();
-    for my $key (keys %global) {
-        if (ref $global{$key} eq 'ARRAY') {
-            my @vals;
-            for my $item (@{ $global{$key} }) {
-                my $v = $item;
-                $v =~ s/\bHOSTNAME\b/$host/g;
-                $v = _expand_env_vars($v, $src, $key);
-                push @vals, $v;
-            }
-            $global{$key} = \@vals;
-            next;
-        }
-        next if ref $global{$key};
-        $global{$key} =~ s/\bHOSTNAME\b/$host/g;
-        $global{$key} = _expand_env_vars($global{$key}, $src, $key);
-        $global{$key} = _expand_home_path($global{$key}, $src, $key);
-    }
-
-    _validate_global_values(\%global, $src);
-
-    return $class->new(version => 2, global => \%global, tracks => \@tracks);
-}
-
-# _validate_global_values -- Apply schema constraints to parsed [global] values.
-# Enforces allowed notify backends, boolean/integer/path/enum key rules.
-# Croaks with a user-facing message on the first violation found.
-sub _validate_global_values {
-    my ($global, $src) = @_;
-
-    if (defined(my $notify = $global->{notify})) {
-        for my $n (@$notify) {
-            next if $n =~ /^(?:email|webhook|otlp|file)$/;
-            croak "Config parse error at $src: unsupported notify backend '$n'";
-        }
-    }
-
-    for my $key (sort keys %$global) {
-        my $val = $global->{$key};
-        next if ref $val;
-        next unless defined $val;
-
-        if ($PATH_KEYS{$key}) {
-            next if !$val;  # allow empty values; notifier validation will catch required ones
-            croak "Config parse error at $src: key '$key' must be an absolute path, got '$val'"
-                unless $val =~ m{^/};
-        }
-
-        if ($BOOL_KEYS{$key}) {
-            next if $val =~ /^(?:1|0|true|false|yes|no|on|off)$/i;
-            croak "Config parse error at $src: key '$key' must be boolean (0/1/true/false/yes/no/on/off), got '$val'";
-        }
-
-        if ($INT_KEYS{$key}) {
-            croak "Config parse error at $src: key '$key' must be a non-negative integer, got '$val'"
-                unless $val =~ /^\d+$/;
             next;
         }
 
-        if (my $allowed = $ENUM_KEYS{$key}) {
-            my $norm = lc $val;
-            croak "Config parse error at $src: key '$key' has invalid value '$val'"
-                unless $allowed->{$norm};
+        unless (defined $section) {
+            croak "Config error in $path line $lineno: entry appears before any section header: '$line'";
         }
+
+        # Track entries are free-form lines; handle before the key=value check.
+        if ($section eq 'track') {
+            $self->_parse_and_add_track($line, $path, $lineno);
+            next;
+        }
+
+        # Key = value pairs (global and notifier sections).
+        if ($line =~ /^(\w+)\s*=\s*(.*?)\s*$/) {
+            my ($key, $val) = (lc($1), $2);
+
+            if ($section eq 'global') {
+                unless ($KNOWN_GLOBAL_KEYS{$key}) {
+                    croak "Config error in $path line $lineno: unknown global key '$key'";
+                }
+                my $host = _config_hostname();
+                $val =~ s/\bHOSTNAME\b/$host/g;
+                $val = _expand_env_vars($val, $path, $lineno);
+                $val = _expand_home_path($val, $path, $lineno) if $PATH_GLOBAL_KEYS{$key};
+                $self->_merge_global($key, $val, $path, $lineno);
+
+            } elsif ($section eq 'notifier') {
+                unless ($KNOWN_NOTIFIER_KEYS{$ntype}{$key}) {
+                    croak "Config error in $path line $lineno: "
+                        . "unknown key '$key' for notifier type '$ntype'";
+                }
+                my $host = _config_hostname();
+                $val =~ s/\bHOSTNAME\b/$host/g;
+                $val = _expand_env_vars($val, $path, $lineno);
+                $val = _expand_home_path($val, $path, $lineno) if $PATH_NOTIFIER_KEYS{$ntype}{$key};
+
+                if ($ARRAY_NOTIFIER_KEYS{$ntype}{$key}) {
+                    my @items = grep { length } split /[\s,]+/, $val;
+                    push @{ $ncurrent{$key} //= [] }, @items;
+                } else {
+                    $ncurrent{$key} = $val;
+                }
+            }
+            next;
+        }
+
+        croak "Config error in $path line $lineno: unparseable line: '$line'";
     }
+
+    close($fh);
+    $flush_notifier->();
 }
 
 ########################################################################
-# Value expansion helpers
+# Merge helpers
 ########################################################################
 
-# _expand_env_vars -- Substitute ${VAR} tokens in $val with environment values.
-# Croaks if a referenced variable is not set.
-sub _expand_env_vars {
-    my ($val, $src, $key) = @_;
-    return $val unless defined $val && $val =~ /\$\{/;
+# _merge_global -- Set or append a global key, enforcing cross-file conflict
+# rules for scalar keys (error if set in two different files).
+sub _merge_global {
+    my ($self, $key, $val, $path, $lineno) = @_;
 
-    $val =~ s/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/_env_or_die($1, $src, $key)/ge;
-    return $val;
-}
-
-# _env_or_die -- Return the value of environment variable $name,
-# or croak with a user-facing config error pointing to $src and $key.
-sub _env_or_die {
-    my ($name, $src, $key) = @_;
-    croak "Config parse error at $src: key '$key' references undefined environment variable '$name'"
-        unless exists $ENV{$name};
-    return $ENV{$name} // '';
-}
-
-# _home_dir -- Return the current user's home directory.
-# Prefers $HOME; falls back to getpwuid() for non-interactive contexts.
-sub _home_dir {
-    my $home = $ENV{HOME};
-    if (!(defined($home) && $home =~ /\S/)) {
-        my @pw = getpwuid($<);
-        $home = $pw[7] if @pw;
+    if ($ARRAY_GLOBAL_KEYS{$key}) {
+        my @items = grep { length } split /[\s,]+/, $val;
+        push @{ $self->{global}{$key} //= [] }, @items;
+        return;
     }
-    return $home;
+
+    # Scalar: error on cross-file conflict (same file: last-wins).
+    my $prev_src = $self->{_global_src}{$key};
+    if (defined $prev_src && $prev_src ne $path) {
+        croak "Config error in $path line $lineno: key '$key' was already set in "
+            . "$prev_src; scalar global keys may not be set in multiple files";
+    }
+
+    $self->{global}{$key}      = _coerce_global_value($key, $val, $path, $lineno);
+    $self->{_global_src}{$key} = $path;
 }
 
-# _expand_home_path -- Expand a leading ~ to the home directory in $val.
-# Croaks if HOME is unset and getpwuid fails.
-sub _expand_home_path {
-    my ($val, $src, $key) = @_;
-    return $val unless defined $val;
-    return $val unless $val =~ m{^~(?:/|$)};
+# _coerce_global_value -- Apply type coercion to a raw string value.
+sub _coerce_global_value {
+    my ($key, $val, $path, $lineno) = @_;
 
-    my $home = _home_dir();
-    croak "Config parse error at $src: key '$key' cannot expand '~' (HOME is unset)"
-        unless defined($home) && $home =~ /\S/;
-
-    $val =~ s{^~}{$home};
+    if ($BOOL_GLOBAL_KEYS{$key}) {
+        return _parse_bool($val, $key, $path, $lineno);
+    }
+    if ($INT_GLOBAL_KEYS{$key}) {
+        croak "Config error in $path line $lineno: '$key' must be an integer (got '$val')"
+            unless $val =~ /^\d+$/;
+        return $val + 0;
+    }
+    if (my $allowed = $ENUM_GLOBAL_KEYS{$key}) {
+        croak "Config error in $path line $lineno: '$key' has invalid value '$val'"
+            unless $allowed->{lc $val};
+        return lc $val;
+    }
     return $val;
+}
+
+# _flush_notifier_section -- Validate and store a completed [notifier:*] section.
+# Discards disabled instances.  Croaks on missing 'enabled' or duplicate name.
+sub _flush_notifier_section {
+    my ($self, $data, $type, $name, $path) = @_;
+
+    unless (exists $data->{enabled}) {
+        croak "Config error in $path: [notifier:$type:$name] missing required 'enabled' key";
+    }
+
+    my $key = "$type:$name";
+    if (exists $self->{_notifier_seen}{$key}) {
+        croak "Config error in $path: duplicate notifier instance '$key' "
+            . "(first seen in $self->{_notifier_seen}{$key})";
+    }
+    $self->{_notifier_seen}{$key} = $path;
+
+    # Coerce key types.
+    my %inst = %$data;
+    for my $k (keys %inst) {
+        next if $k eq 'instance_name';
+        next unless ref($inst{$k}) eq '';  # skip arrayrefs (already correct type)
+        if ($BOOL_NOTIFIER_KEYS{$type}{$k}) {
+            $inst{$k} = _parse_bool($inst{$k}, $k, $path, 0);
+        } elsif ($INT_NOTIFIER_KEYS{$type}{$k}) {
+            croak "Config error in $path: notifier '$key' key '$k' must be an integer"
+                unless $inst{$k} =~ /^\d+$/;
+            $inst{$k} += 0;
+        } elsif (my $type_enums = $ENUM_NOTIFIER_KEYS{$type}) {
+            if (my $allowed = $type_enums->{$k}) {
+                croak "Config error in $path: notifier '$key' key '$k' has invalid value '$inst{$k}'"
+                    unless $allowed->{lc $inst{$k}};
+                $inst{$k} = lc $inst{$k};
+            }
+        }
+    }
+
+    return unless $inst{enabled};   # discard disabled instances
+
+    push @{ $self->{notifiers}{$type} }, \%inst;
 }
 
 ########################################################################
 # Track-entry parsing
 ########################################################################
 
-# _parse_track_line -- Parse one [track] section line.
-# Supports: "DIRECTORY /path [...opts]", "/path [...opts]"
-# Returns a hashref {kind, path, emails, options} or undef for blank lines.
+# _parse_and_add_track -- Parse one [track] section line and append to tracks.
+sub _parse_and_add_track {
+    my ($self, $line, $src, $lineno) = @_;
+    return if $line =~ /^\s*$/;
+    my $entry = _parse_track_line($line, $src, $lineno);
+    push @{ $self->{tracks} }, $entry if defined $entry;
+}
+
+# _parse_track_line -- Parse one track entry.
+# Formats: "DIRECTORY /path [: emails opts]", "/path [: emails opts]".
+# Returns {kind, path, emails, options} or undef.
 sub _parse_track_line {
     my ($line, $src, $lineno) = @_;
     return undef if $line =~ /^\s*$/;
 
     my ($kind, $path, $rest);
-
     if ($line =~ /^\s*DIRECTORY\s+(\S+)\s*(?::\s*)?(.*?)\s*$/) {
         ($kind, $path, $rest) = ('directory', $1, $2);
     } elsif ($line =~ /^\s*(\S+)\s*(?::\s*)?(.*?)\s*$/) {
         ($kind, $path, $rest) = ('file', $1, $2);
     } else {
-        croak "Config parse error at $src line $lineno: unrecognized track entry: '$line'";
+        croak "Config error in $src line $lineno: unrecognized track entry: '$line'";
     }
 
     $path = _expand_track_path($path, $src, $lineno);
-
     my ($emails_ref, %options) = _parse_rest($rest);
     return { kind => $kind, path => $path, emails => $emails_ref, options => \%options };
 }
 
-# _expand_track_path -- Apply env-var and tilde expansion to a track path.
-# Enforces that the result is an absolute path after expansion.
+# _expand_track_path -- Expand env vars and ~ in a track path; enforce absolute.
 sub _expand_track_path {
     my ($path, $src, $lineno) = @_;
-
-    # Allow env expansion in track paths for parity with [global] values.
-    $path = _expand_env_vars($path, "$src line $lineno", 'track.path');
-
+    $path = _expand_env_vars($path, $src, $lineno);
     if ($path =~ m{^~(?:/|$)}) {
         my $home = _home_dir();
-        croak "Config parse error at $src line $lineno: cannot expand '~' in track entry (HOME is unset)"
+        croak "Config error in $src line $lineno: cannot expand '~' in track path (HOME unset)"
             unless defined($home) && $home =~ /\S/;
         $path =~ s{^~}{$home};
     }
-
-    croak "Config parse error at $src line $lineno: track path must be absolute after expansion: '$path'"
+    croak "Config error in $src line $lineno: track path must be absolute: '$path'"
         unless $path =~ m{^/};
-
     return $path;
 }
 
-# _parse_rest -- Parse the optional email/option tokens that follow a track path.
-# Email addresses are any token without '='; key=value tokens become options.
-# Returns: (\@emails, %options)
+# _parse_rest -- Parse trailing email/option tokens after ':' in a track line.
+# Returns (emails_arrayref, %options_hash).
 sub _parse_rest {
     my ($rest) = @_;
     return ([], ()) unless defined $rest && length $rest;
-
     my (@emails, %options);
     for my $token (split /\s+/, $rest) {
         next unless length $token;
@@ -415,167 +500,142 @@ sub _parse_rest {
 }
 
 ########################################################################
-# v1 compatibility
+# Value expansion helpers
 ########################################################################
 
-# _parse_v1 -- Parse a legacy v1 config (bare path list with optional : emails).
-# Produces a ChangeTrack::Config with version=1 and an empty global section.
-# Runner and migrate_v1_to_v2 handle the incomplete global defaults.
-sub _parse_v1 {
-    my ($class, $lines, $src) = @_;
-    my @tracks;
-    my $lineno = 0;
+# _expand_env_vars -- Replace ${VAR} references with environment values.
+# $src and $lineno are used only for error messages.
+sub _expand_env_vars {
+    my ($val, $src, $lineno) = @_;
+    return $val unless defined $val && $val =~ /\$\{/;
+    my $loc = (defined $src && defined $lineno && $lineno) ? "$src line $lineno" : ($src // '');
+    $val =~ s/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/_env_or_die($1, $loc)/ge;
+    return $val;
+}
 
-    for my $line (@$lines) {
-        $lineno++;
-        next if $line =~ /^\s*#/;
-        next if $line =~ /^\s*$/;
+# _env_or_die -- Return the env var value or croak with context.
+sub _env_or_die {
+    my ($name, $loc) = @_;
+    croak "Config error"
+        . ($loc ? " at $loc" : '')
+        . ": references undefined environment variable '\${$name}'"
+        unless exists $ENV{$name};
+    return $ENV{$name} // '';
+}
 
-        # @find-expression [: emails]
-        if ($line =~ /^@\s*(.*?)\s*(?::\s*(.*?))?\s*$/) {
-            my ($expr, $emails_str) = ($1, $2 // '');
-            my @emails = grep { length } split /\s+/, $emails_str;
-            push @tracks, {
-                kind    => 'directory',
-                path    => $expr,
-                emails  => \@emails,
-                options => { _v1_find_expr => 1 },
-            };
-            next;
-        }
+# _expand_home_path -- Expand a leading ~ to the home directory.
+sub _expand_home_path {
+    my ($val, $src, $lineno) = @_;
+    return $val unless defined $val && $val =~ m{^~(?:/|$)};
+    my $home = _home_dir();
+    my $loc = (defined $src && defined $lineno && $lineno) ? "$src line $lineno" : ($src // '');
+    croak "Config error"
+        . ($loc ? " at $loc" : '')
+        . ": cannot expand '~' (HOME is unset)"
+        unless defined($home) && $home =~ /\S/;
+    $val =~ s{^~}{$home};
+    return $val;
+}
 
-        # [~]/path [: emails]
-        if ($line =~ /^(~?\/\S*?)\s*(?::\s*(.*?))?\s*$/) {
-            my ($path_raw, $emails_str) = ($1, $2 // '');
-            my @emails  = grep { length } split /\s+/, $emails_str;
-            my $negated = ($path_raw =~ s/^~//);
-            push @tracks, {
-                kind    => 'file',
-                path    => $path_raw,
-                emails  => \@emails,
-                options => $negated ? { negated => 1 } : {},
-            };
-            next;
-        }
-
-        carp "changetrack-ng: cannot parse v1 line at $src:$lineno: '$line'";
+# _home_dir -- Return the current user's home directory.
+sub _home_dir {
+    my $home = $ENV{HOME};
+    if (!(defined($home) && $home =~ /\S/)) {
+        my @pw = getpwuid($<);
+        $home = $pw[7] if @pw;
     }
-
-    return $class->new(version => 1, global => {}, tracks => \@tracks);
+    return $home;
 }
 
-########################################################################
-# Accessors
-########################################################################
-
-# global -- Return the value for $key from the [global] section.
-# Array-valued keys return arrayrefs; scalar keys return strings or undef.
-sub global {
-    my ($self, $key) = @_;
-    return $self->{global}{lc $key};
-}
-
-# tracks -- Return the arrayref of parsed [track] entry hashrefs.
-sub tracks {
-    my ($self) = @_;
-    return $self->{tracks};
-}
-
-# version -- Return the detected config format version (1 or 2).
-sub version {
-    my ($self) = @_;
-    return $self->{version};
-}
-
-# dump_v2 -- Write the current config state as a v2 INI file to $path.
-sub dump_v2 {
-    my ($self, $path) = @_;
-    open(my $fh, '>', $path) or croak "Cannot write config '$path': $!";
-
-    say $fh "# changetrack-ng v2 config";
-    say $fh "[global]";
-
-    for my $key (sort keys %{ $self->{global} }) {
-        my $val = $self->{global}{$key};
-        $val = join(' ', @$val) if ref $val eq 'ARRAY';
-        say $fh "$key = $val";
-    }
-
-    say $fh "";
-    say $fh "[track]";
-
-    for my $entry (@{ $self->{tracks} }) {
-        my $line = $entry->{kind} eq 'directory'
-            ? "DIRECTORY $entry->{path}"
-            : $entry->{path};
-
-        if (my @e = @{ $entry->{emails} // [] }) {
-            $line .= ' : ' . join(' ', @e);
-        }
-
-        for my $opt (sort keys %{ $entry->{options} // {} }) {
-            next if $opt =~ /^_/;
-            $line .= " $opt=$entry->{options}{$opt}";
-        }
-
-        say $fh $line;
-    }
-
-    close($fh);
-}
-
-# migrate_v1_to_v2 -- One-shot v1-to-v2 migration.
-# Loads the v1 config at $v1_path, writes an equivalent v2 INI to $v2_path.
-# Croaks if $v1_path is not a v1 config or on any I/O failure.
-sub migrate_v1_to_v2 {
-    my ($class, $v1_path, $v2_path) = @_;
-
-    my $cfg = $class->load($v1_path);
-    croak "Not a v1 config: $v1_path" unless $cfg->version == 1;
-
-    open(my $fh, '>', $v2_path) or croak "Cannot write '$v2_path': $!";
-
-    say $fh "# changetrack-ng v2 config";
-    say $fh "# Migrated from v1: $v1_path";
-    say $fh "# Review and adjust before use";
-    say $fh "";
-    say $fh "[global]";
-    say $fh "vcs = rcs";
-    say $fh "output_dir = /var/lib/changetrack-ng";
-    say $fh "notify = email";
-    say $fh "email_from = changetrack-ng\@HOSTNAME";
-    say $fh "ignore = *.swp *~ *.bak *.dpkg-* *.rpmnew";
-    say $fh "sensitive_auto = 1";
-    say $fh "sensitive_notify = suppress";
-    say $fh "";
-    say $fh "[track]";
-
-    for my $entry (@{ $cfg->tracks }) {
-        if ($entry->{options}{_v1_find_expr}) {
-            say $fh "# TODO: translate find expression manually:";
-            say $fh "#   Original: \@ $entry->{path}";
-            my $ep = @{ $entry->{emails} } ? ' : ' . join(' ', @{ $entry->{emails} }) : '';
-            say $fh "# DIRECTORY /FILL_IN$ep";
-        } else {
-            my $line = $entry->{options}{negated} ? "# (negated in v1) $entry->{path}" : $entry->{path};
-            if (!$entry->{options}{negated} && @{ $entry->{emails} }) {
-                $line .= ' : ' . join(' ', @{ $entry->{emails} });
-            }
-            say $fh $line;
-        }
-    }
-
-    close($fh);
-}
-
-# _config_hostname -- Return the FQDN used for HOSTNAME token expansion.
-# Cached after the first call via state variable.
+# _config_hostname -- Return the FQDN for HOSTNAME substitution (cached).
 sub _config_hostname {
     state $h;
     return $h if defined $h;
     require ChangeTrack::Util;
     $h = ChangeTrack::Util::fqdn();
     return $h;
+}
+
+########################################################################
+# Type-coercion helpers
+########################################################################
+
+# _parse_bool -- Coerce a string to 1 or 0; croak on unrecognised value.
+sub _parse_bool {
+    my ($val, $key, $path, $lineno) = @_;
+    return 1 if $val =~ /^(?:1|true|yes|on)$/i;
+    return 0 if $val =~ /^(?:0|false|no|off)$/i;
+    my $loc = ($lineno ? "$path line $lineno" : $path);
+    croak "Config error in $loc: '$key' must be a boolean (true/false/yes/no/1/0), got '$val'";
+}
+
+########################################################################
+# @include and section-restriction helpers
+########################################################################
+
+# _include_restrict -- Compute the effective section restriction for an
+# @include directive.
+# - Bare @include:        inherits the parent file's restriction.
+# - @include-track:       restricts to 'track'; incompatible with non-track parent.
+# - @include-notifier:    restricts to 'notifier'; incompatible with non-notifier parent.
+sub _include_restrict {
+    my ($parent_restrict, $variant, $path, $lineno) = @_;
+
+    my $req = $variant eq '-track'    ? 'track'
+            : $variant eq '-notifier' ? 'notifier'
+            :                           undef;
+
+    return $parent_restrict unless defined $req;
+
+    if (defined $parent_restrict && $parent_restrict ne $req) {
+        croak "Config error in $path line $lineno: "
+            . "\@include-$req is not allowed inside a '$parent_restrict'-restricted file";
+    }
+    return $req;
+}
+
+# _check_section_allowed -- Croak if a section type is forbidden in this file context.
+sub _check_section_allowed {
+    my ($section_type, $restrict, $path, $lineno) = @_;
+    return unless defined $restrict;
+    return if $restrict eq $section_type;
+    croak "Config error in $path line $lineno: "
+        . "[$section_type] section is not allowed in a '$restrict'-restricted file";
+}
+
+########################################################################
+# Path normalisation (for visited-paths guard only)
+########################################################################
+
+# _abs_path -- Return an absolute path string.  Uses Cwd only for relative paths.
+sub _abs_path {
+    my ($path) = @_;
+    return $path if $path =~ m{^/};
+    require Cwd;
+    return Cwd::abs_path($path) // $path;
+}
+
+########################################################################
+# Public accessors
+########################################################################
+
+# global -- Return the value of a [global] key (scalar or arrayref).
+sub global {
+    my ($self, $key) = @_;
+    return $self->{global}{$key};
+}
+
+# tracks -- Return the arrayref of [track] entries.
+sub tracks {
+    my ($self) = @_;
+    return $self->{tracks};
+}
+
+# notifiers -- Return the notifiers hashref (type => [\%instance, ...]).
+# Only enabled instances are present.
+sub notifiers {
+    my ($self) = @_;
+    return $self->{notifiers};
 }
 
 1;

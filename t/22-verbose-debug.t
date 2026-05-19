@@ -183,7 +183,10 @@ sub capture_both {
     print {$fh} "[global]\n";
     print {$fh} "vcs = rcs\n";
     print {$fh} "output_dir = $dir\n";
-    print {$fh} "otlp_headers = Authorization: Bearer secret-token-12345\n";
+    print {$fh} "\n[notifier:otlp:default]\n";
+    print {$fh} "enabled = true\n";
+    print {$fh} "endpoint = https://otel.example.com/v1/logs\n";
+    print {$fh} "headers = Authorization: Bearer secret-token-12345\n";
     print {$fh} "\n[track]\n";
     close($fh);
 

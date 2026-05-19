@@ -37,11 +37,11 @@ my @SENDMAIL_PATHS = qw(
     /usr/lib/sendmail
 );
 
-# new -- Construct the notifier with defaults for email_from and sensitive_notify.
+# new -- Construct the notifier with defaults for from and sensitive_notify.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{email_from}       //= 'changetrack-ng@' . fqdn();
+    $self->{from}             //= 'changetrack-ng@' . fqdn();
     $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
@@ -52,7 +52,7 @@ sub heartbeat_enabled { 0 }
 sub name { 'email' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(email_from email_to sendmail_path) }
+sub config_keys { qw(to from sendmail_path) }
 
 # send_changes -- Send per-recipient change digest emails.
 # Changes are grouped by recipient address.  Per-track recipients take
@@ -68,7 +68,7 @@ sub send_changes {
 
     # Group changes by recipient.  Per-track recipients override global;
     # global email_to is the fallback when a track entry has none.
-    my @global_recips = grep { defined $_ && /\S/ } @{ $self->{email_to} // [] };
+    my @global_recips = grep { defined $_ && /\S/ } @{ $self->{to} // [] };
     my %by_recipient;
     for my $c (@{ $report->changes }) {
         my @track_recips = grep { defined $_ && /\S/ } @{ $c->{recipients} // [] };
@@ -131,7 +131,7 @@ sub _format_body {
 sub _send_one {
     my ($self, $sendmail, $to, $host, $date, $body) = @_;
 
-    my $from    = $self->{email_from};
+    my $from    = $self->{from};
     my $subject = "[changetrack-ng] Changes on $host \@ $date";
 
     my @cmd = ($sendmail, '-oi', '-f', $from, $to);

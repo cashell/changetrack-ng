@@ -31,8 +31,7 @@ The description line must start with the file/module name, then ` - `, then a co
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches
-#   to subcommands (run, init, status, diff, log, revert, update-ignore,
-#   migrate-config).
+#   to subcommands (run, init, status, diff, log, revert, update-ignore).
 #
 use strict;
 use warnings;
@@ -243,13 +242,32 @@ prove -l -v t/               # Verbose output
 
 ## Config Changes
 
-When adding a new configuration key:
+### Adding a new global key
 
-1. Add it to `%KNOWN_GLOBAL_KEYS` in `Config.pm` (unknown keys are fatal)
-2. Decide if it's scalar or array-valued; update `%ARRAY_KEYS` if array
-3. Add type validation in `_validate_global_values()` if the value has constraints
-4. Document the key in `README.md` and the config example
-5. Add a test case in `t/02-config.t`
+1. Add it to `%KNOWN_GLOBAL_KEYS` in `Config.pm` (unknown keys are fatal parse errors)
+2. Decide if it's scalar or array-valued; update `%ARRAY_GLOBAL_KEYS` if array-valued
+3. Add the appropriate type table entry (`%BOOL_GLOBAL_KEYS`, `%INT_GLOBAL_KEYS`,
+   `%ENUM_GLOBAL_KEYS`, or `%PATH_GLOBAL_KEYS`) if the value has constraints
+4. Document the key in `README.md` and the config example files
+
+### Adding a new notifier type
+
+1. Add the type to `%KNOWN_NOTIFIER_KEYS` in `Config.pm` with its allowed keys
+2. Add entries to `%ARRAY_NOTIFIER_KEYS`, `%BOOL_NOTIFIER_KEYS`, `%INT_NOTIFIER_KEYS`,
+   `%PATH_NOTIFIER_KEYS`, and `%ENUM_NOTIFIER_KEYS` as appropriate for each key
+3. Create `lib/ChangeTrack/Notify/<Type>.pm` extending `ChangeTrack::Notify::Base`
+4. Implement `name()`, `heartbeat_enabled()`, `validate_config()`, and `send($report)`
+5. Add the type to `_build_notifiers()` in `Runner.pm`
+6. Add test coverage in a new `t/##-notify-<type>.t`; add an enabled instance to
+   `t/fixtures/config-v2-full.ini` and verify it through `t/18-integration-notifiers.t`
+
+### Adding a new key to an existing notifier type
+
+1. Add the key to `%KNOWN_NOTIFIER_KEYS{<type>}` in `Config.pm`
+2. Add the appropriate type table entry as above
+3. Update the notifier module constructor to read the new key
+4. Update `validate_config()` if the key is required
+5. Add a test case in the relevant `t/##-notify-<type>.t`
 
 ---
 

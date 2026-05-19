@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.5.5
+Version:        0.6.0
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -80,7 +80,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 %files
 %license LICENSE
-%doc README.md INSTALL.md ARCHITECTURE.md CHANGELOG.md
+%doc README.md INSTALL.md ARCHITECTURE.md CHANGELOG.md PRODUCT.md CONTRIBUTING.md
 %doc %{_docdir}/%{name}/examples
 
 %{_bindir}/changetrack-ng
@@ -93,8 +93,11 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 %{_libdir}/%{name}/ChangeTrack/VCS/*.pm
 %{_libdir}/%{name}/ChangeTrack/Notify/*.pm
 
-%config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 %dir %{_sysconfdir}/%{name}
+%dir %{_sysconfdir}/%{name}/conf.d
+%dir %{_sysconfdir}/%{name}/track.d
+%dir %{_sysconfdir}/%{name}/notifier.d
+%config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 
 %dir %{_localstatedir}/lib/%{name}
 
@@ -109,6 +112,21 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Tue May 19 2026 Christopher Cashell <topher@zyp.org> - 0.6.0-1
+- BREAKING: Notifier configuration redesigned; [notifier:<type>:<name>] subsections
+  replace the flat notify= list and all prefixed notifier keys (email_to, email_from,
+  webhook_url, otlp_endpoint, otlp_headers, notify_log_path, file_heartbeat, etc.)
+- BREAKING: migrate-config subcommand removed
+- Add drop-in directory support: conf.d/ ([global] only), track.d/ ([track] only),
+  notifier.d/ ([notifier:*] only); scanned automatically in sorted order
+- Add @include, @include-track, @include-notifier directives; directories process
+  *.conf files in sorted order; visited-paths guard prevents infinite recursion
+- Add multi-instance notifiers: multiple [notifier:<type>:<name>] sections produce
+  independent notifier objects; duplicate instance names are a fatal parse error
+- Add t/24-config-sections.t, t/25-config-drop-in-dirs.t,
+  t/26-config-include-directives.t, t/27-config-cross-file-errors.t
+- Install creates conf.d/, track.d/, notifier.d/ under /etc/changetrack-ng/
+
 * Thu May 15 2026 Christopher Cashell <topher@zyp.org> - 0.5.5-1
 - Add --system and --user flags for explicit config scope declaration
 - Add CHANGETRACK_CONFIG env var (beats --system/--user; loses to -c)

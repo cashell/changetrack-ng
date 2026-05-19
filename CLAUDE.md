@@ -77,10 +77,10 @@ Three levels, each implying the ones below it:
 Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic output uses `warn` (STDERR) to keep STDOUT clean for subcommand data output (`diff`, `status`, `log`).
 
 ### Config data shapes
-- Array-valued keys: `notify`, `ignore`, `webhook_url`, `push_remote`, `email_to` — returned as arrayrefs
-- `otlp_headers`, `otlp_resource_attributes` — NOT in the array-valued key list; returned as scalar strings
-- The `_parse_kv_config_value()` function in OTLP.pm handles scalar/arrayref/hashref polymorphically
-- When adding config keys, decide scalar vs array-valued and update `%ARRAY_KEYS` accordingly
+- Array-valued `[global]` keys: `ignore`, `push_remote` — returned as arrayrefs; appended across multi-file loads
+- All other `[global]` keys return scalar strings; conflicting values across files are a fatal parse error
+- `[notifier:*]` keys are per-instance scalars stored in `$cfg->notifiers->{<type>}` as an arrayref of instance hashrefs
+- When adding a new global key, decide scalar vs array-valued and update `%ARRAY_GLOBAL_KEYS` accordingly
 
 ### Sensitive file detection
 - Auto-detect: `(mode & 0004) == 0` means sensitive (no world-read)
@@ -99,7 +99,7 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 
 ## Known Gaps to Fix (see TODO.md)
 
-- `otlp_headers` and `otlp_resource_attributes` type handling is fragile (scalar vs arrayref depends on whether config has a value)
+- Notifier `headers` and `resource_attributes` (OTLP) are scalar strings; the parser in OTLP.pm handles scalar/arrayref polymorphically via `_parse_kv_config_value()` — this is fragile and worth hardening
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
 - `Util::run_cmd()` IO::Select timeout is hardcoded to 30s instead of accepting a parameter for slow VCS ops
 

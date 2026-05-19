@@ -24,9 +24,9 @@ output_dir = /var/lib/changetrack-ng
 # Scheduling
 ##########################
 #
-# Run schedule for systemd/cron install targets (not read at runtime)
-# Accepted: hourly | daily | <cron-expression>
-interval = hourly
+# Run interval in seconds for systemd/cron install targets
+# (informational; not read at runtime by changetrack-ng itself)
+interval = 3600
 
 ##########################
 # Locking
@@ -51,83 +51,6 @@ sensitive_notify = suppress
 # Warn on non-regular files (sockets, FIFOs, device nodes, hard links)
 warn_special_files = 1
 
-###################################################################
-# Notifications
-###################################################################
-#
-# Channels to enable (space-separated): email  webhook  otlp  file
-notify =
-
-##########################
-# Email
-##########################
-#
-# Envelope sender; HOSTNAME is substituted with the system FQDN
-email_from = changetrack-ng@HOSTNAME
-
-# Default recipients (space-separated); per-track recipients override this
-email_to =
-
-# Sendmail binary path; auto-detected if unset
-# sendmail_path = /usr/sbin/sendmail
-
-##########################
-# Webhook
-##########################
-#
-# URL(s) to POST JSON change reports to (space-separated)
-webhook_url =
-
-# Include full unified diff in payload (0 = summary only)
-webhook_full_diff = 0
-
-# POST a heartbeat even when no changes detected
-webhook_heartbeat = 0
-
-# Skip TLS cert verification (dev only, never production)
-webhook_insecure = 0
-
-##########################
-# OTLP / OpenTelemetry
-##########################
-#
-# OTLP/HTTP log endpoint URL (must include /v1/logs)
-otlp_endpoint =
-
-# Include full diff in log record attributes
-otlp_full_diff = 0
-
-# HTTP body compression: gzip | none
-otlp_compression = gzip
-
-# Extra HTTP headers (space-separated key=value); supports ${ENV_VAR}
-otlp_headers =
-
-# HTTP timeout in seconds
-otlp_timeout = 10
-
-# Skip TLS cert verification
-otlp_insecure = 0
-
-# Extra OTLP resource attributes (space-separated key=value)
-otlp_resource_attributes =
-
-# Send heartbeat record on every run (enables "alert on absence")
-otlp_heartbeat = 1
-
-##########################
-# File (JSON Log)
-##########################
-#
-# Path to append-only JSON log file
-notify_log_path = /var/log/changetrack-ng.log
-
-# Include full diff in each log record (0 = metadata only)
-file_full_diff = 1
-
-# Append heartbeat record on every run
-file_heartbeat = 0
-
 ##########################
 # VCS Push
 ##########################
@@ -147,6 +70,44 @@ push_remote =
 # Built-in defaults already exclude: editor temps, archives, package
 # manager artifacts, bytecode, and common system runtime files.
 ignore =
+
+###################################################################
+# Notifiers
+###################################################################
+#
+# Uncomment and adjust any [notifier:*] section to enable it.
+# Multiple instances of the same type are supported — just use
+# different names, e.g. [notifier:webhook:ops] and [notifier:webhook:dev].
+
+# [notifier:email:default]
+# enabled         = true
+# from            = changetrack-ng@HOSTNAME
+# to              =
+# sendmail_path   = /usr/sbin/sendmail
+
+# [notifier:webhook:default]
+# enabled         = true
+# url             =
+# full_diff       = 0
+# heartbeat       = 0
+# insecure        = 0
+
+# [notifier:otlp:default]
+# enabled         = true
+# endpoint        =
+# compression     = gzip
+# full_diff       = 0
+# heartbeat       = 1
+# timeout         = 10
+# insecure        = 0
+# headers         =
+# resource_attributes =
+
+# [notifier:file:default]
+# enabled         = true
+# path            = /var/log/changetrack-ng.jsonl
+# full_diff       = 0
+# heartbeat       = 0
 
 [track]
 ##########################

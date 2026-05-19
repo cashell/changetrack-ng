@@ -6,6 +6,51 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-19
+
+### Breaking Changes
+
+- **Notifier configuration format redesigned.** The flat `notify = email webhook`
+  list and all `[global]`-prefixed notifier keys (`email_to`, `email_from`,
+  `webhook_url`, `webhook_full_diff`, `otlp_endpoint`, `otlp_headers`,
+  `otlp_compression`, `otlp_heartbeat`, `otlp_full_diff`,
+  `otlp_resource_attributes`, `notify_log_path`, `file_heartbeat`) are removed.
+  Notifiers are now configured via `[notifier:<type>:<name>]` subsections (e.g.,
+  `[notifier:email:default]`).  Each section requires `enabled = true|false`.
+  Multiple instances of the same type are supported.  Disabled instances are
+  discarded at parse time; duplicate instance names (within or across files) are
+  a fatal parse error.  See README.md § "Notification Channels" and the example
+  configs in `packaging/etc/examples/` for the new format.
+- **`migrate-config` subcommand removed.** The `changetrack-ng migrate-config`
+  subcommand (which converted a legacy upstream `changetrack` config to the old
+  prefixed-key format) has been removed.  Users migrating from the upstream
+  `changetrack` tool should refer to `packaging/etc/examples/` for the current
+  config format and construct the new format manually.
+
+### Added
+
+- **Drop-in directory support.** Three sibling directories (`conf.d/`,
+  `track.d/`, `notifier.d/`) adjacent to the main config file are scanned
+  automatically.  Each directory enforces a section restriction (`[global]`
+  only, `[track]` only, and `[notifier:*]` only, respectively).  Files are
+  processed in sorted order.  Non-existent directories are silently skipped.
+- **`@include` directives.** Three include forms are supported in any config
+  file:
+  - `@include <path>` — include a file or directory (inherits parent
+    restriction)
+  - `@include-track <path>` — restrict included content to `[track]` sections
+  - `@include-notifier <path>` — restrict included content to `[notifier:*]`
+    sections
+
+  Directory paths process all `*.conf` files in sorted order.  A visited-paths
+  guard prevents infinite recursion.  A missing path is a fatal parse error.
+- **Multi-instance notifiers.** Each `[notifier:<type>:<name>]` section
+  produces an independent notifier object at runtime.  All instances of all
+  enabled types are dispatched during a run.
+- **New test files** `t/24-config-sections.t`, `t/25-config-drop-in-dirs.t`,
+  `t/26-config-include-directives.t`, `t/27-config-cross-file-errors.t`
+  covering the new configuration features.
+
 ## [0.5.5] - 2026-05-15
 
 ### Added

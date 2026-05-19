@@ -37,31 +37,31 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{_urls}             = _parse_urls($args{webhook_url} // '');
-    $self->{webhook_full_diff} //= 0;
-    $self->{webhook_heartbeat} //= 0;
-    $self->{webhook_insecure}  //= 0;
-    $self->{webhook_timeout}   //= 10;
-    $self->{sensitive_notify}  //= 'suppress';
+    $self->{_urls}            = _parse_urls($args{url} // '');
+    $self->{full_diff}        //= 0;
+    $self->{heartbeat}        //= 0;
+    $self->{insecure}         //= 0;
+    $self->{timeout}          //= 10;
+    $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
 
-# heartbeat_enabled -- Return true when webhook_heartbeat is set.
+# heartbeat_enabled -- Return true when heartbeat is set.
 sub heartbeat_enabled {
     my ($self) = @_;
-    return $self->{webhook_heartbeat} ? 1 : 0;
+    return $self->{heartbeat} ? 1 : 0;
 }
 
 sub name { 'webhook' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(webhook_url webhook_full_diff webhook_heartbeat webhook_insecure webhook_timeout) }
+sub config_keys { qw(url full_diff heartbeat insecure timeout) }
 
 # validate_config -- Return an error string when no webhook URLs are configured.
 sub validate_config {
     my ($self) = @_;
     return () if @{ $self->{_urls} // [] };
-    return ('webhook notifier requires non-empty webhook_url');
+    return ('webhook notifier requires non-empty url');
 }
 
 # send_changes -- POST a change payload to all configured URLs.
@@ -97,7 +97,7 @@ sub _build_payload {
                 diff_lines_added   => _count_added($c->{diff}),
                 diff_lines_removed => _count_removed($c->{diff}),
             };
-            if ($self->{webhook_full_diff}) {
+            if ($self->{full_diff}) {
                 unless ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
                     $entry->{diff} = join("\n", @{ $c->{diff} // [] });
                 }
@@ -131,9 +131,9 @@ sub _post_to_all {
 
     my $json = JSON::PP->new->encode($payload);
 
-    my %http_opts = (timeout => $self->{webhook_timeout});
-    if ($self->{webhook_insecure}) {
-        warn "[changetrack-ng] webhook: TLS verification disabled (webhook_insecure=1)\n";
+    my %http_opts = (timeout => $self->{timeout});
+    if ($self->{insecure}) {
+        warn "[changetrack-ng] webhook: TLS verification disabled (insecure=1)\n";
         $http_opts{verify_SSL} = 0;
     }
     my $http = HTTP::Tiny->new(%http_opts);

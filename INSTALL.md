@@ -46,26 +46,22 @@ This installs to:
 - config: `~/.config/changetrack-ng/changetrack-ng.conf`
 - default data dir suggestion: `~/.local/state/changetrack-ng`
 
-`make install-user` also rewrites these defaults in the installed config:
-- `output_dir = ~/.local/state/changetrack-ng`
-- `lock_path = ~/.cache/changetrack-ng.lock`
-- `notify_log_path = ~/.local/state/changetrack-ng/notify.log`
+`make install-user` installs a pre-configured user template (`packaging/etc/examples/changetrack-ng.conf-user`) with home-directory paths already set for `output_dir` and `lock_path`.
 
 Then edit config (at minimum, set your `[track]` entries):
 
 ```ini
 [global]
 vcs = git
-output_dir = /home/you/.local/state/changetrack-ng
+output_dir = ~/.local/state/changetrack-ng
 
 [track]
-DIRECTORY /home/you/.config
+DIRECTORY ~/.config
 ```
 
 Path expansion notes:
-- In v2 config, path fields support `~`/`~/...` expansion (resolved from `$HOME`).
-- Supported global path keys include `output_dir`, `lock_path`, and `notify_log_path`.
-- `[track]` entries also support `${ENV_VAR}` expansion.
+- Path fields support `~`/`~/...` expansion (resolved from `$HOME`).
+- `${ENV_VAR}` expansion is supported in all values, including `[track]` entries.
 - Expanded paths must be absolute.
 
 Run once manually:
@@ -82,7 +78,7 @@ Notes:
 
 ## Config
 
-Four ready-to-use example templates are installed under
+Ready-to-use example configs and drop-in templates are installed under
 `/usr/share/doc/changetrack-ng/examples/`:
 
 | File | Purpose |
@@ -91,6 +87,10 @@ Four ready-to-use example templates are installed under
 | `changetrack-ng.conf-default` | Balanced defaults — all options with concise guidance |
 | `changetrack-ng.conf-minimal` | Quickstart — git + email + common system files |
 | `changetrack-ng.conf-user` | Non-root install — home directory paths and dotfiles |
+| `conf.d/local-settings.conf` | Example `[global]` drop-in |
+| `track.d/system-core.conf` | Example `[track]` drop-in |
+| `notifier.d/email.conf` | Example email notifier drop-in |
+| `notifier.d/otlp.conf` | Example OTLP notifier drop-in |
 
 For a fresh system install, start from the minimal example:
 
@@ -101,9 +101,10 @@ sudo cp /usr/share/doc/changetrack-ng/examples/changetrack-ng.conf-minimal \
 sudo $EDITOR /etc/changetrack-ng/changetrack-ng.conf
 ```
 
-At minimum, set the files/directories to track in `[track]`, verify
-`email_to`, and choose a VCS backend in `[global]`.  The full reference
-config documents every supported option with accepted values and defaults.
+At minimum, set the files/directories to track in `[track]` and enable at
+least one `[notifier:*]` section if you want change notifications.  The full
+reference config documents every supported option with accepted values and
+defaults.
 
 ## Troubleshooting
 
@@ -133,7 +134,7 @@ config documents every supported option with accepted values and defaults.
 
 - Symptom: commits happen but email/webhook/OTLP output is missing.
 - Checks:
-	- Confirm `notify = ...` contains the expected channel(s).
+	- Confirm the relevant `[notifier:<type>:<name>]` section exists and has `enabled = true`.
 	- For email, validate `sendmail_path` or MTA availability.
 	- For webhook/OTLP, verify endpoint reachability and TLS settings.
 	- For OTLP headers, prefer `OTEL_EXPORTER_OTLP_HEADERS` for secrets.

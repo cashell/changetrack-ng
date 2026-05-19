@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.5.5
+Version: 0.6.0
 
 ---
 
@@ -40,22 +40,26 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 | `log [path]` | Show VCS history for a tracked file |
 | `revert <path> <rev>` | Restore a file to a specific historical revision |
 | `update-ignore` | Sync VCS-native ignore file with configured patterns |
-| `migrate-config` | Convert a legacy v1 config file to the current v2 format |
 
 ---
 
 ## Configuration
 
-Configuration uses an INI-style format with two sections:
+Configuration uses an INI-style format with three section types:
 
 ```ini
 [global]
-output_dir   = /var/lib/changetrack-ng
-vcs          = git
-notify       = email webhook
-email_to     = ops@example.com
-webhook_url  = https://hooks.example.com/changetrack
-ignore       = *.swp *~ .git
+output_dir = /var/lib/changetrack-ng
+vcs        = git
+ignore     = *.swp *~ .git
+
+[notifier:email:default]
+enabled = true
+to      = ops@example.com
+
+[notifier:webhook:default]
+enabled = true
+url     = https://hooks.example.com/changetrack
 
 [track]
 /etc
@@ -64,9 +68,18 @@ ignore       = *.swp *~ .git
 /home/deploy/.ssh/authorized_keys
 ```
 
-**Global settings** control VCS backend selection, notification channels, ignore patterns, sensitive file behavior, and operational parameters (lock timeout, push remotes, OTLP endpoints, etc.).
+**`[global]`** controls VCS backend selection, ignore patterns, sensitive file
+behavior, and operational parameters (lock timeout, push remotes, etc.).
 
-**Track entries** list individual files or directories to monitor. Directories are traversed recursively; ignore patterns apply during traversal.
+**`[notifier:<type>:<name>]`** configures a notification instance.  Each
+section requires `enabled = true|false`.  Supported types: `email`, `webhook`,
+`otlp`, `file`.  Multiple instances of the same type are supported.
+
+**`[track]`** lists individual files or directories to monitor.  Directories
+are traversed recursively; ignore patterns apply during traversal.
+
+Drop-in directories (`conf.d/`, `track.d/`, `notifier.d/`) and `@include`
+directives allow configs to be split across multiple files for composability.
 
 The `HOSTNAME` token is interpolated in values, useful for multi-host configs managed by a CM tool.
 

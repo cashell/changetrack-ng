@@ -2,7 +2,7 @@
 #
 # Tracks common config files with git and sends email notifications.
 # Copy to /etc/changetrack-ng/changetrack-ng.conf and adjust.
-# For all options, see the full reference config or run: perldoc changetrack-ng
+# For all options, see the full reference config or run: man changetrack-ng.conf
 
 [global]
 
@@ -10,10 +10,10 @@
 vcs = git
 output_dir = /var/lib/changetrack-ng
 
-# Send email when files change (also: webhook otlp file)
-notify = email
-email_from = changetrack-ng@HOSTNAME
-email_to = root@localhost
+[notifier:email:default]
+enabled = true
+from    = changetrack-ng@HOSTNAME
+to      = root@localhost
 
 [track]
 /etc/passwd

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.5.5
+VERSION    := 0.6.0
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
@@ -80,7 +80,13 @@ _install_dirs:
 	install -d $(DESTDIR)$(LIBDIR)/ChangeTrack/VCS
 	install -d $(DESTDIR)$(LIBDIR)/ChangeTrack/Notify
 	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)
+	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)/conf.d
+	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)/track.d
+	install -d $(DESTDIR)$(SYSCONFDIR)/$(NAME)/notifier.d
 	install -d $(DESTDIR)$(DOCDIR)/examples
+	install -d $(DESTDIR)$(DOCDIR)/examples/conf.d
+	install -d $(DESTDIR)$(DOCDIR)/examples/track.d
+	install -d $(DESTDIR)$(DOCDIR)/examples/notifier.d
 	install -d $(DESTDIR)$(DATADIR)
 	install -d $(DESTDIR)$(MANDIR)/man8
 	install -d $(DESTDIR)$(MANDIR)/man5
@@ -118,6 +124,10 @@ _install_examples:
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-default $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-default
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-minimal $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-minimal
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-user
+	install -m 644 packaging/etc/examples/conf.d/local-settings.conf  $(DESTDIR)$(DOCDIR)/examples/conf.d/local-settings.conf
+	install -m 644 packaging/etc/examples/track.d/system-core.conf    $(DESTDIR)$(DOCDIR)/examples/track.d/system-core.conf
+	install -m 644 packaging/etc/examples/notifier.d/email.conf       $(DESTDIR)$(DOCDIR)/examples/notifier.d/email.conf
+	install -m 644 packaging/etc/examples/notifier.d/otlp.conf        $(DESTDIR)$(DOCDIR)/examples/notifier.d/otlp.conf
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(NAME)
@@ -273,6 +283,9 @@ _install_dirs_user:
 	install -d $(HOME)/.local/lib/$(NAME)/ChangeTrack/VCS
 	install -d $(HOME)/.local/lib/$(NAME)/ChangeTrack/Notify
 	install -d $(HOME)/.config/$(NAME)
+	install -d $(HOME)/.config/$(NAME)/conf.d
+	install -d $(HOME)/.config/$(NAME)/track.d
+	install -d $(HOME)/.config/$(NAME)/notifier.d
 	install -d $(HOME)/.config/$(NAME)/examples
 	install -d $(HOME)/.local/state/$(NAME)
 
@@ -298,10 +311,17 @@ _install_lib_user:
 
 _install_examples_user:
 	install -d $(HOME)/.config/$(NAME)/examples
+	install -d $(HOME)/.config/$(NAME)/examples/conf.d
+	install -d $(HOME)/.config/$(NAME)/examples/track.d
+	install -d $(HOME)/.config/$(NAME)/examples/notifier.d
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-full    $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-full
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-default $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-default
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-minimal $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-minimal
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(HOME)/.config/$(NAME)/examples/changetrack-ng.conf-user
+	install -m 644 packaging/etc/examples/conf.d/local-settings.conf  $(HOME)/.config/$(NAME)/examples/conf.d/local-settings.conf
+	install -m 644 packaging/etc/examples/track.d/system-core.conf    $(HOME)/.config/$(NAME)/examples/track.d/system-core.conf
+	install -m 644 packaging/etc/examples/notifier.d/email.conf       $(HOME)/.config/$(NAME)/examples/notifier.d/email.conf
+	install -m 644 packaging/etc/examples/notifier.d/otlp.conf        $(HOME)/.config/$(NAME)/examples/notifier.d/otlp.conf
 install-user-uninstall:
 	rm -f $(HOME)/.local/bin/$(NAME)
 	rm -rf $(HOME)/.local/lib/$(NAME)

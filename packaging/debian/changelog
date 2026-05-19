@@ -1,3 +1,27 @@
+changetrack-ng (0.6.0) unstable; urgency=high
+
+  * BREAKING: Notifier configuration redesigned. The flat notify= list and all
+    [global]-prefixed notifier keys (email_to, email_from, webhook_url,
+    webhook_full_diff, otlp_endpoint, otlp_headers, otlp_compression,
+    otlp_heartbeat, otlp_full_diff, otlp_resource_attributes, notify_log_path,
+    file_heartbeat) are removed. Configure notifiers via [notifier:<type>:<name>]
+    subsections; enabled = true|false is required in every section. Multiple
+    instances of the same type are supported. Duplicate instance names across all
+    loaded files are a fatal parse error.
+  * BREAKING: migrate-config subcommand removed.
+  * Add drop-in directory support: conf.d/ ([global] only), track.d/ ([track]
+    only), notifier.d/ ([notifier:*] only) adjacent to the main config file,
+    scanned automatically in sorted order.
+  * Add @include, @include-track, @include-notifier directives; directory paths
+    process *.conf files in sorted order; visited-paths guard prevents cycles.
+  * Add multi-instance notifiers: multiple [notifier:<type>:<name>] sections
+    produce independent notifier objects dispatched on every run.
+  * Install creates conf.d/, track.d/, notifier.d/ under /etc/changetrack-ng/.
+  * Add t/24-config-sections.t, t/25-config-drop-in-dirs.t,
+    t/26-config-include-directives.t, t/27-config-cross-file-errors.t.
+
+ -- Christopher Cashell <topher@zyp.org>  Tue, 19 May 2026 00:00:00 +0000
+
 changetrack-ng (0.5.5) unstable; urgency=medium
 
   * Add --system and --user flags for explicit config scope declaration.

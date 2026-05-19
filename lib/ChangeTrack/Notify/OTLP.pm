@@ -39,39 +39,39 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{otlp_endpoint}            //= '';
-    $self->{otlp_headers}             //= '';
-    $self->{otlp_compression}         //= '';
-    $self->{otlp_full_diff}           //= 0;
-    $self->{otlp_heartbeat}           //= 1;
-    $self->{otlp_timeout}             //= 10;
-    $self->{otlp_insecure}            //= 0;
-    $self->{otlp_resource_attributes} //= {};
-    $self->{sensitive_notify}         //= 'suppress';
-    $self->{_endpoint_warned}         = 0;
+    $self->{endpoint}            //= '';
+    $self->{headers}             //= '';
+    $self->{compression}         //= '';
+    $self->{full_diff}           //= 0;
+    $self->{heartbeat}           //= 1;
+    $self->{timeout}             //= 10;
+    $self->{insecure}            //= 0;
+    $self->{resource_attributes} //= {};
+    $self->{sensitive_notify}    //= 'suppress';
+    $self->{_endpoint_warned}    = 0;
     return $self;
 }
 
-# heartbeat_enabled -- Return true when otlp_heartbeat is set (default on).
+# heartbeat_enabled -- Return true when heartbeat is set (default on).
 sub heartbeat_enabled {
     my ($self) = @_;
-    return $self->{otlp_heartbeat} ? 1 : 0;
+    return $self->{heartbeat} ? 1 : 0;
 }
 
 sub name { 'otlp' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(otlp_endpoint otlp_headers otlp_compression otlp_full_diff otlp_heartbeat otlp_timeout otlp_insecure otlp_resource_attributes) }
+sub config_keys { qw(endpoint headers compression full_diff heartbeat timeout insecure resource_attributes) }
 
 # validate_config -- Return an error string when no endpoint is configured.
 sub validate_config {
     my ($self) = @_;
     my $ep = $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
           // $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}
-          // $self->{otlp_endpoint}
+          // $self->{endpoint}
           // '';
     return () if $ep =~ /\S/;
-    return ('otlp notifier requires otlp_endpoint or OTEL_EXPORTER_OTLP[_LOGS]_ENDPOINT');
+    return ('otlp notifier requires endpoint or OTEL_EXPORTER_OTLP[_LOGS]_ENDPOINT');
 }
 
 # send_changes -- Build and POST an OTLP change payload.
@@ -142,7 +142,7 @@ sub _build_payload {
                     { key => 'ct.meta_change', value => { stringValue => $c->{meta_change} } };
             }
 
-            if ($self->{otlp_full_diff}) {
+            if ($self->{full_diff}) {
                 unless ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
                     push @attrs, {
                         key   => 'ct.diff',
@@ -215,7 +215,7 @@ sub _resource_attrs {
         'os.type'             => $^O,
     );
 
-    my %custom = _parse_kv_config_value($self->{otlp_resource_attributes});
+    my %custom = _parse_kv_config_value($self->{resource_attributes});
     %attrs = (%attrs, %custom) if %custom;
 
     return [ map { { key => $_, value => { stringValue => $attrs{$_} } } } sort keys %attrs ];
@@ -228,7 +228,7 @@ sub _resolve_endpoint {
 
     my $ep = $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
           // $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}
-          // $self->{otlp_endpoint}
+          // $self->{endpoint}
           // '';
 
     return '' unless $ep =~ /\S/;
@@ -252,7 +252,7 @@ sub _resolve_headers {
 
     my %headers = ('Content-Type' => 'application/json');
 
-    my %cfg_headers = _parse_kv_config_value($self->{otlp_headers});
+    my %cfg_headers = _parse_kv_config_value($self->{headers});
     %headers = (%headers, %cfg_headers) if %cfg_headers;
 
     my $env = $ENV{OTEL_EXPORTER_OTLP_HEADERS} // '';
@@ -274,7 +274,7 @@ sub _post_with_retry {
     my $body = $json;
     my %extra_hdrs;
 
-    if (lc($self->{otlp_compression} // '') eq 'gzip') {
+    if (lc($self->{compression} // '') eq 'gzip') {
         my $compressed = '';
         my $ok = eval {
             require IO::Compress::Gzip;
@@ -292,9 +292,9 @@ sub _post_with_retry {
 
     my %headers = ($self->_resolve_headers, %extra_hdrs);
 
-    my %http_opts = (timeout => $self->{otlp_timeout});
-    if ($self->{otlp_insecure}) {
-        warn "[changetrack-ng] otlp: TLS verification disabled (otlp_insecure=1)\n";
+    my %http_opts = (timeout => $self->{timeout});
+    if ($self->{insecure}) {
+        warn "[changetrack-ng] otlp: TLS verification disabled (insecure=1)\n";
         $http_opts{verify_SSL} = 0;
     }
     my $http = HTTP::Tiny->new(%http_opts);

@@ -176,13 +176,13 @@ sub run {
     my $cfg        = ChangeTrack::Config->load($self->{config_path});
     $self->_verbose("Config loaded from $self->{config_path}");
     $self->_warn_insecure_config_permissions($cfg, $self->{config_path});
-    my @notify_names = @{ $cfg->global('notify') // [] };
-    $self->_validate_notifier_startup($cfg, \@notify_names);
+    my @notifiers  = $self->_build_notifiers($cfg);
+    $self->_validate_notifiers(\@notifiers);
     my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     $self->_verbose("VCS: $vcs_name, output_dir: $output_dir");
-    $self->_verbose("Notify: " . (@notify_names ? join(', ', @notify_names) : 'none'));
+    $self->_verbose("Notify: " . (@notifiers ? join(', ', map { ref($_) } @notifiers) : 'none'));
 
     # Acquire run lock  --  silently skip if another instance is running (safe for cron)
     my $lock_path = $cfg->global('lock_path');
@@ -254,6 +254,22 @@ sub run {
             }
             $self->_debug("config: $key = $val");
         }
+        my $notifiers = $cfg->notifiers;
+        for my $type (sort keys %$notifiers) {
+            for my $inst (@{ $notifiers->{$type} }) {
+                my $iname = $inst->{instance_name} // 'default';
+                for my $key (sort keys %$inst) {
+                    next if $key eq 'instance_name';
+                    my $val = $inst->{$key};
+                    $val = join(' ', @$val) if ref $val eq 'ARRAY';
+                    $val //= '';
+                    if ($key =~ /header|secret|token|password/i) {
+                        $val = '***REDACTED***';
+                    }
+                    $self->_debug("config: notifier:$type:$iname:$key = $val");
+                }
+            }
+        }
     }
 
     # Build combined ignore list
@@ -307,27 +323,19 @@ sub run {
     print $report->to_text unless $self->{quiet};
 
     # Dispatch notifications
-    if (@notify_names) {
-        $self->_verbose("Sending notifications via: " . join(', ', @notify_names));
+    if (@notifiers) {
+        $self->_verbose("Sending notifications via: " . join(', ', map { ref($_) } @notifiers));
     }
-    for my $nname (@notify_names) {
-        my $nclass = $NOTIFY_CLASSES{lc($nname)} or do {
-            $self->_warn("unknown notifier '$nname'");
-            next;
-        };
-        eval "require $nclass; 1" or do {
-            $self->_warn("cannot load $nclass: $@");
-            next;
-        };
-        my $notifier = $self->_build_notifier($nclass, $cfg);
+    for my $notifier (@notifiers) {
+        my $label = ref($notifier) . ($notifier->{instance_name} ? ":$notifier->{instance_name}" : '');
         unless ($self->{dry_run}) {
-            $self->_debug("Notifier $nname: sending...");
+            $self->_debug("Notifier $label: sending...");
             eval { $notifier->send($report) };
             if ($@) {
                 (my $err = $@) =~ s/\n$//;
-                $self->_debug("Notifier $nname: failed: $err");
+                $self->_debug("Notifier $label: failed: $err");
             } else {
-                $self->_debug("Notifier $nname: sent OK");
+                $self->_debug("Notifier $label: sent OK");
             }
         }
     }
@@ -772,51 +780,30 @@ sub _tracked_entries {
     return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg))];
 }
 
-# _build_notifier -- Instantiate the notifier class $nclass with config values.
-# Passes only the keys each notifier declares via config_keys(), plus
-# the shared sensitive_notify key.
-sub _build_notifier {
-    my ($self, $nclass, $cfg) = @_;
+# _build_notifiers -- Instantiate all enabled notifier instances from config.
+# Returns a list of notifier objects ready to send.
+sub _build_notifiers {
+    my ($self, $cfg) = @_;
 
-    # Build the complete pool of config args (all possible keys across all notifiers).
-    # _build_notifier then filters to only the keys the target notifier class declares
-    # via config_keys(), plus the shared sensitive_notify key.
-    my %all_args = (
-        # Email
-        email_from                => $cfg->global('email_from'),
-        email_to                  => $cfg->global('email_to') // [],
-        sendmail_path             => $cfg->global('sendmail_path'),
-        # File
-        log_path                  => $cfg->global('notify_log_path'),
-        file_heartbeat            => $cfg->global('file_heartbeat') // 0,
-        file_full_diff            => $cfg->global('file_full_diff') // 1,
-        # Webhook
-        webhook_url               => $cfg->global('webhook_url'),
-        webhook_full_diff         => $cfg->global('webhook_full_diff') // 0,
-        webhook_heartbeat         => $cfg->global('webhook_heartbeat') // 0,
-        webhook_insecure          => $cfg->global('webhook_insecure') // 0,
-        webhook_timeout           => $cfg->global('webhook_timeout') // 10,
-        # OTLP
-        otlp_endpoint             => $cfg->global('otlp_endpoint'),
-        otlp_headers              => $cfg->global('otlp_headers') // '',
-        otlp_compression          => $cfg->global('otlp_compression') // '',
-        otlp_full_diff            => $cfg->global('otlp_full_diff') // 0,
-        otlp_heartbeat            => $cfg->global('otlp_heartbeat') // 1,
-        otlp_timeout              => $cfg->global('otlp_timeout') // 10,
-        otlp_insecure             => $cfg->global('otlp_insecure') // 0,
-        otlp_resource_attributes  => $cfg->global('otlp_resource_attributes') // {},
-    );
+    my $sensitive_notify = $cfg->global('sensitive_notify') // 'suppress';
+    my $all_notifiers    = $cfg->notifiers;
+    my @objects;
 
-    # Filter to only the keys this notifier class accepts, plus the shared key.
-    my %accepted = map { $_ => 1 } ($nclass->config_keys, 'sensitive_notify');
-    my %args = (
-        sensitive_notify => $cfg->global('sensitive_notify') // 'suppress',
-        map  { $_ => $all_args{$_} }
-        grep { exists $all_args{$_} }
-        keys %accepted,
-    );
+    for my $type (sort keys %$all_notifiers) {
+        my $nclass = $NOTIFY_CLASSES{$type} or do {
+            $self->_warn("no class registered for notifier type '$type'; skipping");
+            next;
+        };
+        eval "require $nclass; 1" or do {
+            $self->_warn("cannot load $nclass: $@");
+            next;
+        };
+        for my $inst (@{ $all_notifiers->{$type} }) {
+            push @objects, $nclass->new(%$inst, sensitive_notify => $sensitive_notify);
+        }
+    }
 
-    return $nclass->new(%args);
+    return @objects;
 }
 
 # status -- Return an arrayref of { path, diff } for all tracked files with pending changes.
@@ -960,23 +947,18 @@ sub _restore_file_metadata {
     }
 }
 
-# _validate_notifier_startup -- Instantiate and validate all configured
-# notifiers at startup, before any files are processed.
-# Croaks with a user-facing error if any notifier's config is invalid.
-sub _validate_notifier_startup {
-    my ($self, $cfg, $notify_names) = @_;
-    return unless $notify_names && @$notify_names;
+# _validate_notifiers -- Validate all instantiated notifiers before the run begins.
+# Croaks with a user-facing error if any notifier's validate_config returns errors.
+sub _validate_notifiers {
+    my ($self, $notifiers) = @_;
+    return unless $notifiers && @$notifiers;
 
-    for my $nname (@$notify_names) {
-        my $nclass = $NOTIFY_CLASSES{lc($nname)}
-            or croak "Unknown notifier '$nname'";
-        eval "require $nclass; 1" or croak "Cannot load $nclass: $@";
-
-        my $notifier = $self->_build_notifier($nclass, $cfg);
-
+    for my $notifier (@$notifiers) {
         my @errors = $notifier->validate_config;
         if (@errors) {
-            croak "Notifier '$nname' configuration error: " . join('; ', @errors);
+            my $label = ref($notifier)
+                . ($notifier->{instance_name} ? ":$notifier->{instance_name}" : '');
+            croak "Notifier '$label' configuration error: " . join('; ', @errors);
         }
     }
 }
@@ -991,16 +973,27 @@ sub _warn_insecure_config_permissions {
     return unless @st;
     my $mode = $st[2] & 07777;
 
+    my $all = $cfg->notifiers;
     my $has_secret = 0;
-    my $otlp_headers = $cfg->global('otlp_headers');
-    $has_secret = 1 if defined($otlp_headers) && !ref($otlp_headers) && $otlp_headers =~ /\S/;
 
-    # Treat configured webhook URLs as sensitive operational data.
-    my $webhook_url = $cfg->global('webhook_url');
-    if (ref $webhook_url eq 'ARRAY') {
-        $has_secret = 1 if grep { defined $_ && /\S/ } @$webhook_url;
-    } elsif (defined $webhook_url && !ref $webhook_url && $webhook_url =~ /\S/) {
-        $has_secret = 1;
+    # OTLP instances with headers configured.
+    for my $inst (@{ $all->{otlp} // [] }) {
+        my $h = $inst->{headers} // '';
+        $has_secret = 1 if !ref($h) && $h =~ /\S/;
+        last if $has_secret;
+    }
+
+    # Webhook instances have URLs (treat as sensitive operational data).
+    unless ($has_secret) {
+        for my $inst (@{ $all->{webhook} // [] }) {
+            my $u = $inst->{url};
+            if (ref $u eq 'ARRAY') {
+                $has_secret = 1 if grep { defined $_ && /\S/ } @$u;
+            } elsif (defined $u && !ref $u && $u =~ /\S/) {
+                $has_secret = 1;
+            }
+            last if $has_secret;
+        }
     }
 
     return unless $has_secret;

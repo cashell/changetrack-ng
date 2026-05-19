@@ -36,8 +36,8 @@ sub last_record {
 # Heartbeat_Enabled Default Off
 ########################################################################
 {
-    my $n = ChangeTrack::Notify::File->new(log_path => "$dir/test.log");
-    ok(!$n->heartbeat_enabled, 'file_heartbeat default off');
+    my $n = ChangeTrack::Notify::File->new(path => "$dir/test.log");
+    ok(!$n->heartbeat_enabled, 'heartbeat default off');
     is($n->name, 'file', 'name returns file');
 }
 
@@ -46,7 +46,7 @@ sub last_record {
 ########################################################################
 {
     my $log = "$dir/no-hb.log";
-    my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 0);
+    my $n   = ChangeTrack::Notify::File->new(path => $log, heartbeat => 0);
 
     my $report = ChangeTrack::Report->new;
     $n->send($report);
@@ -59,7 +59,7 @@ sub last_record {
 ########################################################################
 {
     my $log = "$dir/changes.log";
-    my $n   = ChangeTrack::Notify::File->new(log_path => $log);
+    my $n   = ChangeTrack::Notify::File->new(path => $log);
 
     my $report = ChangeTrack::Report->new(start_time => 1000000000);
     $report->add_change(
@@ -89,7 +89,7 @@ sub last_record {
 ########################################################################
 {
     my $log = "$dir/hb.log";
-    my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 1);
+    my $n   = ChangeTrack::Notify::File->new(path => $log, heartbeat => 1);
 
     my $report = ChangeTrack::Report->new(start_time => time());
     $report->set_end_time(time() + 1);
@@ -107,7 +107,7 @@ sub last_record {
 ########################################################################
 {
     my $log = "$dir/hb-off.log";
-    my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 0);
+    my $n   = ChangeTrack::Notify::File->new(path => $log, heartbeat => 0);
 
     my $report = ChangeTrack::Report->new;
     $n->send($report);
@@ -120,7 +120,7 @@ sub last_record {
 ########################################################################
 {
     my $log = "$dir/multi.log";
-    my $n   = ChangeTrack::Notify::File->new(log_path => $log, file_heartbeat => 1);
+    my $n   = ChangeTrack::Notify::File->new(path => $log, heartbeat => 1);
 
     for my $i (1..3) {
         my $report = ChangeTrack::Report->new(start_time => time());
@@ -149,7 +149,7 @@ sub last_record {
 {
     my $log = "$dir/sensitive.log";
     my $n   = ChangeTrack::Notify::File->new(
-        log_path         => $log,
+        path         => $log,
         sensitive_notify => 'suppress',
     );
 

@@ -30,16 +30,13 @@ can_ok('ChangeTrack::Util', 'run_cmd');
 
 # Verify Config API surface
 can_ok('ChangeTrack::Config', 'load');
-can_ok('ChangeTrack::Config', 'migrate_v1_to_v2');
 
 my $cfg = ChangeTrack::Config->new;
 isa_ok($cfg, 'ChangeTrack::Config');
 can_ok($cfg, 'global');
 can_ok($cfg, 'tracks');
-can_ok($cfg, 'version');
-can_ok($cfg, 'dump_v2');
+can_ok($cfg, 'notifiers');
 
-is($cfg->version, 2, 'default version is 2');
 is_deeply($cfg->tracks, [], 'default tracks is empty arrayref');
 
 # Notify::Base API surface
@@ -60,15 +57,15 @@ my $email = ChangeTrack::Notify::Email->new;
 ok(!$email->heartbeat_enabled, 'Email heartbeat always off');
 
 # File heartbeat contract
-my $file_n = ChangeTrack::Notify::File->new(log_path => '/dev/null');
+my $file_n = ChangeTrack::Notify::File->new(path => '/dev/null');
 ok(!$file_n->heartbeat_enabled, 'File heartbeat off by default');
-my $file_hb = ChangeTrack::Notify::File->new(log_path => '/dev/null', file_heartbeat => 1);
+my $file_hb = ChangeTrack::Notify::File->new(path => '/dev/null', heartbeat => 1);
 ok($file_hb->heartbeat_enabled, 'File heartbeat on when configured');
 
 # Webhook heartbeat contract
-my $wh = ChangeTrack::Notify::Webhook->new(webhook_url => '');
+my $wh = ChangeTrack::Notify::Webhook->new(url => '');
 ok(!$wh->heartbeat_enabled, 'Webhook heartbeat off by default');
-my $wh_hb = ChangeTrack::Notify::Webhook->new(webhook_url => '', webhook_heartbeat => 1);
+my $wh_hb = ChangeTrack::Notify::Webhook->new(url => '', heartbeat => 1);
 ok($wh_hb->heartbeat_enabled, 'Webhook heartbeat on when configured');
 
 done_testing();

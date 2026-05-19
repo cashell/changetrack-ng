@@ -37,7 +37,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        email_to      => ['root@localhost'],
+        to      => ['root@localhost'],
     );
 
     my $report = ChangeTrack::Report->new;   # no changes
@@ -59,8 +59,8 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        email_from    => 'ct@testhost',
-        email_to      => ['admin@example.com'],
+        from    => 'ct@testhost',
+        to      => ['admin@example.com'],
     );
 
     my $report = ChangeTrack::Report->new(start_time => 1000000000);
@@ -77,7 +77,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
     ok(defined $cap, 'capture file readable');
     like($cap->{headers}{'Subject'}, qr/changetrack-ng.*Changes/i, 'Subject header present');
-    is($cap->{headers}{'From'}, 'ct@testhost', 'From header matches email_from');
+    is($cap->{headers}{'From'}, 'ct@testhost', 'From header matches from');
     like($cap->{body}, qr{/etc/passwd}, 'body contains file path');
     like($cap->{body}, qr/new line/,    'body contains diff content');
 
@@ -96,7 +96,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script1,
-        email_from    => 'ct@host',
+        from    => 'ct@host',
     );
 
     my $report = ChangeTrack::Report->new(start_time => time());
@@ -126,7 +126,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        email_to      => ['sec@example.com'],
+        to      => ['sec@example.com'],
         sensitive_notify => 'suppress',
     );
 
@@ -157,7 +157,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path    => $script,
-        email_to         => ['sec@example.com'],
+        to         => ['sec@example.com'],
         sensitive_notify => 'allow',
     );
 
@@ -185,7 +185,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        email_to      => ['default@example.com'],
+        to      => ['default@example.com'],
     );
 
     my $report = ChangeTrack::Report->new(start_time => time());
@@ -215,7 +215,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        email_to      => ['default@example.com'],
+        to      => ['default@example.com'],
     );
 
     my $report = ChangeTrack::Report->new(start_time => time());
@@ -245,7 +245,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 {
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => '/nonexistent/sendmail',
-        email_to      => ['root@localhost'],
+        to      => ['root@localhost'],
     );
 
     my $report = ChangeTrack::Report->new(start_time => time());

@@ -93,8 +93,9 @@ DIRECTORY /etc
 
 ## Configuration
 
-Config uses INI v2 format.  The installed default at
-`/etc/changetrack-ng/changetrack-ng.conf` is fully commented, but logically is split into `[global]` settings and `[track]` targets.
+Config uses a single INI format with `[global]`, `[track]`, and
+`[notifier:<type>:<name>]` sections.  The installed default at
+`/etc/changetrack-ng/changetrack-ng.conf` is fully commented.
 
 Security notes:
 - Treat the config as sensitive data and set mode `0640` or stricter.
@@ -106,13 +107,18 @@ Security notes:
 
 ```ini
 [global]
-vcs           = git
-output_dir    = /var/lib/changetrack-ng
-notify        = email webhook otlp
-email_to      = default-admin@example.com
-email_from    = changetrack-ng@${HOSTNAME}
-webhook_url   = https://events.example.com/webhook
-webhook_full_diff = 1
+vcs        = git
+output_dir = /var/lib/changetrack-ng
+
+[notifier:email:default]
+enabled = true
+to      = default-admin@example.com
+from    = changetrack-ng@${HOSTNAME}
+
+[notifier:webhook:default]
+enabled   = true
+url       = https://events.example.com/webhook
+full_diff = 1
 
 [track]
 # Send diffs to default-admin
@@ -122,17 +128,35 @@ DIRECTORY /etc/systemd
 DIRECTORY /etc/NetworkManager : network-team@example.com
 
 # Auto-suppresses diff content over 0600 sensitive file
-/etc/shadow 
+/etc/shadow
 
 # Explicit sensitive tracking over 0644 file
 /etc/ssl/certs/custom.crt sensitive=yes
 ```
 
-To migrate a legacy `changetrack` v1 config:
+### Drop-in Directories
 
-```sh
-sudo changetrack-ng migrate-config /etc/changetrack.conf
+Files can be split across sibling directories for composability:
+
+| Directory | Allowed sections |
+|---|---|
+| `conf.d/` | `[global]` only |
+| `track.d/` | `[track]` only |
+| `notifier.d/` | `[notifier:*]` only |
+
+All `*.conf` files in each directory are processed in sorted order and merged
+into the main config.
+
+### `@include` Directives
+
+```ini
+@include /etc/changetrack-ng/extra.conf
+@include-track /etc/changetrack-ng/track.d/
+@include-notifier /etc/changetrack-ng/notifier.d/
 ```
+
+`@include-track` and `@include-notifier` enforce section restrictions in the
+included path.  Recursion is prevented by a visited-paths guard.
 
 For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
@@ -181,11 +205,14 @@ unit files. The template is installed by `make install-hooks`.
 | `log [path]` | Show VCS history |
 | `revert <path> <rev>` | Restore file from a revision |
 | `update-ignore` | Refresh VCS ignore file |
-| `migrate-config <v1> [<v2>]` | Convert v1 config to v2 |
 
 ## Notification Channels
 
-`changetrack-ng` supports four parallel notification channels to report changes. You can enable them individually or simultaneously via the `notify` config key (e.g., `notify = email webhook`).
+`changetrack-ng` supports four parallel notification channels to report changes.
+Each channel is configured with a `[notifier:<type>:<name>]` section.  Multiple
+instances of the same type are supported (e.g., two webhook endpoints with
+different URLs).  A channel is active when its section contains `enabled = true`.
+Disabled instances are ignored at parse time.
 
 ### 1. Email
 Sends traditional email diffs to administrators. Recipients can be defined globally or overriding on a per-file/per-directory basis directly in the `[track]` list. This allows routing changes of specific subsystems (like `/etc/nginx`) to specific teams.
@@ -197,14 +224,17 @@ Sends a JSON POST payload to one or more endpoints. Useful for Slack/Teams integ
 Exports one OTLP log record per changed file, fitting natively into modern observability stacks (Loki, Datadog, Splunk, etc.). Heartbeat records (sent even on no-change runs) let monitoring systems distinguish true silence from agent failure without vendor-specific logic.
 
 ```ini
-[global]
-notify           = otlp
-otlp_endpoint    = https://otelcol.example.com:4318/v1/logs
-otlp_compression = gzip
-otlp_heartbeat   = 1
+[notifier:otlp:default]
+enabled     = true
+endpoint    = https://otelcol.example.com:4318/v1/logs
+compression = gzip
+heartbeat   = 1
 ```
 
-*Note on OTLP Security:* The OTLP spec requires respecting standard agent environments. The resolution precedence enforces `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` > `OTEL_EXPORTER_OTLP_ENDPOINT` > `otlp_endpoint` config. Always prefer injecting `OTEL_EXPORTER_OTLP_HEADERS` via the environment rather than hardcoding sensitive bearer tokens directly into `changetrack-ng.conf`.
+*Note on OTLP Security:* The resolution precedence enforces
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` > `OTEL_EXPORTER_OTLP_ENDPOINT` >
+`endpoint` config key.  Always prefer injecting `OTEL_EXPORTER_OTLP_HEADERS`
+via the environment rather than hardcoding bearer tokens in the config file.
 
 ### 4. File Log
 Appends individual JSON objects (one per run) to a local log file, ensuring a machine-readable audit trail exists locally alongside the VCS repo.

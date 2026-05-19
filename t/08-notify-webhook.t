@@ -143,7 +143,7 @@ sub make_report {
 # Name / Defaults
 ########################################################################
 {
-    my $n = ChangeTrack::Notify::Webhook->new(webhook_url => '');
+    my $n = ChangeTrack::Notify::Webhook->new(url => '');
     is($n->name, 'webhook', 'name() returns webhook');
     ok(!$n->heartbeat_enabled, 'heartbeat disabled by default');
 }
@@ -153,7 +153,7 @@ sub make_report {
 ########################################################################
 {
     # No server started; if a POST were attempted, HTTP::Tiny would warn.
-    my $n      = ChangeTrack::Notify::Webhook->new(webhook_url => '');
+    my $n      = ChangeTrack::Notify::Webhook->new(url => '');
     my $report = make_report();
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
@@ -170,7 +170,7 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => "http://127.0.0.1:$port/",
+        url => "http://127.0.0.1:$port/",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -187,7 +187,7 @@ sub make_report {
     ok(!$p->{files}[0]{is_new},                 'is_new false');
     is($p->{files}[0]{diff_lines_added},   1,   'diff_lines_added');
     is($p->{files}[0]{diff_lines_removed}, 1,   'diff_lines_removed');
-    ok(!exists $p->{files}[0]{diff},            'no diff field without webhook_full_diff');
+    ok(!exists $p->{files}[0]{diff},            'no diff field without full_diff');
     ok(defined $p->{files_tracked},             'files_tracked present');
 }
 
@@ -216,7 +216,7 @@ sub make_report {
     $report->set_end_time(1000000002);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => "http://127.0.0.1:$port/",
+        url => "http://127.0.0.1:$port/",
     );
     $n->send($report);
     waitpid($pid, 0);
@@ -235,15 +235,15 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => "http://127.0.0.1:$port/",
-        webhook_full_diff => 1,
+        url       => "http://127.0.0.1:$port/",
+        full_diff => 1,
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
 
     my $p = read_payload($body_file);
     ok(defined $p,                    'Full diff: valid JSON');
-    ok(exists $p->{files}[0]{diff},   'diff field present with webhook_full_diff=1');
+    ok(exists $p->{files}[0]{diff},   'diff field present with full_diff=1');
     like($p->{files}[0]{diff}, qr/\+root/, 'diff content included');
 }
 
@@ -257,7 +257,7 @@ sub make_report {
     my ($port2, $pid2) = start_server(codes => [200], body_file => $body2);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => "http://127.0.0.1:$port1/ http://127.0.0.1:$port2/",
+        url => "http://127.0.0.1:$port1/ http://127.0.0.1:$port2/",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid1, 0);
@@ -280,7 +280,7 @@ sub make_report {
     my ($port2, $pid2) = start_server(codes => [200], body_file => $body2);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => [
+        url => [
             "http://127.0.0.1:$port1/",
             "http://127.0.0.1:$port2/",
         ],
@@ -301,7 +301,7 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [500, 500, 500]);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => "http://127.0.0.1:$port/",
+        url => "http://127.0.0.1:$port/",
     );
     my @sleep_calls;
     my @w;
@@ -322,7 +322,7 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [404]);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => "http://127.0.0.1:$port/",
+        url => "http://127.0.0.1:$port/",
     );
     my @sleep_calls;
     my @w;
@@ -342,7 +342,7 @@ sub make_report {
 {
     # Use a port that should not be listening
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url => 'http://127.0.0.1:19753/',
+        url => 'http://127.0.0.1:19753/',
     );
     my $report = make_report(with_change => 1);
     eval { $n->send($report) };
@@ -354,10 +354,10 @@ sub make_report {
 ########################################################################
 {
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => '',
-        webhook_heartbeat => 1,
+        url       => '',
+        heartbeat => 1,
     );
-    ok($n->heartbeat_enabled, 'heartbeat_enabled true when webhook_heartbeat=1');
+    ok($n->heartbeat_enabled, 'heartbeat_enabled true when heartbeat=1');
 }
 
 ########################################################################
@@ -368,8 +368,8 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => "http://127.0.0.1:$port/",
-        webhook_heartbeat => 1,
+        url       => "http://127.0.0.1:$port/",
+        heartbeat => 1,
     );
     my $r = ChangeTrack::Report->new(start_time => 1000000000);
     $r->set_end_time(1000000002);
@@ -388,10 +388,10 @@ sub make_report {
 ########################################################################
 {
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => 'http://127.0.0.1:19754/',
-        webhook_heartbeat => 0,
+        url       => 'http://127.0.0.1:19754/',
+        heartbeat => 0,
     );
-    ok(!$n->heartbeat_enabled, 'heartbeat_enabled false when webhook_heartbeat=0');
+    ok(!$n->heartbeat_enabled, 'heartbeat_enabled false when heartbeat=0');
     # send() on a clean report with heartbeat off should not attempt a POST
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
@@ -409,8 +409,8 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => "http://127.0.0.1:$port/",
-        webhook_full_diff => 1,
+        url       => "http://127.0.0.1:$port/",
+        full_diff => 1,
         sensitive_notify  => 'suppress',
     );
     $n->send(make_report(sensitive => 1));
@@ -430,8 +430,8 @@ sub make_report {
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     my $n = ChangeTrack::Notify::Webhook->new(
-        webhook_url       => "http://127.0.0.1:$port/",
-        webhook_full_diff => 1,
+        url       => "http://127.0.0.1:$port/",
+        full_diff => 1,
         sensitive_notify  => 'allow',
     );
     $n->send(make_report(sensitive => 1));

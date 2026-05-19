@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 #######################################################################
-# 18-integration-notifiers.t - Tests for integration notifiers.
+# 18-integration-notifiers.t - Config->Runner->Notifier integration;
+#   validates required settings, startup validation, and SEC-2 warning.
 #
 
 use strict;
@@ -18,15 +19,21 @@ use lib File::Spec->catdir($RealBin, '..', 'lib');
 use_ok('ChangeTrack::Config');
 use_ok('ChangeTrack::Runner');
 
+########################################################################
+# Helper: write a temp config with [global]+[track] plus extra sections
+########################################################################
+
 sub write_cfg {
-    my ($global_block) = @_;
+    my (@notifier_sections) = @_;
     my ($fh, $path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     print {$fh} "[global]\n";
     print {$fh} "vcs = git\n";
     print {$fh} "output_dir = /tmp/changetrack-ng-test\n";
-    print {$fh} $global_block;
     print {$fh} "\n[track]\n";
     print {$fh} "/etc/hosts\n";
+    for my $sect (@notifier_sections) {
+        print {$fh} "\n$sect";
+    }
     close($fh);
     return $path;
 }
@@ -35,14 +42,12 @@ sub write_cfg {
 # Happy Path: Full Fixture Validates Through Config -> Runner -> Notifier
 ########################################################################
 {
-    my $cfg = ChangeTrack::Config->load(File::Spec->catfile($RealBin, 'fixtures', 'config-v2-full.ini'));
-    my $runner = ChangeTrack::Runner->new(config => '/nonexistent', quiet => 1);
+    my $fixture = File::Spec->catfile($RealBin, 'fixtures', 'config-v2-full.ini');
+    my $cfg = ChangeTrack::Config->load($fixture);
+    my $runner = ChangeTrack::Runner->new(config => $fixture, quiet => 1);
 
-    my @notify = @{ $cfg->global('notify') // [] };
-    my $ok = eval {
-        $runner->_validate_notifier_startup($cfg, \@notify);
-        1;
-    };
+    my @notifiers = $runner->_build_notifiers($cfg);
+    my $ok = eval { $runner->_validate_notifiers(\@notifiers); 1 };
     ok($ok, 'fixture config passes notifier startup validation');
 }
 
@@ -50,66 +55,67 @@ sub write_cfg {
 # Webhook Required Setting Enforced
 ########################################################################
 {
-    my $path = write_cfg("notify = webhook\nwebhook_url =\n");
-    my $cfg = ChangeTrack::Config->load($path);
+    my $path = write_cfg("[notifier:webhook:default]\nenabled = true\nurl =\n");
+    my $cfg  = ChangeTrack::Config->load($path);
     my $runner = ChangeTrack::Runner->new(config => $path, quiet => 1);
 
-    my @notify = @{ $cfg->global('notify') // [] };
-    my $ok = eval {
-        $runner->_validate_notifier_startup($cfg, \@notify);
-        1;
-    };
+    my @notifiers = $runner->_build_notifiers($cfg);
+    my $ok = eval { $runner->_validate_notifiers(\@notifiers); 1 };
 
-    ok(!$ok, 'empty webhook_url fails startup validation');
-    like($@, qr/webhook notifier requires non-empty webhook_url/i, 'webhook error is actionable');
+    ok(!$ok, 'empty webhook url fails startup validation');
+    like($@, qr/webhook notifier requires/i, 'webhook error is actionable');
 }
 
 ########################################################################
-# Otlp Required Setting Enforced
+# OTLP Required Setting Enforced
 ########################################################################
 {
-    my $path = write_cfg("notify = otlp\notlp_endpoint =\n");
-    my $cfg = ChangeTrack::Config->load($path);
+    my $path = write_cfg("[notifier:otlp:default]\nenabled = true\nendpoint =\n");
+    my $cfg  = ChangeTrack::Config->load($path);
     my $runner = ChangeTrack::Runner->new(config => $path, quiet => 1);
 
-    my @notify = @{ $cfg->global('notify') // [] };
+    my @notifiers = $runner->_build_notifiers($cfg);
     my $ok = eval {
         local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
         local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
-        $runner->_validate_notifier_startup($cfg, \@notify);
+        $runner->_validate_notifiers(\@notifiers);
         1;
     };
 
     ok(!$ok, 'missing OTLP endpoint fails startup validation');
-    like($@, qr/otlp notifier requires otlp_endpoint/i, 'otlp error is actionable');
+    like($@, qr/otlp notifier requires/i, 'otlp error is actionable');
 }
 
 ########################################################################
 # File Required Setting Enforced
 ########################################################################
 {
-    my $path = write_cfg("notify = file\nnotify_log_path =\n");
-    my $cfg = ChangeTrack::Config->load($path);
+    my $path = write_cfg("[notifier:file:default]\nenabled = true\npath =\n");
+    my $cfg  = ChangeTrack::Config->load($path);
     my $runner = ChangeTrack::Runner->new(config => $path, quiet => 1);
 
-    my @notify = @{ $cfg->global('notify') // [] };
-    my $ok = eval {
-        $runner->_validate_notifier_startup($cfg, \@notify);
-        1;
-    };
+    my @notifiers = $runner->_build_notifiers($cfg);
+    my $ok = eval { $runner->_validate_notifiers(\@notifiers); 1 };
 
-    ok(!$ok, 'empty notify_log_path fails startup validation');
-    like($@, qr/file notifier requires non-empty notify_log_path/i, 'file notifier error is actionable');
+    ok(!$ok, 'empty file path fails startup validation');
+    like($@, qr/file notifier requires non-empty path/i, 'file notifier error is actionable');
 }
 
 ########################################################################
 # SEC-2: World-Readable Secret-Bearing Config Warns
 ########################################################################
-{
-    my $path = write_cfg("notify = otlp\notlp_headers = Authorization=Bearer\\ token\n");
+if ($^O eq 'MSWin32' || $^O eq 'cygwin') {
+    # chmod() does not propagate to stat() mode bits on Windows/Cygwin
+    pass('SEC-2 world-readable warning test skipped on Windows/Cygwin');
+} else {
+    my $path = write_cfg(
+        "[notifier:otlp:default]\nenabled = true\n"
+            . "endpoint = https://otel.example.com/v1/logs\n"
+            . "headers = Authorization=Bearer-secret\n"
+    );
     chmod 0644, $path or die "chmod $path: $!";
 
-    my $cfg = ChangeTrack::Config->load($path);
+    my $cfg    = ChangeTrack::Config->load($path);
     my $runner = ChangeTrack::Runner->new(config => $path, quiet => 1);
 
     my @warn;

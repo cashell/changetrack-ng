@@ -9,9 +9,9 @@
 # Copy to /etc/changetrack-ng/changetrack-ng.conf and adjust.
 # Lines beginning with # are comments.  Blank lines are ignored.
 #
-# SECURITY: This file may contain notifier credentials (otlp_headers,
-# webhook_url).  Recommended file mode: 0640, owned root:root (or your
-# service account).
+# SECURITY: This file may contain notifier credentials (e.g., the OTLP
+# notifier's headers key or webhook url with embedded tokens).
+# Recommended file mode: 0640, owned root:root (or your service account).
 
 ###################################################################
 # Global Configuration
@@ -31,14 +31,18 @@ vcs = git
 # RCS stores flat ,v files here.  Git/Fossil/SVN/Hg use a mirror tree.
 output_dir = /var/lib/changetrack-ng
 
+# Remote(s) to push to after each commit (space-separated).
+# Applies to whole-repo backends (git, fossil, svn, hg).
+# Leave empty to skip push.
+push_remote =
+
 ##########################
 # Scheduling
 ##########################
 #
-# Used by 'make install-systemd' and 'make install-cron' to set the run
-# schedule.  Not read at runtime by changetrack-ng itself.
-# Accepted: hourly | daily | <cron-expression>
-interval = hourly
+# Run interval in seconds for systemd/cron install targets.
+# Not read at runtime by changetrack-ng itself.
+interval = 3600
 
 ##########################
 # Locking
@@ -79,120 +83,6 @@ sensitive_notify = suppress
 warn_special_files = 1
 
 ###################################################################
-# Notifications
-###################################################################
-#
-# Notification channels to enable (space-separated list).
-# Accepted subset of: email  webhook  otlp  file
-# Leave empty to disable all outbound notifications.
-notify =
-
-##########################
-# Email
-##########################
-#
-# Envelope sender address for outbound email.
-# HOSTNAME is substituted with the system FQDN at runtime.
-email_from = changetrack-ng@HOSTNAME
-
-# Default recipient address(es) for email notifications (space-separated).
-# Used when a tracked entry does not specify per-entry recipients.
-# Per-entry recipients (after the colon in [track] lines) override this.
-# Example: email_to = root@localhost admin@example.com
-email_to =
-
-# Path to the sendmail binary.  Detected automatically if not set.
-# Checked locations: /usr/sbin/sendmail, /usr/lib/sendmail, then $PATH.
-# sendmail_path = /usr/sbin/sendmail
-
-##########################
-# Webhook
-##########################
-#
-# URL(s) to POST a JSON change report to (space-separated).
-# Required when notify includes 'webhook'.
-webhook_url =
-
-# Include full unified diff in the webhook payload.
-# 0 = summary statistics only (default) | 1 = full diff text
-webhook_full_diff = 0
-
-# POST a heartbeat payload even when there are no changes.
-# Useful for "alert on absence" monitoring at the receiver.
-# 0 = disabled (default) | 1 = enabled
-webhook_heartbeat = 0
-
-# Disable TLS certificate verification for webhook delivery.
-# Only for self-signed dev setups.  Never use in production.
-# 0 = verify (default) | 1 = skip verification
-webhook_insecure = 0
-
-##########################
-# OTLP / OpenTelemetry
-##########################
-#
-# OTLP/HTTP log endpoint URL (must include /v1/logs).
-# Required when notify includes 'otlp'.
-# Overridden by $OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or $OTEL_EXPORTER_OTLP_ENDPOINT.
-otlp_endpoint =
-
-# Include full diff text in each OTLP log record attribute (ct.diff).
-# 0 = summary only (default) | 1 = full diff
-otlp_full_diff = 0
-
-# HTTP body compression for OTLP exports.
-# Accepted: gzip (default) | none
-otlp_compression = gzip
-
-# Additional HTTP request headers (space-separated key=value pairs).
-# Escape spaces inside values with a backslash: Authorization=Bearer\ token
-# Supports ${ENV_VAR} expansion -- keep secrets out of this file:
-#   otlp_headers = Authorization=Bearer\ ${OTLP_TOKEN}
-# Overridden by $OTEL_EXPORTER_OTLP_HEADERS.
-otlp_headers =
-
-# HTTP request timeout in seconds.
-otlp_timeout = 10
-
-# Disable TLS certificate verification for OTLP delivery.
-# 0 = verify (default) | 1 = skip verification
-otlp_insecure = 0
-
-# Additional OTLP resource attributes (space-separated key=value pairs).
-# Example: otlp_resource_attributes = deployment.environment=prod team=infra
-otlp_resource_attributes =
-
-# Send a heartbeat log record on every run, even when there are no changes.
-# OTLP is a monitoring channel; heartbeats enable "alert on absence" detection.
-# 0 = disabled | 1 = enabled (default)
-otlp_heartbeat = 1
-
-##########################
-# File (JSON Log)
-##########################
-#
-# Path to the append-only JSON log file.
-# Required when notify includes 'file'.
-notify_log_path = /var/log/changetrack-ng.log
-
-# Include full diff text in each JSON log record.
-# 1 = full diff (default) | 0 = metadata only
-file_full_diff = 1
-
-# Append a heartbeat record on every run, even when there are no changes.
-# 0 = disabled (default) | 1 = enabled
-file_heartbeat = 0
-
-##########################
-# VCS Push
-##########################
-#
-# Remote(s) to push to after each commit (space-separated).
-# Applies to whole-repo backends (git, fossil, svn, hg).
-# Leave empty to skip push.
-push_remote =
-
-###################################################################
 # File Tracking
 ###################################################################
 
@@ -213,10 +103,146 @@ push_remote =
 #                       udev/hwdb.bin  lvm/cache  lvm/archive
 ignore =
 
-[track]
+###################################################################
+# Notifiers
+###################################################################
+#
+# Each [notifier:<type>:<name>] section configures one notification instance.
+# type: email | webhook | otlp | file
+# name: arbitrary label; defaults to "default" when omitted.
+#
+# Multiple instances of the same type are supported.  Add a second webhook
+# instance named differently:
+#   [notifier:webhook:dev] ...
+#
+# Each section MUST contain: enabled = true | false
+# Disabled instances are discarded at parse time.
+#
+# Configs can be split across drop-in files in notifier.d/ sibling directory.
+
 ##########################
+# Email
+##########################
+#
+[notifier:email:default]
+enabled = false
+
+# Envelope sender address.
+# HOSTNAME is substituted with the system FQDN at runtime.
+from = changetrack-ng@HOSTNAME
+
+# Default recipient address(es) for email notifications (space-separated).
+# Used when a tracked entry does not specify per-entry recipients.
+# Per-entry recipients (after the colon in [track] lines) override this.
+# Example: to = root@localhost admin@example.com
+to =
+
+# Path to the sendmail binary.  Detected automatically if not set.
+# Checked locations: /usr/sbin/sendmail, /usr/lib/sendmail, then $PATH.
+# sendmail_path = /usr/sbin/sendmail
+
+# Per-notifier sensitive-file override: suppress | allow
+# Overrides global sensitive_notify for this notifier only.
+# sensitive_notify = suppress
+
+##########################
+# Webhook
+##########################
+#
+[notifier:webhook:default]
+enabled = false
+
+# URL(s) to POST a JSON change report to (space-separated).  Required.
+url =
+
+# Include full unified diff in the webhook payload.
+# 0 = summary statistics only (default) | 1 = full diff text
+full_diff = 0
+
+# POST a heartbeat payload even when there are no changes.
+# Useful for "alert on absence" monitoring at the receiver.
+# 0 = disabled (default) | 1 = enabled
+heartbeat = 0
+
+# HTTP request timeout in seconds.
+timeout = 10
+
+# Disable TLS certificate verification for webhook delivery.
+# Only for self-signed dev setups.  Never use in production.
+# 0 = verify (default) | 1 = skip verification
+insecure = 0
+
+# sensitive_notify = suppress
+
+##########################
+# OTLP / OpenTelemetry
+##########################
+#
+[notifier:otlp:default]
+enabled = false
+
+# OTLP/HTTP log endpoint URL (must include /v1/logs).  Required unless
+# overridden by $OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or $OTEL_EXPORTER_OTLP_ENDPOINT.
+endpoint =
+
+# Include full diff text in each OTLP log record attribute (ct.diff).
+# 0 = summary only (default) | 1 = full diff
+full_diff = 0
+
+# HTTP body compression for OTLP exports.
+# Accepted: gzip (default) | none
+compression = gzip
+
+# Additional HTTP request headers (space-separated key=value pairs).
+# Escape spaces inside values with a backslash: Authorization=Bearer\ token
+# Supports ${ENV_VAR} expansion -- keep secrets out of this file:
+#   headers = Authorization=Bearer\ ${OTLP_TOKEN}
+# Overridden by $OTEL_EXPORTER_OTLP_HEADERS.
+headers =
+
+# HTTP request timeout in seconds.
+timeout = 10
+
+# Disable TLS certificate verification for OTLP delivery.
+# 0 = verify (default) | 1 = skip verification
+insecure = 0
+
+# Additional OTLP resource attributes (space-separated key=value pairs).
+# Example: resource_attributes = deployment.environment=prod team=infra
+resource_attributes =
+
+# Send a heartbeat log record on every run, even when there are no changes.
+# OTLP is a monitoring channel; heartbeats enable "alert on absence" detection.
+# 0 = disabled | 1 = enabled (default)
+heartbeat = 1
+
+# sensitive_notify = suppress
+
+##########################
+# File (JSON Log)
+##########################
+#
+[notifier:file:default]
+enabled = false
+
+# Path to the append-only JSON log file.  Required.
+path = /var/log/changetrack-ng.jsonl
+
+# Include full diff text in each JSON log record.
+# 0 = metadata only (default) | 1 = full diff
+full_diff = 0
+
+# Append a heartbeat record on every run, even when there are no changes.
+# 0 = disabled (default) | 1 = enabled
+heartbeat = 0
+
+# sensitive_notify = suppress
+
+###################################################################
 # Track List
-##########################
+###################################################################
+#
+[track]
 #
 # Each line specifies a file or directory to track.
 #
@@ -224,8 +250,8 @@ ignore =
 #   /absolute/path/to/file [: email@example.com ...] [option=value ...]
 #   DIRECTORY /absolute/path [: email@example.com ...] [option=value ...]
 #
-# Optional per-entry recipients (after the colon) override the global email_to
-# default for that entry.  Multiple addresses are space-separated.
+# Optional per-entry recipients (after the colon) override the global email
+# notifier's default to= for that entry.  Multiple addresses are space-separated.
 #
 # Per-entry options (key=value after the path/recipients):
 #   sensitive=yes|no|auto   Override automatic sensitive-file detection

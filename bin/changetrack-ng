@@ -6,8 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches to
-#   subcommands (run, init, status, diff, log, revert, update-ignore,
-#   migrate-config).
+#   subcommands (run, init, status, diff, log, revert, update-ignore).
 #
 
 use strict;
@@ -85,7 +84,6 @@ my %dispatch = (
     'log'            => \&cmd_log,
     'revert'         => \&cmd_revert,
     'update-ignore'  => \&cmd_update_ignore,
-    'migrate-config' => \&cmd_migrate_config,
 );
 
 unless (exists $dispatch{$subcommand}) {
@@ -294,30 +292,6 @@ sub _update_gitignore {
     say "Updated: $path" unless $opts{quiet};
 }
 
-# cmd_migrate_config -- Convert a v1 config file to v2 format.
-sub cmd_migrate_config {
-    require ChangeTrack::Config;
-
-    my $v1_path = shift @ARGV;
-    unless (defined $v1_path) {
-        warn "Usage: changetrack-ng migrate-config <v1-config> [<v2-output>]\n";
-        return 64;
-    }
-
-    my $v2_path = shift @ARGV // do {
-        (my $base = $v1_path) =~ s/\.conf$//;
-        "$base.ng.conf";
-    };
-
-    eval { ChangeTrack::Config->migrate_v1_to_v2($v1_path, $v2_path) };
-    if ($@) {
-        warn "changetrack-ng: migrate-config failed: $@\n";
-        return 1;
-    }
-
-    say "Migrated: $v1_path -> $v2_path" unless $opts{quiet};
-    return 0;
-}
 
 ########################################################################
 # Helpers
@@ -345,7 +319,6 @@ Subcommands:
   log [path]                   Show history for one file or all
   revert <path> <rev>          Restore file from a specific revision
   update-ignore                Update VCS-native ignore file
-  migrate-config <v1> [<v2>]  Convert v1 config to v2 format
 
 Options:
     -c, --config <file>    Config file path (overrides all other config resolution)
@@ -385,7 +358,6 @@ changetrack-ng [options] [subcommand] [args]
     changetrack-ng diff [path]
     changetrack-ng log [path]
     changetrack-ng revert <path> <rev>
-    changetrack-ng migrate-config <v1-config> [<v2-output>]
 
 =head1 DESCRIPTION
 
@@ -441,10 +413,6 @@ Restore a file or symlink from a specific revision.
 =item C<update-ignore>
 
 Update backend-specific ignore configuration where supported.
-
-=item C<migrate-config E<lt>v1E<gt> [E<lt>v2E<gt>]>
-
-Convert legacy v1 configuration to v2 format.
 
 =back
 

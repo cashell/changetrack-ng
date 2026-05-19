@@ -39,6 +39,18 @@ override_dh_auto_install:
 	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-user \
 	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/
+	# drop-in directory examples
+	install -d $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/conf.d
+	install -d $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/track.d
+	install -d $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/notifier.d
+	install -m 644 packaging/etc/examples/conf.d/local-settings.conf \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/conf.d/
+	install -m 644 packaging/etc/examples/track.d/system-core.conf \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/track.d/
+	install -m 644 packaging/etc/examples/notifier.d/email.conf \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/notifier.d/
+	install -m 644 packaging/etc/examples/notifier.d/otlp.conf \
+	    $(CURDIR)/debian/changetrack-ng/usr/share/doc/changetrack-ng/examples/notifier.d/
 	# Remove any erroneously installed /etc examples dir
 	rm -rf $(CURDIR)/debian/changetrack-ng/etc/changetrack-ng/examples
 
@@ -47,7 +59,7 @@ override_dh_installsystemd:
 	dh_installsystemd changetrack-ng.timer
 
 override_dh_installdocs:
-	dh_installdocs README.md INSTALL.md ARCHITECTURE.md
+	dh_installdocs README.md INSTALL.md ARCHITECTURE.md PRODUCT.md CONTRIBUTING.md
 
 override_dh_installchangelogs:
 	dh_installchangelogs CHANGELOG.md

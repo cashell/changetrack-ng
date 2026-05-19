@@ -33,34 +33,34 @@ use ChangeTrack::Util qw(hostname);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
-# new -- Construct the notifier with defaults for log_path, heartbeat, and diff output.
+# new -- Construct the notifier with defaults for path, heartbeat, and diff output.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{log_path}         //= '/var/log/changetrack-ng.log';
-    $self->{file_heartbeat}   //= 0;
-    $self->{file_full_diff}   //= 1;
+    $self->{path}             //= '/var/log/changetrack-ng.log';
+    $self->{heartbeat}        //= 0;
+    $self->{full_diff}        //= 1;
     $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
 
-# heartbeat_enabled -- Return true when the file_heartbeat config key is set.
+# heartbeat_enabled -- Return true when the heartbeat config key is set.
 sub heartbeat_enabled {
     my ($self) = @_;
-    return $self->{file_heartbeat} ? 1 : 0;
+    return $self->{heartbeat} ? 1 : 0;
 }
 
 sub name { 'file' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(log_path file_heartbeat file_full_diff) }
+sub config_keys { qw(path heartbeat full_diff) }
 
-# validate_config -- Return an error string when notify_log_path is not set.
+# validate_config -- Return an error string when path is not set.
 sub validate_config {
     my ($self) = @_;
-    my $path = $self->{log_path} // '';
+    my $path = $self->{path} // '';
     return () if $path =~ /\S/;
-    return ('file notifier requires non-empty notify_log_path');
+    return ('file notifier requires non-empty path');
 }
 
 # send_changes -- Append a per-run change record to the log file.
@@ -96,7 +96,7 @@ sub _build_record {
                 metadata_changed => ($c->{meta_change} ? JSON::PP::true() : JSON::PP::false()),
                 meta_change      => $c->{meta_change} // '',
             };
-            if ($self->{file_full_diff}) {
+            if ($self->{full_diff}) {
                 my @diff_lines = $self->_diff_text_for($c);
                 $entry->{diff} = \@diff_lines;
             }
@@ -122,7 +122,7 @@ sub _build_record {
 # Holds an exclusive flock during the write to prevent interleaved entries.
 sub _append_record {
     my ($self, $record) = @_;
-    my $path = $self->{log_path};
+    my $path = $self->{path};
 
     my $json = JSON::PP->new->canonical(1)->encode($record);
 

@@ -2,7 +2,7 @@
 #
 # For an unprivileged (non-root) install: make install-user
 # Copy to ~/.config/changetrack-ng/changetrack-ng.conf and adjust.
-# For all options, see the full reference config or run: perldoc changetrack-ng
+# For all options, see the full reference config or run: man changetrack-ng.conf
 
 ###################################################################
 # Global Configuration
@@ -17,34 +17,39 @@ vcs = git
 output_dir = ~/.local/state/changetrack-ng
 
 ##########################
-# Notifications
-##########################
-# Choose one or more of: email  webhook  otlp  file
-# For a desktop/laptop you may prefer no notifications at all; just
-# browse history with git log in the output_dir.
-notify =
-
-# Email (if notify includes 'email')
-email_from = changetrack-ng@HOSTNAME
-email_to = your@email.address
-
-# Webhook (if notify includes 'webhook')
-# webhook_url = https://your.webhook.endpoint/path
-
-# OTLP (if notify includes 'otlp')
-# otlp_endpoint = https://your.otel.collector/v1/logs
-
-# File log (if notify includes 'file')
-notify_log_path = ~/.local/state/changetrack-ng/changetrack-ng.log
-
-##########################
 # Scheduling
 ##########################
 # Used by: make install-user-systemd  or  make install-user-cron
-interval = hourly
+interval = 3600
 
 # Default is auto-selected as $XDG_CACHE_HOME/changetrack-ng.lock
 # lock_path = ~/.cache/changetrack-ng.lock
+
+###################################################################
+# Notifiers
+###################################################################
+#
+# For a desktop/laptop you may prefer no notifications at all; just
+# browse history with: changetrack-ng log /path/to/file
+#
+# Uncomment and adjust the section(s) you want to use.
+
+# [notifier:email:default]
+# enabled = true
+# from    = changetrack-ng@HOSTNAME
+# to      = your@email.address
+
+# [notifier:webhook:default]
+# enabled = true
+# url     = https://your.webhook.endpoint/path
+
+# [notifier:otlp:default]
+# enabled   = true
+# endpoint  = https://your.otel.collector/v1/logs
+
+# [notifier:file:default]
+# enabled = true
+# path    = ~/.local/state/changetrack-ng/changetrack-ng.jsonl
 
 [track]
 ##########################

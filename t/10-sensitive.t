@@ -98,7 +98,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     my $dir = tempdir(CLEANUP => 1);
     my $log = "$dir/sens.log";
     my $n   = ChangeTrack::Notify::File->new(
-        log_path         => $log,
+        path         => $log,
         sensitive_notify => 'suppress',
     );
     $n->send($report);
@@ -120,7 +120,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     my $dir = tempdir(CLEANUP => 1);
     my $log = "$dir/allow.log";
     my $n   = ChangeTrack::Notify::File->new(
-        log_path         => $log,
+        path         => $log,
         sensitive_notify => 'allow',
     );
 
@@ -150,7 +150,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     my $dir = tempdir(CLEANUP => 1);
     my $log = "$dir/perm-loosen.log";
     my $n   = ChangeTrack::Notify::File->new(
-        log_path         => $log,
+        path         => $log,
         sensitive_notify => 'suppress',
     );
 
@@ -195,7 +195,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
         my $dir = tempdir(CLEANUP => 1);
         my $log = "$dir/matrix.log";
         my $n   = ChangeTrack::Notify::File->new(
-            log_path         => $log,
+            path         => $log,
             sensitive_notify => $c->{notify},
         );
 
@@ -234,7 +234,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path    => $script,
-        email_to         => ['sec@example.com'],
+        to         => ['sec@example.com'],
         sensitive_notify => 'suppress',
     );
 

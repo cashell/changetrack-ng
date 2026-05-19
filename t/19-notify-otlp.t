@@ -179,8 +179,8 @@ sub make_report {
 }
 
 {
-    my $n = ChangeTrack::Notify::OTLP->new(otlp_heartbeat => 0);
-    ok(!$n->heartbeat_enabled, 'heartbeat_enabled false when otlp_heartbeat=0');
+    my $n = ChangeTrack::Notify::OTLP->new(heartbeat => 0);
+    ok(!$n->heartbeat_enabled, 'heartbeat_enabled false when heartbeat=0');
 }
 
 ########################################################################
@@ -189,7 +189,7 @@ sub make_report {
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
-    my $n = ChangeTrack::Notify::OTLP->new(otlp_endpoint => '');
+    my $n = ChangeTrack::Notify::OTLP->new(endpoint => '');
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
     $n->send(make_report(with_change => 1));
@@ -208,7 +208,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -239,7 +239,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -266,7 +266,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -298,7 +298,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -321,7 +321,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -344,8 +344,8 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint  => "http://127.0.0.1:$port/v1/logs",
-        otlp_heartbeat => 1,
+        endpoint  => "http://127.0.0.1:$port/v1/logs",
+        heartbeat => 1,
     );
     my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
     $r->set_end_time(1_000_000_002);
@@ -369,10 +369,10 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint  => 'http://127.0.0.1:19754/v1/logs',
-        otlp_heartbeat => 0,
+        endpoint  => 'http://127.0.0.1:19754/v1/logs',
+        heartbeat => 0,
     );
-    ok(!$n->heartbeat_enabled, 'heartbeat disabled when otlp_heartbeat=0');
+    ok(!$n->heartbeat_enabled, 'heartbeat disabled when heartbeat=0');
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
     my $r = ChangeTrack::Report->new;
@@ -391,7 +391,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port",
+        endpoint => "http://127.0.0.1:$port",
     );
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
@@ -409,7 +409,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => 'http://127.0.0.1:19755',
+        endpoint => 'http://127.0.0.1:19755',
     );
     my @w;
     local $SIG{__WARN__} = sub { push @w, @_ };
@@ -429,7 +429,7 @@ sub make_report {
     local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}      = 'http://127.0.0.1:19756/v1/logs';
     local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT} = "http://127.0.0.1:$port/v1/logs";
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => 'http://127.0.0.1:19757/v1/logs',
+        endpoint => 'http://127.0.0.1:19757/v1/logs',
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -448,13 +448,13 @@ sub make_report {
     local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}      = "http://127.0.0.1:$port/v1/logs";
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => 'http://127.0.0.1:19758/v1/logs',
+        endpoint => 'http://127.0.0.1:19758/v1/logs',
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
 
     my $p = read_payload($body_file);
-    ok(defined $p, 'OTEL_EXPORTER_OTLP_ENDPOINT overrides otlp_endpoint config');
+    ok(defined $p, 'OTEL_EXPORTER_OTLP_ENDPOINT overrides endpoint config');
 }
 
 ########################################################################
@@ -473,7 +473,7 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     local $ENV{OTEL_EXPORTER_OTLP_HEADERS}        = 'x-custom-token=secret123,x-tenant=myorg';
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -497,8 +497,8 @@ sub make_report {
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     local $ENV{OTEL_EXPORTER_OTLP_HEADERS}        = 'x-auth=env-value';
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
-        otlp_headers  => 'x-auth=config-value',
+        endpoint => "http://127.0.0.1:$port/v1/logs",
+        headers  => 'x-auth=config-value',
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -513,22 +513,22 @@ sub make_report {
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_HEADERS};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_headers => ['x-token=Bearer\\ token', 'x-tenant=myorg'],
+        headers => ['x-token=Bearer\\ token', 'x-tenant=myorg'],
     );
     my %hdrs = $n->_resolve_headers;
 
-    is($hdrs{'x-token'}, 'Bearer token', 'Arrayref otlp_headers parsed with escaped spaces');
-    is($hdrs{'x-tenant'}, 'myorg',       'Arrayref otlp_headers key/value parsed');
+    is($hdrs{'x-token'}, 'Bearer token', 'Arrayref headers parsed with escaped spaces');
+    is($hdrs{'x-tenant'}, 'myorg',       'Arrayref headers key/value parsed');
 }
 
 {
     delete local $ENV{OTEL_EXPORTER_OTLP_HEADERS};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_headers => { 'x-api-key' => 'abc123' },
+        headers => { 'x-api-key' => 'abc123' },
     );
     my %hdrs = $n->_resolve_headers;
 
-    is($hdrs{'x-api-key'}, 'abc123', 'Hashref otlp_headers parsed correctly');
+    is($hdrs{'x-api-key'}, 'abc123', 'Hashref headers parsed correctly');
 }
 
 ########################################################################
@@ -536,7 +536,7 @@ sub make_report {
 ########################################################################
 {
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_resource_attributes => ['deployment.environment=prod', 'service.name=custom-svc'],
+        resource_attributes => ['deployment.environment=prod', 'service.name=custom-svc'],
     );
     my %attrs = map { $_->{key} => $_->{value}{stringValue} } @{ $n->_resource_attrs };
 
@@ -546,7 +546,7 @@ sub make_report {
 
 {
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_resource_attributes => { 'team.name' => 'platform' },
+        resource_attributes => { 'team.name' => 'platform' },
     );
     my %attrs = map { $_->{key} => $_->{value}{stringValue} } @{ $n->_resource_attrs };
 
@@ -571,8 +571,8 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint    => "http://127.0.0.1:$port/v1/logs",
-        otlp_compression => 'gzip',
+        endpoint    => "http://127.0.0.1:$port/v1/logs",
+        compression => 'gzip',
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -605,7 +605,7 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     my @sleep_calls;
     local *ChangeTrack::Notify::OTLP::_sleep = sub { push @sleep_calls, $_[1] };
@@ -627,7 +627,7 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     my @sleep_calls;
     my @w;
@@ -650,7 +650,7 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     my @sleep_calls;
     my @w;
@@ -674,8 +674,8 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint    => "http://127.0.0.1:$port/v1/logs",
-        otlp_full_diff   => 1,
+        endpoint    => "http://127.0.0.1:$port/v1/logs",
+        full_diff   => 1,
         sensitive_notify => 'suppress',
     );
     $n->send(make_report(sensitive => 1));
@@ -699,8 +699,8 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint    => "http://127.0.0.1:$port/v1/logs",
-        otlp_full_diff   => 1,
+        endpoint    => "http://127.0.0.1:$port/v1/logs",
+        full_diff   => 1,
         sensitive_notify => 'allow',
     );
     $n->send(make_report(sensitive => 1));
@@ -724,8 +724,8 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint  => "http://127.0.0.1:$port/v1/logs",
-        otlp_full_diff => 1,
+        endpoint  => "http://127.0.0.1:$port/v1/logs",
+        full_diff => 1,
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -748,8 +748,8 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint  => "http://127.0.0.1:$port/v1/logs",
-        otlp_full_diff => 0,
+        endpoint  => "http://127.0.0.1:$port/v1/logs",
+        full_diff => 0,
     );
     $n->send(make_report(with_change => 1));
     waitpid($pid, 0);
@@ -758,7 +758,7 @@ SKIP: {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(!exists $a{'ct.diff'}, 'No ct.diff attr without otlp_full_diff');
+    ok(!exists $a{'ct.diff'}, 'No ct.diff attr without full_diff');
 }
 
 ########################################################################
@@ -771,7 +771,7 @@ SKIP: {
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
     delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
     my $n = ChangeTrack::Notify::OTLP->new(
-        otlp_endpoint => "http://127.0.0.1:$port/v1/logs",
+        endpoint => "http://127.0.0.1:$port/v1/logs",
     );
     $n->send(make_report(with_change => 1, with_warning => 1));
     waitpid($pid, 0);

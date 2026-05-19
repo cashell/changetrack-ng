@@ -173,25 +173,21 @@ The fast path (`can_skip_content_diff`) skips all further processing when mtime+
 
 ### 4.1 Format
 
-INI v2 with two sections: `[global]` (key=value settings) and `[track]` (file/directory entries).
+INI format with three section types: `[global]` (key=value settings), `[notifier:<type>:<name>]` (one notification instance per section), and `[track]` (file/directory entries).
 
-- Array-valued keys (`notify`, `ignore`, `webhook_url`, `push_remote`, `email_to`) are split on whitespace → arrayrefs
-- All other keys return scalar strings
-- `HOSTNAME` in values is interpolated to the short hostname
+- Array-valued `[global]` keys (`ignore`, `push_remote`) are split on whitespace → arrayrefs
+- All other `[global]` keys return scalar strings
+- `[notifier:*]` keys are per-instance scalars; the `enabled` key is required in every notifier section
+- `HOSTNAME` in values is replaced with the system FQDN at parse time
 - Strict key validation: unknown keys cause a fatal parse error (fail-fast)
+- Multi-file loading: `conf.d/`, `track.d/`, `notifier.d/` drop-in directories and `@include` directives compose at load time; duplicate notifier `<type>:<name>` pairs across any files are a fatal error
 
-### 4.2 V1 compatibility
-
-- Absence of `[global]`/`[track]` sections triggers v1 detection
-- V1 format: one path per line, `@find-expressions`, `~negated` paths
-- `migrate-config` subcommand performs one-shot migration to v2
-
-### 4.3 Precedence (OTLP-specific)
+### 4.2 Precedence (OTLP-specific)
 
 For OTLP endpoint and headers, environment variables take precedence over config:
 ```
-OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT > config otlp_endpoint
-OTEL_EXPORTER_OTLP_HEADERS > config otlp_headers
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT > config endpoint
+OTEL_EXPORTER_OTLP_HEADERS > config headers
 ```
 
 ---
@@ -219,9 +215,9 @@ Notifiers are instantiated per-run with all config values passed as constructor 
 
 Each notifier independently implements heartbeat gating:
 - **Email**: always OFF (anti-spam)
-- **Webhook**: OFF by default; opt-in via `webhook_heartbeat = 1`
+- **Webhook**: OFF by default; opt-in via `heartbeat = 1` in the `[notifier:webhook:*]` section
 - **OTLP**: ON by default (monitoring use case: "alert on absence")
-- **File**: OFF by default; opt-in via `file_heartbeat = 1`
+- **File**: OFF by default; opt-in via `heartbeat = 1` in the `[notifier:file:*]` section
 
 Heartbeat is only sent when: no changes detected AND the run completed without errors.
 
@@ -434,7 +430,7 @@ Phase 3 (quality/portability):
 
 1. Should Linux production behavior be the primary target, with Windows only as a best-effort contributor platform?
 2. Should threat modeling assume config is root-trusted only, or include accidental/malicious config tampering scenarios?
-3. For multi-value config fields (`webhook_url`, `otlp_headers`, `otlp_resource_attributes`), do you prefer strict structured syntax (recommended) or backward-compatible loose parsing?
+3. For multi-value notifier fields (`url` in webhook, `headers` and `resource_attributes` in OTLP), do you prefer strict structured syntax (recommended) or backward-compatible loose parsing?
 
 ## 10. Conclusion
 

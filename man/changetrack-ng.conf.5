@@ -10,29 +10,68 @@ F</etc/changetrack-ng/changetrack-ng.conf>
 
 =head1 DESCRIPTION
 
-B<changetrack-ng> reads a two-section INI v2 config file on every run.
+B<changetrack-ng> reads an INI-format config file on every run.
 Lines beginning with C<#> are comments; blank lines are ignored.
 Key-value pairs use C<key = value> syntax.
 
-The config may contain notifier credentials (for example in C<otlp_headers>).
-Set file permissions to C<0640> or stricter.
+The config may contain notifier credentials (for example in the OTLP notifier's
+C<headers> key).  Set file permissions to C<0640> or stricter.
 
 Scalar and array values support environment-variable expansion using
 C<${VAR_NAME}>.  An undefined variable causes a startup parse error.
 
-The file has two sections:
+The C<HOSTNAME> token in values is replaced with the system's fully-qualified
+hostname at parse time.
+
+The file has three section types:
 
 =over 4
 
 =item B<[global]>
 
-Runtime settings: VCS backend, notification channels, paths, etc.
+Runtime settings: VCS backend, paths, sensitive-file behavior, etc.
+
+=item B<[notifier:I<type>:I<name>]>
+
+Configures one notification instance.  I<type> is one of C<email>, C<webhook>,
+C<otlp>, or C<file>.  I<name> is an arbitrary label (optional; blank defaults
+to C<default>).  Multiple instances of the same type are supported.  Each
+section must contain C<enabled = true|false>.  Disabled instances are discarded
+at parse time.
 
 =item B<[track]>
 
 The list of files and directories to monitor.
 
 =back
+
+=head2 Drop-in directories
+
+Three sibling directories adjacent to the main config file are scanned
+automatically for additional C<*.conf> files (sorted order):
+
+=over 4
+
+=item F<conf.d/>   — C<[global]> sections only
+
+=item F<track.d/>  — C<[track]> sections only
+
+=item F<notifier.d/> — C<[notifier:*]> sections only
+
+=back
+
+Non-existent directories are silently skipped.
+
+=head2 @include directives
+
+  @include <path>
+  @include-track <path>
+  @include-notifier <path>
+
+I<path> may be a file or a directory (directories scan C<*.conf> in sorted
+order).  The C<-track> and C<-notifier> variants enforce section restrictions
+in the included path.  A visited-paths guard prevents infinite recursion.
+A missing path is a fatal parse error.
 
 =head1 GLOBAL SETTINGS
 
@@ -50,126 +89,10 @@ Directory where VCS history is stored.  For whole-repo backends (git, fossil,
 svn, hg) this is the root of a mirror tree.  For RCS, flat C<,v> files are
 written here.  Default: C</var/lib/changetrack-ng>.
 
-=item B<notify> = I<space-separated list>
-
-Notification channels to enable.  Valid values: C<email>, C<webhook>,
-C<otlp>, C<file>.  Multiple values are space-separated.
-Leave empty to disable notifications.
-
 =item B<push_remote> = I<remote ...>
 
 For whole-repo VCS backends: space-separated list of Git/SVN/etc. remotes to
 push to after each commit.  Leave empty to skip push.
-
-=back
-
-=head2 Email
-
-=over 4
-
-=item B<email_to> = I<address ...>
-
-Global fallback email recipients, space-separated.  Used for tracked entries
-that do not define specific per-file or per-directory recipient addresses
-in the C<[track]> section.
-
-=item B<email_from> = I<address>
-
-Sender address for email notifications.  The token C<HOSTNAME> is replaced
-with the system hostname at runtime.  Default: C<changetrack-ng@HOSTNAME>.
-
-Note: Email notifications are naturally anti-spam; they have no heartbeat configuration and send zero emails during a clean no-change run.
-
-=back
-
-=head2 Webhook
-
-=over 4
-
-=item B<webhook_url> = I<url ...>
-
-One or more URLs to HTTP POST change reports to.  Space-separated.
-Required when C<notify> includes C<webhook>.
-
-=item B<webhook_full_diff> = C<0> | C<1>
-
-Include a full unified diff in the webhook payload.  Default: C<0> (summary only).
-
-=item B<webhook_heartbeat> = C<0> | C<1>
-
-POST a beacon even when there are no changes.  Default: C<0>.
-
-=item B<webhook_insecure> = C<0> | C<1>
-
-Disable TLS certificate verification for webhook delivery.  Only for
-self-signed development setups.  Default: C<0>.
-
-=back
-
-=head2 OTLP / OpenTelemetry
-
-=over 4
-
-=item B<otlp_endpoint> = I<url>
-
-Full OTLP/HTTP endpoint URL including the C</v1/logs> path.
-The environment variables C<OTEL_EXPORTER_OTLP_ENDPOINT> and
-C<OTEL_EXPORTER_OTLP_LOGS_ENDPOINT> take precedence if set.
-Required when C<notify> includes C<otlp>.
-
-=item B<otlp_full_diff> = C<0> | C<1>
-
-Include full diff in OTLP log records.  Default: C<0>.
-
-=item B<otlp_compression> = C<gzip> | C<none>
-
-HTTP body compression for OTLP exports.  Default: C<gzip>.
-
-=item B<otlp_headers> = I<key=value ...>
-
-Additional HTTP headers, space-separated.  Escape spaces within a value with
-a backslash: C<Authorization=Bearer\ mytoken>.
-Supports C<${VAR}> expansion, for example:
-C<Authorization=Bearer\ ${OTLP_TOKEN}>.
-For secret material, prefer C<OTEL_EXPORTER_OTLP_HEADERS> when possible.
-
-=item B<otlp_timeout> = I<seconds>
-
-HTTP request timeout.  Default: C<10>.
-
-=item B<otlp_insecure> = C<0> | C<1>
-
-Disable TLS certificate verification.  Only for self-signed development
-setups.  Default: C<0>.
-
-=item B<otlp_resource_attributes> = I<key=value ...>
-
-Additional OTLP resource attributes, space-separated.
-
-=item B<otlp_heartbeat> = C<0> | C<1>
-
-Send a heartbeat log record on every run, even when no changes are detected.
-Default: C<1>.  Enables "alert on silence" monitoring patterns.
-
-=back
-
-=head2 File notifier
-
-=over 4
-
-=item B<notify_log_path> = I<path>
-
-Append-only JSON log file path.  Required when C<notify> includes C<file>.
-Default: C</var/log/changetrack-ng.log>.
-
-=item B<file_full_diff> = C<0> | C<1>
-
-Include full diff lines in file-notifier JSON records.  Default: C<1>.
-Set to C<0> for metadata-only file notifier output.
-
-=item B<file_heartbeat> = C<0> | C<1>
-
-Append a heartbeat record on every run.  Default: C<0>.
 
 =back
 
@@ -180,9 +103,20 @@ Append a heartbeat record on every run.  Default: C<0>.
 =item B<ignore> = I<pattern ...>
 
 Additional glob patterns to skip during directory traversal, space-separated.
-Added to the built-in defaults, which already exclude: C<*.swp>, C<*~>,
-C<#*#>, C<*.dpkg-*>, C<*.rpmnew>, C<*.pacnew>, C</etc/mtab>, C<ld.so.cache>,
-and several other common noise files.
+Added to the built-in defaults, which already exclude:
+
+B<Editor temporaries:> C<*.swp> C<*~> C<#*#> C<.*.sw?> C<*.bak>
+
+B<Archives:> C<*.gz> C<*.bz2> C<*.bzip2> C<*.xz> C<*.zst> C<*.7z>
+C<*.zip> C<*.tar> C<*.tgz> C<*.tbz2> C<*.txz>
+
+B<Package manager artifacts:> C<*.dpkg-*> C<*.rpmnew> C<*.rpmsave>
+C<*.pacnew> C<*.pacorig>
+
+B<Compiled bytecode:> C<*.pyc> C<*.pyo> C<*.elc>
+
+B<System runtime:> C<mtab> C<ld.so.cache> C<prelink.cache> C<adjtime>
+C<udev/hwdb.bin> C<lvm/cache> C<lvm/archive>
 
 =back
 
@@ -222,10 +156,10 @@ Default: C<1>.
 
 =over 4
 
-=item B<interval> = C<hourly> | C<daily> | I<cron-expression>
+=item B<interval> = I<seconds>
 
 Informational: used by C<make install-systemd> and C<make install-cron>.
-Does not affect runtime behavior.  Default: C<hourly>.
+Does not affect runtime behavior.  Default: C<3600> (one hour).
 
 =back
 
@@ -243,6 +177,171 @@ Seconds to wait for the lock.  C<0> means skip silently if locked, which is
 the cron-friendly default.  Default: C<0>.
 
 =back
+
+=head1 NOTIFIER SECTIONS
+
+Each C<[notifier:I<type>:I<name>]> section configures one notification instance.
+I<type> must be C<email>, C<webhook>, C<otlp>, or C<file>.  I<name> is an
+arbitrary label; omitting it (C<[notifier:email]>) is equivalent to
+C<[notifier:email:default]>.  Multiple instances of the same type are supported.
+Duplicate C<type:name> combinations — within a file or across all loaded files —
+are a fatal parse error.
+
+Every notifier section must include:
+
+  enabled = true | false
+
+Disabled instances (C<enabled = false>) are discarded at parse time and produce
+no runtime object.
+
+=head2 Common key
+
+=over 4
+
+=item B<sensitive_notify> = C<suppress> | C<allow>
+
+Per-notifier override of the global C<sensitive_notify> setting.  When set,
+takes precedence over the global value for this notifier instance only.
+
+=back
+
+=head2 Email notifier (type: email)
+
+Pipes a plain-text diff report to C<sendmail>.
+
+=over 4
+
+=item B<to> = I<address ...>
+
+Space-separated list of recipient addresses.  If omitted, recipients are taken
+from the per-entry email lists in the C<[track]> section.  At least one
+recipient must be resolvable at send time.
+
+=item B<from> = I<address>
+
+Envelope and header From address.  Supports C<HOSTNAME> token.
+Default: C<changetrack-ng@HOSTNAME>.
+
+=item B<sendmail_path> = I<path>
+
+Path to the C<sendmail> binary.  Default: C</usr/sbin/sendmail>.
+
+=back
+
+=head2 HTTP Webhook notifier (type: webhook)
+
+Posts a JSON payload to one or more HTTP(S) endpoints.
+
+=over 4
+
+=item B<url> = I<url ...>
+
+Space-separated list of endpoint URLs.  Required.
+
+=item B<full_diff> = C<0> | C<1>
+
+Include full unified diff text in the payload.  Default: C<0>.
+
+=item B<heartbeat> = C<0> | C<1>
+
+Send a heartbeat payload even when no files changed.  Default: C<0>.
+
+=item B<timeout> = I<seconds>
+
+HTTP request timeout.  Default: C<10>.
+
+=item B<insecure> = C<0> | C<1>
+
+Disable TLS certificate verification.  Use only in controlled environments.
+Default: C<0>.
+
+=back
+
+=head2 OTLP / OpenTelemetry notifier (type: otlp)
+
+Exports one OTLP log record per changed file to an OpenTelemetry collector.
+
+=over 4
+
+=item B<endpoint> = I<url>
+
+OTLP/HTTP endpoint URL (e.g. C<https://otelcol.example.com:4318/v1/logs>).
+Required unless overridden by C<OTEL_EXPORTER_OTLP_ENDPOINT> or
+C<OTEL_EXPORTER_OTLP_LOGS_ENDPOINT>.
+
+=item B<headers> = I<key=value ...>
+
+Space-separated C<key=value> pairs sent as HTTP headers (e.g. for bearer token
+authentication).  Treat this value as a secret; prefer injecting via
+C<OTEL_EXPORTER_OTLP_HEADERS> instead.
+
+=item B<compression> = C<gzip> | C<none>
+
+Payload compression.  Default: C<gzip>.
+
+=item B<full_diff> = C<0> | C<1>
+
+Include full unified diff text in log record attributes.  Default: C<0>.
+
+=item B<heartbeat> = C<0> | C<1>
+
+Emit a heartbeat log record even when no files changed.  Default: C<1>.
+
+=item B<timeout> = I<seconds>
+
+HTTP request timeout.  Default: C<10>.
+
+=item B<insecure> = C<0> | C<1>
+
+Disable TLS certificate verification.  Default: C<0>.
+
+=item B<resource_attributes> = I<key=value ...>
+
+Space-separated C<key=value> pairs added as OTLP resource attributes.
+
+=back
+
+=head2 File log notifier (type: file)
+
+Appends one JSON object per run to a local log file.
+
+=over 4
+
+=item B<path> = I<path>
+
+Path to the log file.  Required.
+
+=item B<heartbeat> = C<0> | C<1>
+
+Append a heartbeat record even when no files changed.  Default: C<0>.
+
+=item B<full_diff> = C<0> | C<1>
+
+Include full unified diff text in the JSON record.  Default: C<0>.
+
+=back
+
+=head2 Example
+
+  [notifier:email:default]
+  enabled      = true
+  to           = ops@example.com
+  from         = changetrack-ng@${HOSTNAME}
+
+  [notifier:webhook:ops]
+  enabled      = true
+  url          = https://hooks.example.com/changetrack
+  full_diff    = 1
+
+  [notifier:otlp:default]
+  enabled      = true
+  endpoint     = https://otelcol.example.com:4318/v1/logs
+  compression  = gzip
+  heartbeat    = 1
+
+  [notifier:file:audit]
+  enabled      = true
+  path         = /var/log/changetrack-ng.jsonl
 
 =head1 TRACK SECTION
 
@@ -282,12 +381,12 @@ Override the global sensitive-file detection for this entry.
 
 =item C<OTEL_EXPORTER_OTLP_ENDPOINT>
 
-Overrides C<otlp_endpoint> when set.
+Overrides the C<endpoint> key in any C<[notifier:otlp:*]> section when set.
 
 =item C<OTEL_EXPORTER_OTLP_LOGS_ENDPOINT>
 
-Overrides both C<OTEL_EXPORTER_OTLP_ENDPOINT> and C<otlp_endpoint> for the
-logs signal specifically (highest precedence).
+Overrides both C<OTEL_EXPORTER_OTLP_ENDPOINT> and the C<endpoint> config key
+for the logs signal specifically (highest precedence).
 
 =back
 
