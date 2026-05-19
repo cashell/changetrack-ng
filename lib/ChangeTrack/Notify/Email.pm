@@ -160,7 +160,8 @@ sub _find_sendmail {
 
     if ($self->{sendmail_path}) {
         return $self->{sendmail_path} if -x $self->{sendmail_path};
-        return $self->{sendmail_path} if -f $self->{sendmail_path};
+        return $self->{sendmail_path} if $^O eq 'MSWin32' && -f $self->{sendmail_path};
+        return undef;
     }
 
     for my $path (@SENDMAIL_PATHS) {

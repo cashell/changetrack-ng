@@ -37,7 +37,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => $script,
-        to      => ['root@localhost'],
+        to      => ['nobody@example.invalid'],
     );
 
     my $report = ChangeTrack::Report->new;   # no changes
@@ -245,7 +245,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 {
     my $n = ChangeTrack::Notify::Email->new(
         sendmail_path => '/nonexistent/sendmail',
-        to      => ['root@localhost'],
+        to      => ['nobody@example.invalid'],
     );
 
     my $report = ChangeTrack::Report->new(start_time => time());
@@ -259,6 +259,45 @@ use_ok('ChangeTrack::Test::MockSendmail');
     eval { $n->send($report) };
     $died = 1 if $@;
     ok(!$died, 'No sendmail found: send does not die');
+}
+
+########################################################################
+# Explicit Bad Sendmail Path Must Not Fall Back To PATH sendmail
+########################################################################
+{
+    my $tmp = tempdir(CLEANUP => 1);
+    my $cap = File::Spec->catfile($tmp, 'fallback.capture');
+    my $bin = File::Spec->catfile($tmp, 'sendmail');
+
+    open(my $fh, '>', $bin) or die "Cannot write fake sendmail: $!";
+    print {$fh} "#!/usr/bin/env perl\n";
+    print {$fh} "use strict; use warnings;\n";
+    print {$fh} "open(my \\\$cfh, '>', '$cap') or die \\\$!;\n";
+    print {$fh} "print {\\\$cfh} \\\"called\\n\\\";\n";
+    print {$fh} "close(\\\$cfh);\n";
+    print {$fh} "exit 0;\n";
+    close($fh);
+    chmod(0755, $bin);
+
+    local $ENV{PATH} = $tmp . ':' . ($ENV{PATH} // '');
+
+    my $n = ChangeTrack::Notify::Email->new(
+        sendmail_path => '/nonexistent/sendmail',
+        to            => ['nobody@example.invalid'],
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => time());
+    $report->add_change(
+        path => '/etc/hosts', is_new => 0, is_sensitive => 0,
+        diff => ['-a', '+b'], meta_change => '',
+    );
+
+    my @warn;
+    local $SIG{__WARN__} = sub { push @warn, @_ };
+    $n->send($report);
+
+    ok(!-e $cap, 'bad explicit sendmail_path does not invoke PATH sendmail');
+    ok(grep(/sendmail not found/i, @warn), 'bad explicit sendmail_path emits skip warning');
 }
 
 done_testing();
