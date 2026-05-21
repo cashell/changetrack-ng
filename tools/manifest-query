@@ -1,0 +1,310 @@
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+########################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+########################################################################
+# tools/manifest-query - Query MANIFEST.toml for build automation and
+#   analysis. Outputs newline-separated file paths or structured text.
+#   Requires TOML::Tiny (libtoml-tiny-perl / perl-TOML-Tiny).
+#
+use strict;
+use warnings;
+use TOML::Tiny qw(from_toml);
+use Getopt::Long qw(:config no_auto_abbrev bundling);
+use File::Spec;
+use File::Basename qw(dirname);
+use File::Find qw(find);
+use Cwd qw(abs_path getcwd);
+
+########################################################################
+# Option parsing
+########################################################################
+
+my %opt;
+GetOptions(\%opt,
+    'manifest=s',
+    'dist=s',
+    'category=s',
+    'tag=s',
+    'field=s',
+    'validate',
+    'find-extra',
+    'list',
+    'deps-deb',
+    'build-deps-deb',
+    'deps-rpm',
+    'build-deps-rpm',
+    'help',
+) or usage(1);
+usage(0) if $opt{help};
+
+########################################################################
+# Locate and parse MANIFEST.toml
+########################################################################
+
+my $manifest_path = _find_manifest($opt{manifest});
+die "Cannot find MANIFEST.toml\n" unless defined $manifest_path;
+
+my $toml_text = do {
+    open my $fh, '<', $manifest_path
+        or die "Cannot open $manifest_path: $!\n";
+    local $/;
+    <$fh>;
+};
+my ($manifest, $err) = from_toml($toml_text);
+die "Failed to parse $manifest_path: $err\n" if $err;
+
+########################################################################
+# Build flat file index: $files{path} = { category => ..., ...fields }
+########################################################################
+
+my %files;
+for my $cat (sort keys %$manifest) {
+    next if $cat eq 'meta';
+    my $section = $manifest->{$cat};
+    next unless ref $section eq 'HASH';
+    for my $path (keys %$section) {
+        $files{$path} = { %{$section->{$path}}, category => $cat };
+    }
+}
+
+########################################################################
+# Dispatch
+########################################################################
+
+if ($opt{validate}) {
+    cmd_validate(\%files);
+} elsif ($opt{'find-extra'}) {
+    cmd_find_extra(\%files, dirname($manifest_path));
+} elsif ($opt{'deps-deb'}) {
+    cmd_deps_deb($manifest->{meta}{deps}, 'runtime');
+} elsif ($opt{'build-deps-deb'}) {
+    cmd_deps_deb($manifest->{meta}{deps}, 'build');
+} elsif ($opt{'deps-rpm'}) {
+    cmd_deps_rpm($manifest->{meta}{deps}, 'runtime');
+} elsif ($opt{'build-deps-rpm'}) {
+    cmd_deps_rpm($manifest->{meta}{deps}, 'build');
+} else {
+    cmd_list(\%files, \%opt);
+}
+
+########################################################################
+# Commands
+########################################################################
+
+# cmd_validate -- verify every listed file exists relative to cwd
+sub cmd_validate {
+    my ($files) = @_;
+    my @missing = grep { !-e $_ } sort keys %$files;
+    if (@missing) {
+        warn "Missing files:\n";
+        warn "  $_\n" for @missing;
+        exit 1;
+    }
+    printf "OK: %d files validated\n", scalar keys %$files;
+    exit 0;
+}
+
+# cmd_list -- filter by dist/category/tag, print paths or a named field
+sub cmd_list {
+    my ($files, $opt) = @_;
+    my @results = sort keys %$files;
+
+    if (defined $opt->{dist}) {
+        my $want = $opt->{dist};
+        @results = grep {
+            my $d = $files->{$_}{dist};
+            defined $d && ref $d eq 'ARRAY' && grep { $_ eq $want } @$d;
+        } @results;
+    }
+
+    if (defined $opt->{category}) {
+        my $want = $opt->{category};
+        @results = grep { ($files->{$_}{category} // '') eq $want } @results;
+    }
+
+    if (defined $opt->{tag}) {
+        my $want = $opt->{tag};
+        @results = grep {
+            my $t = $files->{$_}{tags};
+            defined $t && ref $t eq 'ARRAY' && grep { $_ eq $want } @$t;
+        } @results;
+    }
+
+    if (defined $opt->{field}) {
+        my $f = $opt->{field};
+        for my $path (@results) {
+            my $val = $files->{$path}{$f};
+            print "$val\n" if defined $val;
+        }
+    } elsif ($opt->{list}) {
+        my $width = 0;
+        $width < length($_) and $width = length($_) for @results;
+        for my $path (@results) {
+            printf "%-*s  %s\n", $width, $path, $files->{$path}{description} // '';
+        }
+    } else {
+        print "$_\n" for @results;
+    }
+    return;
+}
+
+# cmd_deps_deb -- emit Debian Depends:/Recommends: or Build-Depends: lines
+sub cmd_deps_deb {
+    my ($deps, $mode) = @_;
+    return unless defined $deps && ref $deps eq 'ARRAY';
+
+    if ($mode eq 'runtime') {
+        my (@requires, %or_groups, @recommends);
+        for my $dep (@$deps) {
+            my $rel = $dep->{relationship} // '';
+            my $pkg = $dep->{deb_package}  // next;
+            if ($rel eq 'requires') {
+                push @requires, defined $dep->{version}
+                    ? "$pkg (>= " . _strip_op($dep->{version}) . ")"
+                    : $pkg;
+            } elsif ($rel eq 'requires_one_of') {
+                push @{$or_groups{$dep->{group} // 'misc'}}, $pkg;
+            } elsif ($rel eq 'recommends') {
+                push @recommends, $pkg;
+            }
+        }
+        for my $g (sort keys %or_groups) {
+            push @requires, join(' | ', @{$or_groups{$g}});
+        }
+        print 'Depends: '    . join(', ', @requires)   . "\n" if @requires;
+        print 'Recommends: ' . join(', ', @recommends) . "\n" if @recommends;
+    } else {
+        my @build = map { $_->{deb_package} }
+            grep { ($_->{relationship} // '') =~ /^build_/ && defined $_->{deb_package} }
+            @$deps;
+        print 'Build-Depends: ' . join(', ', @build) . "\n" if @build;
+    }
+    return;
+}
+
+# cmd_deps_rpm -- emit RPM Requires:/Recommends: or BuildRequires: lines
+sub cmd_deps_rpm {
+    my ($deps, $mode) = @_;
+    return unless defined $deps && ref $deps eq 'ARRAY';
+
+    if ($mode eq 'runtime') {
+        for my $dep (@$deps) {
+            my $rel = $dep->{relationship} // '';
+            my $pkg = $dep->{rpm_package}  // next;
+            if ($rel eq 'requires') {
+                my $ver = defined $dep->{version}
+                    ? " >= " . _strip_op($dep->{version})
+                    : '';
+                print "Requires: $pkg$ver\n";
+            } elsif ($rel eq 'requires_one_of' || $rel eq 'recommends') {
+                print "Recommends: $pkg\n";
+            }
+        }
+    } else {
+        for my $dep (@$deps) {
+            next unless ($dep->{relationship} // '') =~ /^build_/;
+            my $pkg = $dep->{rpm_package} // next;
+            print "BuildRequires: $pkg\n";
+        }
+    }
+    return;
+}
+
+# cmd_find_extra -- walk repo tree and report files not listed in manifest
+sub cmd_find_extra {
+    my ($files, $root) = @_;
+
+    (my $norm_root = $root) =~ s{\\}{/}g;
+
+    my @extra;
+    find({
+        wanted => sub {
+            return unless -f;
+            my $rel = File::Spec->abs2rel($File::Find::name, $root);
+            $rel =~ s{\\}{/}g;
+            return if $files->{$rel};
+            return if _is_generated($rel);
+            push @extra, $rel;
+        },
+        preprocess => sub {
+            (my $norm_dir = $File::Find::dir) =~ s{\\}{/}g;
+            return grep {
+                $_ ne '.git'
+                && $_ ne 'fatlib'
+                && !( $_ eq 'tmp'    && $norm_dir eq "$norm_root/t" )
+                && !( $_ eq 'debian' && -l "$File::Find::dir/$_"    )
+            } @_;
+        },
+        no_chdir => 1,
+    }, $root);
+
+    if (@extra) {
+        print "$_\n" for sort @extra;
+        exit 1;
+    }
+    printf "OK: no unlisted files found (%d manifest entries checked)\n",
+        scalar keys %$files;
+    exit 0;
+}
+
+# _is_generated -- true for build artifacts and editor cruft that clean removes
+sub _is_generated {
+    my ($rel) = @_;
+    return 1 if $rel =~ m{\.(?:swp|bak)$};
+    return 1 if $rel =~ m{~$};
+    return 1 if $rel =~ m{^\#.*\#$};
+    return 1 if $rel =~ m{^man/.*\.gz$};
+    return 1 if $rel =~ m{^changetrack-ng-[^/]+\.(?:tar\.gz|pl)$};
+    return 0;
+}
+
+########################################################################
+# Helpers
+########################################################################
+
+# _find_manifest -- locate MANIFEST.toml: explicit path, or search upward
+sub _find_manifest {
+    my ($explicit) = @_;
+    return $explicit if defined $explicit && -f $explicit;
+
+    my $script_dir = dirname(abs_path($0));
+    for my $candidate (
+        File::Spec->catfile($script_dir, '..', 'MANIFEST.toml'),
+        File::Spec->catfile(getcwd(),    'MANIFEST.toml'),
+    ) {
+        return File::Spec->canonpath($candidate) if -f $candidate;
+    }
+    return undef;
+}
+
+# _strip_op -- remove leading '>= ' from a version string
+sub _strip_op {
+    my ($v) = @_;
+    $v =~ s{^\s*>=\s*}{};
+    return $v;
+}
+
+sub usage {
+    my ($exit) = @_;
+    print <<'END';
+Usage: tools/manifest-query [options]
+
+  --manifest PATH     Path to MANIFEST.toml (default: auto-detect)
+  --dist DIST         List files in DIST (full|deploy|minimal|deb|rpm|arch)
+  --category CAT      Filter by category
+  --tag TAG           Filter by tag
+  --field FIELD       Output named field value instead of file path
+  --validate          Check all listed files exist (relative to cwd)
+  --find-extra        Report files on disk not listed in the manifest
+  --list              List files with descriptions in aligned columns
+  --deps-deb          Emit Debian Depends:/Recommends: lines
+  --build-deps-deb    Emit Debian Build-Depends: lines
+  --deps-rpm          Emit RPM Requires:/Recommends: lines
+  --build-deps-rpm    Emit RPM BuildRequires: lines
+  --help              Show this message
+END
+    exit $exit;
+}

@@ -1,0 +1,786 @@
+# MANIFEST.toml - Authoritative file inventory for changetrack-ng.
+#
+# Fields per file:
+#   description  - one-line description (required)
+#   install_path - installed path with $(MAKE_VAR) placeholders (when installed)
+#   permissions  - installed file permissions: "0755", "0644", "0640"
+#   dist         - tarballs/packages that include this file:
+#                  "full"    make dist (full source tarball)
+#                  "deploy"  make dist-deploy (production deployment tarball)
+#                  "minimal" make dist-minimal (fatpacked single-file tarball)
+#                  "deb"     Debian/Ubuntu dpkg-buildpackage
+#                  "rpm"     RHEL/Fedora rpmbuild
+#                  "arch"    Arch Linux PKGBUILD (future)
+#   tags         - semantic labels for filtering and AI navigation
+#   tested_by    - library modules: which t/*.t files cover this module
+#   tests        - test files: which modules/behaviors are under test
+#   notes        - non-obvious context or caveats
+
+[meta]
+version     = "0.6.0"
+updated     = "2026-05-20"
+homepage    = "https://github.com/cashell/changetrack-ng"
+license     = "GPL-3.0-or-later"
+min_perl    = "5.20"
+
+# Runtime and build dependencies
+
+[[meta.deps]]
+name         = "perl"
+relationship = "requires"
+version      = ">= 5.20"
+deb_package  = "perl"
+rpm_package  = "perl"
+notes        = "Core modules HTTP::Tiny, JSON::PP, IO::Compress::Gzip (all core >= 5.14)"
+
+[[meta.deps]]
+name         = "git"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "git"
+rpm_package  = "git"
+
+[[meta.deps]]
+name         = "rcs"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "rcs"
+rpm_package  = "rcs"
+
+[[meta.deps]]
+name         = "fossil"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "fossil"
+rpm_package  = "fossil"
+
+[[meta.deps]]
+name         = "subversion"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "subversion"
+rpm_package  = "subversion"
+
+[[meta.deps]]
+name         = "mercurial"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "mercurial"
+rpm_package  = "mercurial"
+
+[[meta.deps]]
+name         = "sendmail"
+relationship = "recommends"
+deb_package  = "sendmail | postfix | exim4"
+rpm_package  = "postfix"
+notes        = "Required only when using the Email notifier"
+
+[[meta.deps]]
+name         = "TOML::Tiny"
+relationship = "build_requires"
+source       = "system"
+deb_package  = "libtoml-tiny-perl"
+rpm_package  = "perl-TOML-Tiny"
+cpan_module  = "TOML::Tiny"
+notes        = "Required for tools/manifest-query"
+
+[[meta.deps]]
+name         = "App::FatPacker"
+relationship = "build_optional"
+source       = "system"
+deb_package  = "libapp-fatpacker-perl"
+rpm_package  = "perl-App-FatPacker"
+cpan_module  = "App::FatPacker"
+notes        = "Required for make fatpack only"
+
+[[meta.deps]]
+name         = "pod2man"
+relationship = "build_requires"
+source       = "system"
+deb_package  = "perl"
+rpm_package  = "perl"
+notes        = "Included in standard Perl packages; required for make install-man"
+
+# program -- the main CLI executable
+
+[program."bin/changetrack-ng"]
+description  = "CLI entry point; option parsing and subcommand dispatch"
+install_path = "$(BINDIR)/changetrack-ng"
+permissions  = "0755"
+dist         = ["full", "deploy"]
+tags         = ["cli", "entry-point"]
+
+# library -- core ChangeTrack:: modules
+
+[library."lib/ChangeTrack/Config.pm"]
+description  = "INI v2 config parser; strict key validation; auto-detects v1 format"
+install_path = "$(LIBDIR)/ChangeTrack/Config.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "config"]
+tested_by    = ["t/23-config-resolution.t", "t/24-config-sections.t",
+                "t/25-config-drop-in-dirs.t", "t/26-config-include-directives.t",
+                "t/27-config-cross-file-errors.t"]
+
+[library."lib/ChangeTrack/Lock.pm"]
+description  = "flock(2)-based pidfile locking; timeout and force-unlock modes"
+install_path = "$(LIBDIR)/ChangeTrack/Lock.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "locking"]
+tested_by    = ["t/12-locking.t"]
+
+[library."lib/ChangeTrack/Metadata.pm"]
+description  = "JSONL sidecar metadata store; stat snapshots; atomic save via tmpfile+rename"
+install_path = "$(LIBDIR)/ChangeTrack/Metadata.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "metadata"]
+tested_by    = ["t/03-metadata.t"]
+
+[library."lib/ChangeTrack/Report.pm"]
+description  = "Per-run change accumulator; collects file diffs and events for notifier dispatch"
+install_path = "$(LIBDIR)/ChangeTrack/Report.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "reporting"]
+tested_by    = ["t/21-report.t"]
+
+[library."lib/ChangeTrack/Runner.pm"]
+description  = "Main orchestration engine; config to lock to file scan to VCS commit to notify"
+install_path = "$(LIBDIR)/ChangeTrack/Runner.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "orchestration"]
+tested_by    = ["t/04-runner-rcs.t", "t/10-sensitive.t", "t/11-ignore.t",
+                "t/16-subcommands.t", "t/17-precommit-checks.t", "t/22-verbose-debug.t"]
+
+[library."lib/ChangeTrack/Util.pm"]
+description  = "Shared utilities: hostname(), run_cmd() via IPC::Open3, sync_mirror_path(), set_debug()"
+install_path = "$(LIBDIR)/ChangeTrack/Util.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "utility"]
+tested_by    = ["t/20-util-symlink-mirror.t", "t/22-verbose-debug.t"]
+
+[library."lib/ChangeTrack/Version.pm"]
+description  = "Single-source version authority; all other modules reference this"
+install_path = "$(LIBDIR)/ChangeTrack/Version.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "version"]
+tested_by    = ["t/00-load.t"]
+
+########################################################################
+# library_vcs -- VCS backend modules
+########################################################################
+
+[library_vcs."lib/ChangeTrack/VCS/Base.pm"]
+description  = "Abstract base class for VCS backends; defines commit/diff/log/revert interface"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/Base.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "base"]
+tested_by    = ["t/05-vcs-rcs.t", "t/06-vcs-git.t", "t/13-vcs-fossil.t",
+                "t/14-vcs-svn.t", "t/15-vcs-hg.t"]
+
+[library_vcs."lib/ChangeTrack/VCS/Git.pm"]
+description  = "Git VCS backend; whole-repo mirror model; batch commit; optional push_remote"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/Git.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "git"]
+tested_by    = ["t/06-vcs-git.t"]
+
+[library_vcs."lib/ChangeTrack/VCS/RCS.pm"]
+description  = "RCS VCS backend; per-file model; colon-encoded flat layout; immediate ci -l"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/RCS.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "rcs"]
+tested_by    = ["t/05-vcs-rcs.t"]
+
+[library_vcs."lib/ChangeTrack/VCS/Fossil.pm"]
+description  = "Fossil VCS backend; whole-repo mirror; chdir-based command execution"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/Fossil.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "fossil"]
+tested_by    = ["t/13-vcs-fossil.t"]
+
+[library_vcs."lib/ChangeTrack/VCS/SVN.pm"]
+description  = "Subversion VCS backend; whole-repo mirror; local file:// repo via svnadmin create"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/SVN.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "svn"]
+tested_by    = ["t/14-vcs-svn.t"]
+
+[library_vcs."lib/ChangeTrack/VCS/Mercurial.pm"]
+description  = "Mercurial VCS backend; whole-repo mirror; uses hg -R flag (no chdir)"
+install_path = "$(LIBDIR)/ChangeTrack/VCS/Mercurial.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["vcs", "mercurial"]
+tested_by    = ["t/15-vcs-hg.t"]
+
+########################################################################
+# library_notify -- notifier modules
+########################################################################
+
+[library_notify."lib/ChangeTrack/Notify/Base.pm"]
+description  = "Abstract base class for notifiers; defines send/heartbeat interface"
+install_path = "$(LIBDIR)/ChangeTrack/Notify/Base.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["notify", "base"]
+tested_by    = ["t/07-notify-email.t", "t/08-notify-webhook.t",
+                "t/09-notify-file.t", "t/19-notify-otlp.t"]
+
+[library_notify."lib/ChangeTrack/Notify/Email.pm"]
+description  = "Email notifier; pipes unified diffs to sendmail; heartbeat unconditionally off"
+install_path = "$(LIBDIR)/ChangeTrack/Notify/Email.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["notify", "email"]
+tested_by    = ["t/07-notify-email.t", "t/18-integration-notifiers.t"]
+
+[library_notify."lib/ChangeTrack/Notify/File.pm"]
+description  = "File notifier; appends JSON change events to a local log file"
+install_path = "$(LIBDIR)/ChangeTrack/Notify/File.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["notify", "file"]
+tested_by    = ["t/09-notify-file.t", "t/18-integration-notifiers.t"]
+
+[library_notify."lib/ChangeTrack/Notify/Webhook.pm"]
+description  = "Webhook notifier; HTTP POST JSON to endpoint; 3-attempt retry; TLS bypass option"
+install_path = "$(LIBDIR)/ChangeTrack/Notify/Webhook.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["notify", "webhook"]
+tested_by    = ["t/08-notify-webhook.t", "t/18-integration-notifiers.t"]
+
+[library_notify."lib/ChangeTrack/Notify/OTLP.pm"]
+description  = "OTLP notifier; structured log events via HTTP+JSON; gzip; env-var precedence"
+install_path = "$(LIBDIR)/ChangeTrack/Notify/OTLP.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["notify", "otlp", "opentelemetry"]
+tested_by    = ["t/19-notify-otlp.t", "t/18-integration-notifiers.t"]
+
+########################################################################
+# test
+########################################################################
+
+[test."t/00-load.t"]
+description = "Smoke test; verifies all modules load without errors"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["module-loading"]
+
+[test."t/03-metadata.t"]
+description = "Unit tests for ChangeTrack::Metadata: JSONL sidecar, stat snapshots, atomic save"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Metadata"]
+
+[test."t/04-runner-rcs.t"]
+description = "Integration tests for ChangeTrack::Runner orchestration using the RCS backend"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Runner", "ChangeTrack::VCS::RCS"]
+
+[test."t/05-vcs-rcs.t"]
+description = "Unit tests for ChangeTrack::VCS::RCS: per-file commit model, colon-encoded paths"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::VCS::RCS"]
+
+[test."t/06-vcs-git.t"]
+description = "Unit tests for ChangeTrack::VCS::Git: whole-repo mirror, batch commit, push_remote"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::VCS::Git"]
+
+[test."t/07-notify-email.t"]
+description = "Unit tests for ChangeTrack::Notify::Email: sendmail pipe, heartbeat-off behavior"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Notify::Email"]
+
+[test."t/08-notify-webhook.t"]
+description = "Unit tests for ChangeTrack::Notify::Webhook: HTTP POST JSON, retry logic, TLS bypass"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Notify::Webhook"]
+
+[test."t/09-notify-file.t"]
+description = "Unit tests for ChangeTrack::Notify::File: JSON append-log, heartbeat flag"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Notify::File"]
+
+[test."t/10-sensitive.t"]
+description = "Tests for sensitive file detection and diff suppression in notifications"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["sensitive-file-detection", "ChangeTrack::Runner"]
+
+[test."t/11-ignore.t"]
+description = "Tests for glob-based ignore pattern matching during directory traversal"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ignore-patterns", "ChangeTrack::Runner"]
+
+[test."t/12-locking.t"]
+description = "Unit tests for ChangeTrack::Lock: flock pidfile, timeout, force modes"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Lock"]
+
+[test."t/13-vcs-fossil.t"]
+description = "Unit tests for ChangeTrack::VCS::Fossil: whole-repo SQLite, batch commit"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::VCS::Fossil"]
+
+[test."t/14-vcs-svn.t"]
+description = "Unit tests for ChangeTrack::VCS::SVN: local file:// repo, svnadmin, batch commit"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::VCS::SVN"]
+
+[test."t/15-vcs-hg.t"]
+description = "Unit tests for ChangeTrack::VCS::Mercurial: hg -R flag, no chdir, batch commit"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::VCS::Mercurial"]
+
+[test."t/16-subcommands.t"]
+description = "Integration tests for CLI subcommands: init, status, diff, log, revert, update-ignore"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["CLI-subcommands", "ChangeTrack::Runner"]
+
+[test."t/17-precommit-checks.t"]
+description = "Tests for pre-commit validation checks in the Runner"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["pre-commit-checks", "ChangeTrack::Runner"]
+
+[test."t/18-integration-notifiers.t"]
+description = "Integration tests for Config -> Runner -> Notifier dispatch chain"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["notifier-dispatch", "ChangeTrack::Config", "ChangeTrack::Runner"]
+
+[test."t/19-notify-otlp.t"]
+description = "Unit tests for ChangeTrack::Notify::OTLP: OTLP/HTTP+JSON, gzip, env-var precedence, heartbeat"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Notify::OTLP"]
+
+[test."t/20-util-symlink-mirror.t"]
+description = "Tests for Util::sync_mirror_path and restore_mirror_path symlink handling"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Util", "symlink-mirroring"]
+
+[test."t/21-report.t"]
+description = "Unit tests for ChangeTrack::Report: change accumulator, per-file entries"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["ChangeTrack::Report"]
+
+[test."t/22-verbose-debug.t"]
+description = "Tests for --verbose, --debug, --trace diagnostic output tiers"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["diagnostic-output-tiers", "ChangeTrack::Runner"]
+
+[test."t/23-config-resolution.t"]
+description = "Tests for config file path resolution: -c flag, env var, --system/--user scope flags"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["config-path-resolution", "ChangeTrack::Config"]
+
+[test."t/24-config-sections.t"]
+description = "Tests for INI config section parsing: [global], [notifier:type:name], [track]"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["config-section-parsing", "ChangeTrack::Config"]
+
+[test."t/25-config-drop-in-dirs.t"]
+description = "Tests for conf.d/, track.d/, notifier.d/ drop-in directory config loading"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["config-drop-in-dirs", "ChangeTrack::Config"]
+
+[test."t/26-config-include-directives.t"]
+description = "Tests for @include directives in config files"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["config-include-directives", "ChangeTrack::Config"]
+
+[test."t/27-config-cross-file-errors.t"]
+description = "Tests for fatal parse errors when conflicting scalar keys appear across config files"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["config-cross-file-errors", "ChangeTrack::Config"]
+
+[test."t/28-manifest-query.t"]
+description = "Tests for tools/manifest-query: --validate, --dist, --category, --field, --deps-deb, --build-deps-deb"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["tools/manifest-query"]
+
+########################################################################
+# test_support
+########################################################################
+
+[test_support."t/lib/ChangeTrack/Test/MockSendmail.pm"]
+description = "Mock sendmail binary used by email notifier tests to capture outgoing mail"
+dist        = ["full"]
+tags        = ["test", "support"]
+
+[test_support."t/fixtures/config-v2-basic.ini"]
+description = "Minimal v2 INI config fixture used by config parsing tests"
+dist        = ["full"]
+tags        = ["test", "fixture"]
+
+[test_support."t/fixtures/config-v2-full.ini"]
+description = "Full-featured v2 INI config fixture exercising all section types and options"
+dist        = ["full"]
+tags        = ["test", "fixture"]
+
+[test_support."t/fixtures/manifest-test.toml"]
+description = "Minimal TOML manifest fixture used by t/28-manifest-query.t"
+dist        = ["full"]
+tags        = ["test", "fixture"]
+
+########################################################################
+# config
+########################################################################
+
+[config."etc/changetrack-ng.conf"]
+description  = "Deployed default system configuration; installed mode 0640 (not world-readable)"
+install_path = "$(SYSCONFDIR)/changetrack-ng/changetrack-ng.conf"
+permissions  = "0640"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["config", "system"]
+notes        = "Only installed if no config file already exists at the target path (see _install_conf in Makefile)"
+
+########################################################################
+# example
+########################################################################
+
+[example."packaging/etc/examples/changetrack-ng.conf-full"]
+description  = "Full-featured example config illustrating all available options"
+install_path = "$(DOCDIR)/examples/changetrack-ng.conf-full"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config"]
+
+[example."packaging/etc/examples/changetrack-ng.conf-minimal"]
+description  = "Minimal example config for quick-start deployments"
+install_path = "$(DOCDIR)/examples/changetrack-ng.conf-minimal"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config"]
+
+[example."packaging/etc/examples/changetrack-ng.conf-user"]
+description  = "Example user-scope config for ~/.config/changetrack-ng/ installations"
+install_path = "$(DOCDIR)/examples/changetrack-ng.conf-user"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "user"]
+
+[example."packaging/etc/examples/changetrack-ng.conf-default"]
+description  = "Example showing defaults-file usage (CHANGETRACK_CONFIG, CHANGETRACK_EXTRA_ARGS)"
+install_path = "$(DOCDIR)/examples/changetrack-ng.conf-default"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "defaults"]
+
+[example."packaging/etc/examples/conf.d/local-settings.conf"]
+description  = "Example conf.d drop-in fragment for local overrides"
+install_path = "$(DOCDIR)/examples/conf.d/local-settings.conf"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "drop-in"]
+
+[example."packaging/etc/examples/track.d/system-core.conf"]
+description  = "Example track.d drop-in fragment for common system paths"
+install_path = "$(DOCDIR)/examples/track.d/system-core.conf"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "drop-in"]
+
+[example."packaging/etc/examples/notifier.d/email.conf"]
+description  = "Example notifier.d drop-in fragment for email notifier configuration"
+install_path = "$(DOCDIR)/examples/notifier.d/email.conf"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "drop-in", "notify"]
+
+[example."packaging/etc/examples/notifier.d/otlp.conf"]
+description  = "Example notifier.d drop-in fragment for OTLP notifier configuration"
+install_path = "$(DOCDIR)/examples/notifier.d/otlp.conf"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["example", "config", "drop-in", "notify"]
+
+########################################################################
+# man
+########################################################################
+
+[man."man/changetrack-ng.8"]
+description  = "Man page source for the changetrack-ng(8) command reference"
+install_path = "$(MANDIR)/man8/changetrack-ng.8.gz"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["man", "doc"]
+notes        = "Source is pod2man input; make man generates man/changetrack-ng.8.gz; the .gz is installed"
+
+[man."man/changetrack-ng.conf.5"]
+description  = "Man page source for the changetrack-ng.conf(5) config file reference"
+install_path = "$(MANDIR)/man5/changetrack-ng.conf.5.gz"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["man", "doc"]
+notes        = "Source is pod2man input; make man generates man/changetrack-ng.conf.5.gz; the .gz is installed"
+
+########################################################################
+# doc
+########################################################################
+
+[doc."README.md"]
+description = "User-facing project overview, quick-start, and feature summary"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["doc", "user"]
+
+[doc."CHANGELOG.md"]
+description = "Version history and release notes in Keep a Changelog format"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["doc", "user"]
+
+[doc."INSTALL.md"]
+description = "Installation instructions for all supported packaging methods"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["doc", "user"]
+
+[doc."CONTRIBUTING.md"]
+description = "Contributor guide: coding conventions, testing, PR workflow"
+tags        = ["doc", "user"]
+
+[doc."ARCHITECTURE.md"]
+description = "System design, data flow, module relationships, and security model"
+tags        = ["doc", "user"]
+
+[doc."PRODUCT.md"]
+description = "Product overview: feature set, subcommands, configuration, scheduling"
+tags        = ["doc", "user"]
+
+########################################################################
+# dev_doc
+########################################################################
+
+[dev_doc."PLAN.md"]
+description = "Roadmap and implementation phases (large; read only when phase details are needed)"
+tags        = ["dev-doc"]
+notes       = "52KB+; CLAUDE.md instructs agents not to read this by default"
+
+[dev_doc."TODO.md"]
+description = "Known gaps, deferred work, and per-module improvement notes"
+tags        = ["dev-doc"]
+
+[dev_doc."CLAUDE.md"]
+description = "AI assistant instructions: architecture quick-ref, patterns, constraints, version bump checklist"
+tags        = ["dev-doc", "agent"]
+
+[dev_doc."docs/superpowers/specs/2026-05-20-manifest-design.md"]
+description = "Approved design spec for MANIFEST.toml format and tools/manifest-query interface"
+tags        = ["dev-doc", "spec"]
+
+[dev_doc."docs/superpowers/plans/2026-05-20-manifest.md"]
+description = "Implementation plan for the MANIFEST.toml and manifest-query work"
+tags        = ["dev-doc", "plan"]
+
+########################################################################
+# packaging
+########################################################################
+
+[packaging."packaging/debian/control"]
+description = "Debian package metadata: name, version, deps, maintainer, description"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian"]
+
+[packaging."packaging/debian/changelog"]
+description = "Debian package changelog in dpkg-style format (required by lintian)"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian"]
+
+[packaging."packaging/debian/copyright"]
+description = "Debian copyright file with SPDX-compatible license information"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian"]
+
+[packaging."packaging/debian/rules"]
+description = "Debian build rules (debhelper-based makefile invoking make install)"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian"]
+
+[packaging."packaging/debian/source/format"]
+description = "Debian source format declaration (3.0 quilt)"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian"]
+
+[packaging."packaging/debian/changetrack-ng.service"]
+description = "Debian-specific systemd service unit for dpkg-trigger integration"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian", "systemd"]
+
+[packaging."packaging/debian/changetrack-ng.timer"]
+description = "Debian-specific systemd timer unit for dpkg-trigger integration"
+dist        = ["full", "deb"]
+tags        = ["packaging", "debian", "systemd"]
+
+[packaging."packaging/rpm/changetrack-ng.spec"]
+description = "RPM spec file for building .rpm package on RHEL/Fedora with rpmbuild"
+dist        = ["full", "rpm"]
+tags        = ["packaging", "rpm"]
+
+[packaging."packaging/hooks/apt-pre"]
+description = "apt pre-transaction hook: runs changetrack-ng before package operations to snapshot state"
+install_path = "/etc/apt/apt.conf.d/80changetrack-ng-pre"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb"]
+tags         = ["packaging", "hooks", "apt"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-hooks"
+
+[packaging."packaging/hooks/apt-post"]
+description = "apt post-transaction hook: runs changetrack-ng after package operations to record changes"
+install_path = "/etc/apt/apt.conf.d/80changetrack-ng-post"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb"]
+tags         = ["packaging", "hooks", "apt"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-hooks"
+
+[packaging."packaging/hooks/apt-pre-debug"]
+description = "Debug variant of apt-pre hook; logs extra diagnostics to /var/log/"
+install_path = "/etc/apt/apt.conf.d/80changetrack-ng-pre"
+permissions  = "0644"
+dist         = ["full", "deb"]
+tags         = ["packaging", "hooks", "apt"]
+notes        = "Installed via make install-debug-hooks; replaces the production apt-pre hook"
+
+[packaging."packaging/hooks/apt-post-debug"]
+description = "Debug variant of apt-post hook; logs extra diagnostics to /var/log/"
+install_path = "/etc/apt/apt.conf.d/80changetrack-ng-post"
+permissions  = "0644"
+dist         = ["full", "deb"]
+tags         = ["packaging", "hooks", "apt"]
+notes        = "Installed via make install-debug-hooks; replaces the production apt-post hook"
+
+[packaging."packaging/hooks/dnf/changetrack_ng.conf"]
+description = "DNF plugin config file enabling the changetrack-ng dnf plugin"
+install_path = "/etc/dnf/plugins/changetrack_ng.conf"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "rpm"]
+tags         = ["packaging", "hooks", "dnf"]
+
+[packaging."packaging/hooks/dnf/changetrack_ng.py"]
+description = "DNF plugin Python script: pre/post-transaction hooks for dnf operations"
+install_path = "/etc/dnf/plugins/changetrack_ng.py"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "rpm"]
+tags         = ["packaging", "hooks", "dnf"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-hooks"
+
+[packaging."packaging/hooks/pacman-pre.hook"]
+description = "pacman pre-transaction hook: snapshots tracked files before package operations"
+install_path = "/usr/share/libalpm/hooks/changetrack-ng-pre.hook"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal"]
+tags         = ["packaging", "hooks", "pacman"]
+notes        = "@BINDIR@ is substituted at install time by make install-hooks"
+
+[packaging."packaging/hooks/pacman-post.hook"]
+description = "pacman post-transaction hook: records changes after package operations"
+install_path = "/usr/share/libalpm/hooks/changetrack-ng-post.hook"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal"]
+tags         = ["packaging", "hooks", "pacman"]
+notes        = "@BINDIR@ is substituted at install time by make install-hooks"
+
+[packaging."packaging/systemd/changetrack-ng.service"]
+description = "systemd service unit for manual invocation; sources defaults file for config path"
+install_path = "$(SYSTEMDDIR)/changetrack-ng.service"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["packaging", "systemd"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-systemd"
+
+[packaging."packaging/systemd/changetrack-ng.timer"]
+description = "systemd timer unit; hourly with Persistent=true to catch up after downtime"
+install_path = "$(SYSTEMDDIR)/changetrack-ng.timer"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["packaging", "systemd"]
+
+[packaging."packaging/cron/changetrack-ng"]
+description = "cron.hourly script for systems using cron instead of systemd timer"
+install_path = "$(CRONDIR)/changetrack-ng"
+permissions  = "0755"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["packaging", "cron"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-cron"
+
+[packaging."packaging/etc/changetrack-ng.default"]
+description = "Shell-sourceable defaults file; sets CHANGETRACK_CONFIG and CHANGETRACK_EXTRA_ARGS"
+install_path = "$(DEFAULTSDIR)/changetrack-ng"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["packaging", "defaults", "debian"]
+notes        = "Installed to /etc/default/ on Debian or /etc/sysconfig/ on RHEL; sourced by cron, systemd, and hooks"
+
+########################################################################
+# build
+########################################################################
+
+[build."Makefile"]
+description = "GNU Make build system: install, dist, test, fatpack, and hook targets"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["build"]
+
+[build."MANIFEST.toml"]
+description = "Authoritative TOML file inventory: all repo files with install paths, dist targets, and tags"
+dist        = ["full"]
+tags        = ["build", "manifest"]
+notes       = "Phase 2 will wire dist targets to read file lists from this file via tools/manifest-query"
+
+[build."tools/manifest-query"]
+description = "Perl script querying MANIFEST.toml: --validate, --dist, --category, --tag, --field, --deps-deb/rpm"
+dist        = ["full"]
+tags        = ["build", "manifest"]
+notes       = "Requires TOML::Tiny (build_requires); used by make manifest-lint and planned Phase 2 dist targets"
+
+########################################################################
+# legal
+########################################################################
+
+[legal."LICENSE"]
+description = "GNU General Public License v3 or later (GPL-3.0-or-later)"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["legal"]
+
+[legal.".reuse/dep5"]
+description = "REUSE-compliant dep5 file covering files that cannot carry inline SPDX tags"
+dist        = ["full"]
+tags        = ["legal", "reuse"]
+
+[legal.".gitignore"]
+description = "Git ignore patterns for build artifacts, temp files, and generated outputs"
+dist        = ["full"]
+tags        = ["legal", "vcs"]

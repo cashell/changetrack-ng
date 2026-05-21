@@ -119,7 +119,19 @@ None currently open.
 
 ## Packaging / Distribution
 
-(All packaging tickets currently resolved.)
+### PKG-3: Reverse lint for MANIFEST.toml (files on disk not in manifest)
+
+`make manifest-lint` currently runs `tools/manifest-query --validate`, which checks that every file
+listed in MANIFEST.toml exists on disk.  The complement — detecting files present on disk that are
+not listed in MANIFEST.toml — is not yet implemented.
+
+**Desired behaviour:** A `--reverse-validate` (or `make manifest-reverse-lint`) mode that walks the
+tracked directories (bin/, lib/, etc/, man/, t/, tools/, packaging/, and root-level files) and
+reports any file not referenced in MANIFEST.toml.
+
+**Why deferred:** Requires encoding the directory-walk scope in either the manifest or the script,
+and handling generated files (.gz man pages, *.tar.gz, fatpack .pl) that intentionally exist on
+disk but are not listed.  Low priority until Phase 2 manifest-driven dist refactor is complete.
 
 ---
 

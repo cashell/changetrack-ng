@@ -9,6 +9,11 @@
 - `IO::Socket::SSL` for HTTPS webhook/OTLP endpoints (not core; see below)
 - `make` (GNU make or BSD make)
 
+### Build-time-only requirements
+
+- `TOML::Tiny` (`libtoml-tiny-perl` on Debian/Ubuntu, `perl-TOML-Tiny` on RHEL+EPEL, or `cpanm TOML::Tiny`) — required only for `tools/manifest-query` and `make manifest-lint`.  Not needed for `make install` or runtime.
+- `pod2man` (included in standard Perl packages) — required for `make install-man`.
+
 ## Basic Install
 
 ```sh

@@ -25,6 +25,7 @@ No build step required — Perl modules are used directly from `lib/`.
 
 - Start with this file and only the files directly related to the user request.
 - Consult `ARCHITECTURE.md` for system design, data flow, and security model.
+- Consult `MANIFEST.toml` as the authoritative file index: every repo file is listed with its category, install path, dist targets, and tags — useful for navigation without grepping the filesystem.
 - Do **not** read `PLAN.md` by default. It is large (52KB) and should be consulted only when roadmap/phase details are explicitly needed.
 - Prefer targeted symbol/file searches over reading large files end-to-end.
 - Keep responses concise: report only what changed, why, and how it was validated.
@@ -251,6 +252,7 @@ On every version bump, update **all** of the following in sync:
 | `packaging/rpm/changetrack-ng.spec` | `Version:` field and a new `%changelog` entry |
 | `packaging/debian/changelog` | New entry in `dpkg-style` format (version, distro, urgency, details, maintainer line) |
 | `PRODUCT.md` | `Version:` header in the frontmatter |
+| `MANIFEST.toml` | `[meta] version` and `updated` fields |
 
 ## Copyright and Licensing
 

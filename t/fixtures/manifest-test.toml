@@ -1,0 +1,66 @@
+[meta]
+version  = "0.1.0"
+homepage = "https://example.com"
+license  = "GPL-3.0-or-later"
+min_perl = "5.20"
+
+[[meta.deps]]
+name         = "perl"
+relationship = "requires"
+version      = ">= 5.20"
+deb_package  = "perl"
+rpm_package  = "perl"
+
+[[meta.deps]]
+name         = "git"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "git"
+rpm_package  = "git"
+
+[[meta.deps]]
+name         = "rcs"
+relationship = "requires_one_of"
+group        = "vcs_backend"
+deb_package  = "rcs"
+rpm_package  = "rcs"
+
+[[meta.deps]]
+name         = "sendmail"
+relationship = "recommends"
+deb_package  = "sendmail | postfix"
+rpm_package  = "postfix"
+
+[[meta.deps]]
+name         = "TOML::Tiny"
+relationship = "build_requires"
+source       = "system"
+deb_package  = "libtoml-tiny-perl"
+rpm_package  = "perl-TOML-Tiny"
+
+[program."bin/test-tool"]
+description  = "Test CLI tool"
+install_path = "/usr/bin/test-tool"
+permissions  = "0755"
+dist         = ["full", "deploy"]
+tags         = ["cli"]
+
+[library."lib/Test/Foo.pm"]
+description  = "Test library module Foo"
+install_path = "/usr/lib/test/Foo.pm"
+permissions  = "0644"
+dist         = ["full", "deploy"]
+tags         = ["core", "foo"]
+tested_by    = ["t/01-foo.t"]
+
+[library."lib/Test/Bar.pm"]
+description  = "Test library module Bar"
+install_path = "/usr/lib/test/Bar.pm"
+permissions  = "0644"
+dist         = ["full"]
+tags         = ["core", "bar"]
+
+[packaging."packaging/debian/control"]
+description = "Debian package control file"
+dist        = ["deb"]
+tags        = ["packaging", "debian"]

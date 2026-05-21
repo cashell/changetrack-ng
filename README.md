@@ -268,10 +268,34 @@ First-class user targets:
 ```sh
 make test          # Run full test suite (requires prove)
 prove -l t/01-config.t   # Run a single test file
+make manifest-lint # Validate MANIFEST.toml (checks all listed files exist)
 ```
 
 Tests live in `t/` and cover all implemented modules.  All tests use only
 core Perl modules; no network access required.
+
+## File Inventory
+
+`MANIFEST.toml` is the authoritative inventory of every file in the repository.
+Each entry records the file's description, install path, permissions, which
+distribution tarballs include it, and tags for navigation.
+
+`tools/manifest-query` is a Perl script that reads `MANIFEST.toml` via
+`TOML::Tiny` and answers structured queries:
+
+```sh
+tools/manifest-query --dist full          # files in the full source tarball
+tools/manifest-query --dist deploy        # files in the deploy tarball
+tools/manifest-query --category library   # all library modules
+tools/manifest-query --tag vcs            # all files tagged "vcs"
+tools/manifest-query --validate           # verify all listed files exist on disk
+tools/manifest-query --deps-deb           # Depends:/Recommends: lines for debian/control
+tools/manifest-query --build-deps-deb     # Build-Depends: lines for debian/control
+```
+
+`TOML::Tiny` (`libtoml-tiny-perl` / `perl-TOML-Tiny`) is required to run
+`tools/manifest-query` but is **not** a runtime dependency of changetrack-ng
+itself.
 
 ## License
 

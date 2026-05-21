@@ -271,6 +271,17 @@ prove -l -v t/               # Verbose output
 
 ---
 
+## Manifest Maintenance
+
+`MANIFEST.toml` is the authoritative file inventory.  Keep it accurate:
+
+- **Adding a file:** add a corresponding `[category."path"]` entry in the same commit.
+- **Removing a file:** remove its entry from `MANIFEST.toml` in the same commit.
+- **Run `make manifest-lint` before committing** to verify all listed files exist on disk.
+  (`TOML::Tiny` / `libtoml-tiny-perl` is required for this check.)
+
+---
+
 ## Commit Guidelines
 
 - Write clear, descriptive commit messages (imperative mood: "Add webhook retry logic")

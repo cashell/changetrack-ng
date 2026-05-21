@@ -20,7 +20,7 @@ DESTDIR     ?=
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults
+.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -44,9 +44,18 @@ all:
 	@echo "  make install-user-cron    Print crontab entry for user"
 	@echo "  make debian-build-setup   Expose packaging/debian as debian/ (for dpkg-buildpackage)"
 	@echo "  make debian-build-cleanup Remove debian/ symlink"
+	@echo "  make clean           Remove generated files (tarballs, fatpack, man .gz)"
+	@echo "  make manifest-lint   Validate MANIFEST.toml (checks all listed files exist)"
+	@echo "  make manifest-extra  Find files on disk not listed in MANIFEST.toml"
 
 test:
 	prove -l t/
+
+manifest-lint:
+	perl -MTOML::Tiny tools/manifest-query --validate
+
+manifest-extra:
+	perl -MTOML::Tiny tools/manifest-query --find-extra
 
 man: man/changetrack-ng.8.gz man/changetrack-ng.conf.5.gz
 
@@ -146,36 +155,38 @@ fatpack:
 	@echo "Created: $(NAME)-$(VERSION).pl"
 
 dist:
-	tar -czf $(NAME)-$(VERSION).tar.gz \
-	    --exclude='.git' \
-	    --exclude='*.tar.gz' \
-	    --exclude='*.pl' \
-	    --exclude='t/tmp' \
-	    --exclude='man/*.gz' \
-	    --exclude='packaging/debian/changetrack-ng' \
-	    --exclude='packaging/debian/.debhelper' \
-	    --transform "s,^,$(NAME)-$(VERSION)/," \
-	    bin lib etc man packaging t Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+	@perl -e 'use TOML::Tiny' 2>/dev/null || \
+	    { echo "Error: TOML::Tiny required for make dist. Install libtoml-tiny-perl or perl-TOML-Tiny."; exit 1; }
+	perl tools/manifest-query --dist full | \
+	    tar -czf $(NAME)-$(VERSION).tar.gz \
+	        --exclude='.git' \
+	        --exclude='*.tar.gz' \
+	        --exclude='man/*.gz' \
+	        --transform "s,^,$(NAME)-$(VERSION)/," \
+	        --files-from=-
 
-# Production deployment tarball: program, libs, configs, docs, hooks, scheduling, Makefile.
+# Production deployment tarball: program, libs, configs, man pages, hooks, scheduling.
 # No test suite, packaging metadata, or development files.
 dist-deploy:
-	tar -czf $(NAME)-$(VERSION)-deploy.tar.gz \
-	    --exclude='*.tar.gz' \
-	    --exclude='man/*.gz' \
-	    --transform "s,^,$(NAME)-$(VERSION)/," \
-	    bin lib etc man packaging/systemd packaging/cron packaging/hooks packaging/etc \
-	    Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+	@perl -e 'use TOML::Tiny' 2>/dev/null || \
+	    { echo "Error: TOML::Tiny required for make dist-deploy. Install libtoml-tiny-perl or perl-TOML-Tiny."; exit 1; }
+	perl tools/manifest-query --dist deploy | \
+	    tar -czf $(NAME)-$(VERSION)-deploy.tar.gz \
+	        --exclude='man/*.gz' \
+	        --transform "s,^,$(NAME)-$(VERSION)/," \
+	        --files-from=-
 
-# Minimal deployment tarball: fatpacked single-file script + essential support files.
-# Requires fatpack to have been run first (or runs it automatically).
+# Minimal deployment tarball: fatpacked single-file script + support files.
+# Binary modules (bin/, lib/) are replaced by the fatpacked .pl — not listed in manifest's
+# "minimal" dist so they are excluded automatically.
 dist-minimal: fatpack
-	tar -czf $(NAME)-$(VERSION)-minimal.tar.gz \
-	    --exclude='*.tar.gz' \
-	    --exclude='man/*.gz' \
-	    --transform "s,^,$(NAME)-$(VERSION)/," \
-	    $(NAME)-$(VERSION).pl etc man packaging/systemd packaging/cron packaging/hooks packaging/etc \
-	    Makefile LICENSE README.md INSTALL.md CHANGELOG.md
+	@perl -e 'use TOML::Tiny' 2>/dev/null || \
+	    { echo "Error: TOML::Tiny required for make dist-minimal. Install libtoml-tiny-perl or perl-TOML-Tiny."; exit 1; }
+	{ perl tools/manifest-query --dist minimal; echo "$(NAME)-$(VERSION).pl"; } | \
+	    tar -czf $(NAME)-$(VERSION)-minimal.tar.gz \
+	        --exclude='man/*.gz' \
+	        --transform "s,^,$(NAME)-$(VERSION)/," \
+	        --files-from=-
 
 clean:
 	find t/ -name '*.tmp' -delete 2>/dev/null; true
