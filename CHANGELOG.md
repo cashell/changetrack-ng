@@ -6,6 +6,49 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **`emit_recipients` config key** (both `otlp` and `file` notifiers, default `0`).
+  When enabled, each change record includes a `config_change.notified` attribute
+  listing the configured recipients for that file. Off by default to keep
+  recipient lists out of the telemetry stream.
+- **`max_diff_bytes` config key** (both `otlp` and `file` notifiers, default `0` =
+  unlimited). Caps the size of the `config_change.diff` attribute in the emitted
+  record. When a diff exceeds the cap it is truncated and a
+  `config_change.diff_truncated = true` flag is added to the record. The full diff
+  always remains in the VCS; this only bounds the notification payload. Sensitive-file
+  suppressed-diff placeholders are never truncated.
+- **`severity_change` config key** (both `otlp` and `file` notifiers, default
+  `INFO`). Severity name assigned to file-change, file-create, and file-remove
+  event records. Accepts `DEBUG`, `INFO`, `WARN`, or `ERROR` (case-insensitive);
+  invalid or blank values fall back to `INFO`.
+- **`severity_heartbeat` config key** (both `otlp` and `file` notifiers, default
+  `DEBUG`). Severity name for heartbeat ("nothing changed") records.
+- **`severity_warning` config key** (both `otlp` and `file` notifiers, default
+  `WARN`). Severity name for scan-warning records.
+- **Canonical OTel attribute model on both notifiers.** Every event record now
+  carries a common set of attributes: `file.path`, `file.name`, `file.directory`,
+  `config_change.type`, `config_change.sensitive`, `config_change.diff`,
+  `file.mode`, `file.owner.name`, `file.group.name`, `file.size`,
+  `changetrack.files_tracked`, `changetrack.run_duration_ms`. Event name values
+  are `changetrack.file.changed`, `changetrack.file.created`,
+  `changetrack.file.removed`, `changetrack.run.heartbeat`,
+  `changetrack.run.warning`.
+- **Occurred-time vs observed-time distinction.** Both notifiers now populate
+  separate occurred and observed timestamps per record. Occurred time is the
+  file mtime (mapped to `timeUnixNano` / `timestamp`); observed time is the
+  scan start (`observedTimeUnixNano` / `observed_timestamp`). Records without
+  an mtime fall back to observed time for both fields.
+
+### Changed
+
+- **File notifier output format.** The File notifier now writes one
+  OTel-shaped JSON record **per event** (one per changed file, one per
+  heartbeat, one per warning) as append-only NDJSON, replacing the previous
+  single-object-per-run format. Each record carries `timestamp`,
+  `observed_timestamp`, `event_name`, `severity_text`, `severity_number`,
+  `body`, `resource`, and an `attributes` map.
+
 ## [0.6.0] - 2026-05-19
 
 ### Breaking Changes

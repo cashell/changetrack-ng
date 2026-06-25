@@ -36,10 +36,11 @@ commit step.
 
 =over 4
 
-=item $report->add_change(\%record)
+=item $report->add_change(%fields)
 
-Append a change record.  Recognized keys: C<path>, C<diff>,
-C<is_sensitive>, C<action> (C<"add">, C<"modify">, C<"delete">).
+Append a change record.  Accepts a flat key-value list.  Recognized keys:
+C<path>, C<is_new>, C<is_sensitive>, C<diff>, C<meta_change>, C<recipients>,
+and C<stat> (a metadata hashref normalized into C<file_meta>).
 
 =item $report->add_warning($msg)
 
@@ -91,9 +92,10 @@ sub new {
 
 # add_change -- Append a change record for a modified or new file.
 # Recognized keys: path, is_new, is_removed, is_sensitive, diff,
-# meta_change, recipients.
+# meta_change, recipients, stat (hashref from Metadata::record_for).
 sub add_change {
     my ($self, %args) = @_;
+    my $st = $args{stat} // {};
     push @{ $self->{changes} }, {
         path         => $args{path},
         is_new       => $args{is_new}       // 0,
@@ -102,6 +104,13 @@ sub add_change {
         diff         => $args{diff}         // [],
         meta_change  => $args{meta_change}  // '',
         recipients   => $args{recipients}   // [],
+        file_meta    => {
+            mode  => $st->{mode},
+            owner => $st->{user},
+            group => $st->{group},
+            size  => $st->{size},
+            mtime => $st->{mtime},
+        },
     };
 }
 
@@ -116,6 +125,8 @@ sub add_removed {
         diff         => [],
         meta_change  => '(file removed from disk)',
         recipients   => $args{recipients} // [],
+        file_meta    => { mode => undef, owner => undef, group => undef,
+                          size => undef, mtime => undef },
     };
 }
 

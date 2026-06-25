@@ -237,7 +237,39 @@ heartbeat   = 1
 via the environment rather than hardcoding bearer tokens in the config file.
 
 ### 4. File Log
-Appends individual JSON objects (one per run) to a local log file, ensuring a machine-readable audit trail exists locally alongside the VCS repo.
+Appends one OTel-shaped JSON record per event (one per changed file, one per
+heartbeat, one per warning) to a local NDJSON log file, ensuring a
+machine-readable audit trail exists locally alongside the VCS repo.
+
+### Shared OTLP and File Notifier Config Keys
+
+The following keys are supported by both the `otlp` and `file` notifiers:
+
+| Key | Default | Description |
+|---|---|---|
+| `emit_recipients` | `0` | When `1`, each change record includes a `config_change.notified` attribute listing the configured recipients for that file. Off by default to keep recipient lists out of the telemetry stream. |
+| `max_diff_bytes` | `0` (unlimited) | Caps the size of the `config_change.diff` attribute in the emitted record. When a diff exceeds the cap, the diff is truncated and `config_change.diff_truncated = true` is added. The full diff is always retained in the VCS. Sensitive-file suppressed-diff placeholders are never truncated. |
+| `severity_change` | `INFO` | Severity name for file-change, file-create, and file-remove records. Accepts `DEBUG`, `INFO`, `WARN`, or `ERROR` (case-insensitive). Invalid or blank values fall back to `INFO`. |
+| `severity_heartbeat` | `DEBUG` | Severity name for heartbeat ("nothing changed") records. Same accepted values as `severity_change`. |
+| `severity_warning` | `WARN` | Severity name for scan-warning records. Same accepted values as `severity_change`. |
+
+Example using non-default severities and diff truncation:
+
+```ini
+[notifier:otlp:default]
+enabled           = true
+endpoint          = https://otelcol.example.com:4318/v1/logs
+heartbeat         = 1
+severity_change   = WARN
+severity_warning  = ERROR
+max_diff_bytes    = 65536
+
+[notifier:file:audit]
+enabled           = true
+path              = /var/log/changetrack-ng.log
+emit_recipients   = 1
+max_diff_bytes    = 32768
+```
 
 ## Install Paths
 

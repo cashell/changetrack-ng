@@ -100,4 +100,43 @@ sub _diff_text_for {
     return @{ $change->{diff} // [] };
 }
 
+# _truncate_diff -- Cap a diff string at max_diff_bytes characters.
+# Returns ($text, $was_truncated).  max_diff_bytes of 0 (or unset) means
+# unlimited.  substr never splits a multibyte character.
+sub _truncate_diff {
+    my ($self, $text) = @_;
+    my $limit = $self->{max_diff_bytes} // 0;
+    return ($text, 0) unless $limit && $limit > 0;
+    return ($text, 0) if length($text) <= $limit;
+    my $cut = substr($text, 0, $limit);
+    return ($cut . "\n[diff truncated -- exceeded max_diff_bytes ($limit)]", 1);
+}
+
+# Severity name -> OTel severityNumber.  Single source of truth for both
+# notifiers.  Only the levels changetrack-ng actually emits are listed.
+my %SEVERITY = (
+    DEBUG => 5,
+    INFO  => 9,
+    WARN  => 13,
+    ERROR => 17,
+);
+
+# _severity_for -- Map a severity NAME (case-insensitive) to (number, text).
+# Unknown/undef -> (0, 'UNSPECIFIED').
+sub _severity_for {
+    my ($self, $name) = @_;
+    my $key = defined $name ? uc $name : '';
+    return ($SEVERITY{$key}, $key) if exists $SEVERITY{$key};
+    return (0, 'UNSPECIFIED');
+}
+
+# _severity_cfg -- Resolve $self->{$key}; fall back to $default_name when the
+# configured value is missing or not a recognised severity name.
+sub _severity_cfg {
+    my ($self, $key, $default_name) = @_;
+    my ($num, $text) = $self->_severity_for($self->{$key});
+    return ($num, $text) if $num;             # valid configured value
+    return $self->_severity_for($default_name);
+}
+
 1;

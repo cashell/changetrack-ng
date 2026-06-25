@@ -280,19 +280,21 @@ sub make_report {
 
     my %a = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(exists $a{'ct.path'}{stringValue},      'ct.path uses stringValue');
-    ok(exists $a{'ct.is_new'}{boolValue},      'ct.is_new uses boolValue');
-    ok(exists $a{'ct.is_sensitive'}{boolValue},'ct.is_sensitive uses boolValue');
-    ok(exists $a{'ct.files_tracked'}{intValue},'ct.files_tracked uses intValue');
-    # intValue must be a string (spec: int64 encoded as string)
-    is(ref($a{'ct.files_tracked'}{intValue}), '', 'ct.files_tracked intValue is a scalar (string)');
+    ok(exists $a{'file.path'}{stringValue},          'file.path uses stringValue');
+    ok(exists $a{'config_change.type'}{stringValue}, 'config_change.type uses stringValue');
+    is($a{'config_change.type'}{stringValue}, 'modified', 'config_change.type=modified for an edit');
+    ok(exists $a{'config_change.sensitive'}{boolValue}, 'config_change.sensitive uses boolValue');
+    ok(exists $a{'changetrack.files_tracked'}{intValue}, 'changetrack.files_tracked uses intValue');
+    is(ref($a{'changetrack.files_tracked'}{intValue}), '', 'files_tracked intValue is a scalar (string)');
+    ok(exists $a{'event.name'}{stringValue},         'event.name present on change record');
+    is($a{'event.name'}{stringValue}, 'changetrack.file.changed', 'event.name=changetrack.file.changed');
 }
 
 ########################################################################
-# Ct.Heartbeat=False On Change Records
+# Event.Name Discriminates Change Vs Heartbeat Records
 ########################################################################
 {
-    my $body_file = File::Spec->catfile($tmpdir, 'hb_false.json');
+    my $body_file = File::Spec->catfile($tmpdir, 'evname.json');
     my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
 
     delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
@@ -307,12 +309,13 @@ sub make_report {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(exists $a{'ct.heartbeat'}, 'ct.heartbeat attr present on change record');
-    ok(!$a{'ct.heartbeat'}{boolValue}, 'ct.heartbeat=false on change record');
+    is($a{'event.name'}{stringValue}, 'changetrack.file.changed',
+        'change record event.name is changetrack.file.changed (not heartbeat)');
+    ok(!exists $a{'ct.heartbeat'}, 'ct.heartbeat attribute removed');
 }
 
 ########################################################################
-# Ct.Files_Tracked And Ct.Run_Duration_Ms Present
+# Changetrack.Files_Tracked And Changetrack.Run_Duration_Ms Present
 ########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'fields.json');
@@ -330,8 +333,8 @@ sub make_report {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(exists $a{'ct.files_tracked'},    'ct.files_tracked present');
-    ok(exists $a{'ct.run_duration_ms'},  'ct.run_duration_ms present');
+    ok(exists $a{'changetrack.files_tracked'},    'changetrack.files_tracked present');
+    ok(exists $a{'changetrack.run_duration_ms'},  'changetrack.run_duration_ms present');
 }
 
 ########################################################################
@@ -357,8 +360,9 @@ sub make_report {
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
     ok(defined $rec,                     'Heartbeat: log record present');
-    is($rec->{severityNumber}, 9,        'Heartbeat: severityNumber = INFO(9)');
-    ok($a{'ct.heartbeat'}{boolValue},    'Heartbeat: ct.heartbeat=true');
+    is($rec->{severityNumber}, 5,        'Heartbeat: severityNumber = DEBUG(5)');
+    is($a{'event.name'}{stringValue}, 'changetrack.run.heartbeat',
+        'Heartbeat: event.name is changetrack.run.heartbeat');
     like($rec->{body}{stringValue}, qr/heartbeat/i, 'Heartbeat: body message mentions heartbeat');
 }
 
@@ -685,8 +689,8 @@ SKIP: {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok($a{'ct.is_sensitive'}{boolValue}, 'Sensitive suppress: ct.is_sensitive=true');
-    ok(!exists $a{'ct.diff'},            'Sensitive suppress: ct.diff omitted');
+    ok($a{'config_change.sensitive'}{boolValue}, 'Sensitive suppress: config_change.sensitive=true');
+    ok(!exists $a{'config_change.diff'},         'Sensitive suppress: config_change.diff omitted');
 }
 
 ########################################################################
@@ -710,8 +714,8 @@ SKIP: {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(exists $a{'ct.diff'},              'sensitive_notify=allow: ct.diff present');
-    like($a{'ct.diff'}{stringValue}, qr/old_hash/, 'sensitive_notify=allow: diff content included');
+    ok(exists $a{'config_change.diff'},              'sensitive_notify=allow: config_change.diff present');
+    like($a{'config_change.diff'}{stringValue}, qr/old_hash/, 'sensitive_notify=allow: diff content included');
 }
 
 ########################################################################
@@ -734,8 +738,8 @@ SKIP: {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(exists $a{'ct.diff'},              'Full diff: ct.diff present');
-    like($a{'ct.diff'}{stringValue}, qr/\+root/, 'Full diff: diff content included');
+    ok(exists $a{'config_change.diff'},              'Full diff: config_change.diff present');
+    like($a{'config_change.diff'}{stringValue}, qr/\+root/, 'Full diff: diff content included');
 }
 
 ########################################################################
@@ -758,7 +762,7 @@ SKIP: {
     my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
-    ok(!exists $a{'ct.diff'}, 'No ct.diff attr without full_diff');
+    ok(!exists $a{'config_change.diff'}, 'No config_change.diff attr without full_diff');
 }
 
 ########################################################################
@@ -783,6 +787,275 @@ SKIP: {
     is(scalar @warn_recs, 1, 'Warning record emitted with severityNumber=WARN(13)');
     is($warn_recs[0]{severityText}, 'WARN', 'Warning record severityText is WARN');
     like($warn_recs[0]{body}{stringValue}, qr/special file/i, 'Warning record body contains warning text');
+}
+
+########################################################################
+# File.* Attributes And Config_Change.Type Enum
+########################################################################
+{
+    my $body_file = File::Spec->catfile($tmpdir, 'filemeta.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
+
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+    my $n = ChangeTrack::Notify::OTLP->new(
+        endpoint => "http://127.0.0.1:$port/v1/logs",
+    );
+
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r->add_change(
+        path   => '/etc/hosts',
+        is_new => 1,
+        diff   => ['(new file)'],
+        stat   => { mode => '0644', user => 'root', group => 'root',
+                    size => 42, mtime => 1_700_000_000, type => 'file' },
+    );
+    $r->set_end_time(1_000_000_002);
+    $n->send($r);
+    waitpid($pid, 0);
+
+    my $p   = read_payload($body_file);
+    my $rec = $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
+
+    is($a{'config_change.type'}{stringValue}, 'created', 'new file => config_change.type=created');
+    is($a{'event.name'}{stringValue}, 'changetrack.file.created', 'new file event.name');
+    is($a{'file.name'}{stringValue}, 'hosts',     'file.name is basename');
+    is($a{'file.directory'}{stringValue}, '/etc', 'file.directory is dirname');
+    is($a{'file.mode'}{stringValue}, '0644',      'file.mode propagated');
+    is($a{'file.owner.name'}{stringValue}, 'root','file.owner.name propagated');
+    is($a{'file.group.name'}{stringValue}, 'root','file.group.name propagated');
+    is($a{'file.size'}{intValue}, '42',           'file.size propagated as string intValue');
+}
+
+########################################################################
+# Config_Change.Notified Is Opt-In (Emit_Recipients)
+########################################################################
+{
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+
+    my $make = sub {
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->add_change(path => '/etc/hosts', diff => [],
+            recipients => ['ops@example.com', 'sa@example.com']);
+        $r->set_end_time(1_000_000_002);
+        return $r;
+    };
+
+    # default: recipients NOT emitted
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'norecip.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        ChangeTrack::Notify::OTLP->new(endpoint => "http://127.0.0.1:$port/v1/logs")
+            ->send($make->());
+        waitpid($pid, 0);
+        my $p = read_payload($bf);
+        my %a = map { $_->{key} => $_->{value} }
+                @{ $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0]{attributes} };
+        ok(!exists $a{'config_change.notified'}, 'recipients omitted by default');
+    }
+
+    # emit_recipients=1: recipients emitted as arrayValue
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'recip.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        ChangeTrack::Notify::OTLP->new(
+            endpoint => "http://127.0.0.1:$port/v1/logs", emit_recipients => 1)
+            ->send($make->());
+        waitpid($pid, 0);
+        my $p = read_payload($bf);
+        my %a = map { $_->{key} => $_->{value} }
+                @{ $p->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0]{attributes} };
+        ok(exists $a{'config_change.notified'}, 'recipients emitted when emit_recipients=1');
+        my @vals = map { $_->{stringValue} } @{ $a{'config_change.notified'}{arrayValue}{values} };
+        is_deeply(\@vals, ['ops@example.com', 'sa@example.com'], 'recipient list correct');
+    }
+}
+
+########################################################################
+# Occurred (mtime) vs Observed (scan) Timestamps
+########################################################################
+{
+    my $body_file = File::Spec->catfile($tmpdir, 'ts_split.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
+
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+    my $n = ChangeTrack::Notify::OTLP->new(endpoint => "http://127.0.0.1:$port/v1/logs");
+
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);   # observed
+    $r->add_change(
+        path => '/etc/hosts', diff => ['+x'],
+        stat => { mtime => 1_700_000_000, mode => '0644', type => 'file' },  # occurred
+    );
+    $r->set_end_time(1_000_000_002);
+    $n->send($r);
+    waitpid($pid, 0);
+
+    my $rec = read_payload($body_file)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    is($rec->{timeUnixNano},         '1700000000000000000', 'timeUnixNano = mtime ns (occurred)');
+    is($rec->{observedTimeUnixNano}, '1000000000000000000', 'observedTimeUnixNano = scan ns (observed)');
+    isnt($rec->{timeUnixNano}, $rec->{observedTimeUnixNano}, 'occurred and observed differ');
+}
+
+########################################################################
+# Records Without mtime Fall Back To Scan Time
+########################################################################
+{
+    my $body_file = File::Spec->catfile($tmpdir, 'ts_fallback.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
+
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+    my $n = ChangeTrack::Notify::OTLP->new(
+        endpoint => "http://127.0.0.1:$port/v1/logs", heartbeat => 1);
+
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r->set_end_time(1_000_000_002);
+    $n->send($r);   # heartbeat: no file
+    waitpid($pid, 0);
+
+    my $rec = read_payload($body_file)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    is($rec->{timeUnixNano}, $rec->{observedTimeUnixNano},
+        'heartbeat occurred == observed (scan time)');
+}
+
+########################################################################
+# _truncate_diff Helper
+########################################################################
+{
+    my $n = ChangeTrack::Notify::OTLP->new(max_diff_bytes => 0);
+    my ($t, $tr) = $n->_truncate_diff('a' x 100);
+    is(length($t), 100, 'unlimited (0): text unchanged');
+    ok(!$tr,                'unlimited (0): not flagged truncated');
+
+    my $n2 = ChangeTrack::Notify::OTLP->new(max_diff_bytes => 10);
+    my ($t2, $tr2) = $n2->_truncate_diff('a' x 100);
+    ok($tr2,                          'cap 10: flagged truncated');
+    like($t2, qr/^a{10}\n\[diff truncated/, 'cap 10: keeps first 10 chars + marker');
+
+    my ($t3, $tr3) = $n2->_truncate_diff('short');
+    is($t3, 'short', 'under cap: unchanged');
+    ok(!$tr3,        'under cap: not flagged');
+}
+
+########################################################################
+# OTLP Diff Truncation
+########################################################################
+{
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+
+    my $big = join("\n", map { "+line $_ padding padding" } 1..200);
+
+    # default (0): not truncated, no marker
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'notrunc.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->add_change(path => '/etc/big.conf', diff => [split /\n/, $big]);
+        $r->set_end_time(1_000_000_001);
+        ChangeTrack::Notify::OTLP->new(
+            endpoint => "http://127.0.0.1:$port/v1/logs", full_diff => 1)->send($r);
+        waitpid($pid, 0);
+        my %a = map { $_->{key} => $_->{value} }
+            @{ read_payload($bf)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0]{attributes} };
+        ok(!exists $a{'config_change.diff_truncated'}, 'default: no truncation marker');
+        is(length($a{'config_change.diff'}{stringValue}), length($big), 'default: full diff');
+    }
+
+    # cap 50: truncated + marker
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'trunc.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->add_change(path => '/etc/big.conf', diff => [split /\n/, $big]);
+        $r->set_end_time(1_000_000_001);
+        ChangeTrack::Notify::OTLP->new(
+            endpoint => "http://127.0.0.1:$port/v1/logs", full_diff => 1, max_diff_bytes => 50)->send($r);
+        waitpid($pid, 0);
+        my %a = map { $_->{key} => $_->{value} }
+            @{ read_payload($bf)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0]{attributes} };
+        ok($a{'config_change.diff_truncated'}{boolValue}, 'cap: truncation marker true');
+        like($a{'config_change.diff'}{stringValue}, qr/diff truncated/, 'cap: marker text in diff');
+    }
+}
+
+########################################################################
+# Severity Map + Resolver
+########################################################################
+{
+    my $n = ChangeTrack::Notify::OTLP->new;
+
+    is_deeply([$n->_severity_for('INFO')],  [9,  'INFO'],  'INFO -> 9');
+    is_deeply([$n->_severity_for('debug')], [5,  'DEBUG'], 'case-insensitive debug -> 5');
+    is_deeply([$n->_severity_for('WARN')],  [13, 'WARN'],  'WARN -> 13');
+    is_deeply([$n->_severity_for('bogus')], [0,  'UNSPECIFIED'], 'unknown -> UNSPECIFIED');
+
+    # _severity_cfg: unset key falls back to default name
+    is_deeply([$n->_severity_cfg('severity_change', 'INFO')], [9, 'INFO'],
+        'unset config -> default INFO');
+
+    my $n2 = ChangeTrack::Notify::OTLP->new(severity_change => 'warn');
+    is_deeply([$n2->_severity_cfg('severity_change', 'INFO')], [13, 'WARN'],
+        'configured value overrides default (case-insensitive)');
+
+    my $n3 = ChangeTrack::Notify::OTLP->new(severity_change => 'nonsense');
+    is_deeply([$n3->_severity_cfg('severity_change', 'INFO')], [9, 'INFO'],
+        'invalid config falls back to default');
+}
+
+########################################################################
+# Per-Class Severity (defaults + overrides)
+########################################################################
+{
+    delete local $ENV{OTEL_EXPORTER_OTLP_ENDPOINT};
+    delete local $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT};
+
+    # heartbeat default DEBUG (5)
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'sev_hb.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->set_end_time(1_000_000_001);
+        ChangeTrack::Notify::OTLP->new(
+            endpoint => "http://127.0.0.1:$port/v1/logs", heartbeat => 1)->send($r);
+        waitpid($pid, 0);
+        my $rec = read_payload($bf)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+        is($rec->{severityNumber}, 5,       'heartbeat default severityNumber DEBUG=5');
+        is($rec->{severityText},   'DEBUG', 'heartbeat default severityText DEBUG');
+    }
+
+    # change default INFO (9)
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'sev_chg.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->add_change(path => '/etc/hosts', diff => ['+x']);
+        $r->set_end_time(1_000_000_001);
+        ChangeTrack::Notify::OTLP->new(endpoint => "http://127.0.0.1:$port/v1/logs")->send($r);
+        waitpid($pid, 0);
+        my $rec = read_payload($bf)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+        is($rec->{severityNumber}, 9,      'change default severityNumber INFO=9');
+        is($rec->{severityText},   'INFO', 'change default severityText INFO');
+    }
+
+    # change override WARN (13)
+    {
+        my $bf = File::Spec->catfile($tmpdir, 'sev_chg_ovr.json');
+        my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+        my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+        $r->add_change(path => '/etc/hosts', diff => ['+x']);
+        $r->set_end_time(1_000_000_001);
+        ChangeTrack::Notify::OTLP->new(
+            endpoint => "http://127.0.0.1:$port/v1/logs",
+            severity_change => 'warn')->send($r);
+        waitpid($pid, 0);
+        my $rec = read_payload($bf)->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+        is($rec->{severityNumber}, 13,     'change override severityNumber WARN=13');
+        is($rec->{severityText},   'WARN', 'change override severityText WARN');
+    }
 }
 
 done_testing();

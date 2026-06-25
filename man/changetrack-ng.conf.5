@@ -299,6 +299,34 @@ Disable TLS certificate verification.  Default: C<0>.
 
 Space-separated C<key=value> pairs added as OTLP resource attributes.
 
+=item B<emit_recipients> = C<0> | C<1>
+
+When C<1>, include the list of notified recipients as the
+C<config_change.notified> attribute on each change event.  Default: C<0>.
+Disabled by default to avoid leaking recipient lists into observability
+backends.
+
+=item B<max_diff_bytes> = I<integer>
+
+Cap the byte length of the C<config_change.diff> attribute.  C<0> means
+unlimited (no truncation, the default).  When a diff is truncated, the event
+also carries C<config_change.diff_truncated = true>.  Sensitive-suppressed
+diffs are never truncated regardless of this setting.
+
+=item B<severity_change> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for file change, create, and remove events.  Default: C<INFO>
+(numeric C<9>).  Accepted values are case-insensitive; unrecognised values
+fall back to C<INFO>.
+
+=item B<severity_heartbeat> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for heartbeat events.  Default: C<DEBUG> (numeric C<5>).
+
+=item B<severity_warning> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for run-warning events.  Default: C<WARN> (numeric C<13>).
+
 =back
 
 =head2 File log notifier (type: file)
@@ -318,6 +346,31 @@ Append a heartbeat record even when no files changed.  Default: C<0>.
 =item B<full_diff> = C<0> | C<1>
 
 Include full unified diff text in the JSON record.  Default: C<0>.
+
+=item B<emit_recipients> = C<0> | C<1>
+
+When C<1>, include the list of notified recipients as the
+C<config_change.notified> attribute on each event record.  Default: C<0>.
+
+=item B<max_diff_bytes> = I<integer>
+
+Cap the byte length of the C<config_change.diff> attribute.  C<0> means
+unlimited (no truncation, the default).  When a diff is truncated, the record
+also carries C<config_change.diff_truncated = true>.  Sensitive-suppressed
+diffs are never truncated.
+
+=item B<severity_change> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for file change, create, and remove events.  Default: C<INFO>.
+Unrecognised values fall back to C<INFO>.
+
+=item B<severity_heartbeat> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for heartbeat events.  Default: C<DEBUG>.
+
+=item B<severity_warning> = C<DEBUG> | C<INFO> | C<WARN> | C<ERROR>
+
+OTel severity for run-warning events.  Default: C<WARN>.
 
 =back
 

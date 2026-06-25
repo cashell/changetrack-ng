@@ -93,21 +93,31 @@ ignore =
 # insecure        = 0
 
 # [notifier:otlp:default]
-# enabled         = true
-# endpoint        =
-# compression     = gzip
-# full_diff       = 0
-# heartbeat       = 1
-# timeout         = 10
-# insecure        = 0
-# headers         =
+# enabled           = true
+# endpoint          =
+# compression       = gzip
+# full_diff         = 0
+# heartbeat         = 1
+# timeout           = 10
+# insecure          = 0
+# headers           =
 # resource_attributes =
+# emit_recipients   = 0
+# max_diff_bytes    = 0
+# severity_change   = INFO
+# severity_heartbeat = DEBUG
+# severity_warning  = WARN
 
 # [notifier:file:default]
-# enabled         = true
-# path            = /var/log/changetrack-ng.jsonl
-# full_diff       = 0
-# heartbeat       = 0
+# enabled           = true
+# path              = /var/log/changetrack-ng.jsonl
+# full_diff         = 0
+# heartbeat         = 0
+# emit_recipients   = 0
+# max_diff_bytes    = 0
+# severity_change   = INFO
+# severity_heartbeat = DEBUG
+# severity_warning  = WARN
 
 [track]
 ##########################

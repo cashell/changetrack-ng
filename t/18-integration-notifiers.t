@@ -125,4 +125,57 @@ if ($^O eq 'MSWin32' || $^O eq 'cygwin') {
     ok(grep(/world-readable/i, @warn), 'world-readable config with secrets emits warning');
 }
 
+########################################################################
+# C1 Regression: New per-notifier keys parse without croak and propagate
+########################################################################
+# File notifier: max_diff_bytes, emit_recipients, severity_change
+{
+    my $path = write_cfg(
+        "[notifier:file:default]\n"
+            . "enabled = true\n"
+            . "path = /tmp/ct-test.log\n"
+            . "max_diff_bytes = 4096\n"
+            . "emit_recipients = 1\n"
+            . "severity_change = WARNING\n"
+    );
+    my $cfg;
+    my $ok = eval { $cfg = ChangeTrack::Config->load($path); 1 };
+    ok($ok, 'file notifier: new keys parse without croak (C1 regression)');
+    diag $@ if !$ok;
+
+    if ($ok) {
+        my $runner    = ChangeTrack::Runner->new(config => $path, quiet => 1);
+        my @notifiers = $runner->_build_notifiers($cfg);
+        my $n         = $notifiers[0];
+        is($n->{max_diff_bytes}, 4096,     'file notifier: max_diff_bytes propagates from config');
+        ok($n->{emit_recipients},          'file notifier: emit_recipients propagates as true from config');
+        is($n->{severity_change}, 'WARNING', 'file notifier: severity_change propagates from config');
+    }
+}
+
+# OTLP notifier: same keys parse without croak and propagate
+{
+    my $path = write_cfg(
+        "[notifier:otlp:default]\n"
+            . "enabled = true\n"
+            . "endpoint = https://otel.example.com/v1/logs\n"
+            . "max_diff_bytes = 8192\n"
+            . "emit_recipients = 1\n"
+            . "severity_change = WARNING\n"
+    );
+    my $cfg;
+    my $ok = eval { $cfg = ChangeTrack::Config->load($path); 1 };
+    ok($ok, 'otlp notifier: new keys parse without croak (C1 regression)');
+    diag $@ if !$ok;
+
+    if ($ok) {
+        my $runner    = ChangeTrack::Runner->new(config => $path, quiet => 1);
+        my @notifiers = $runner->_build_notifiers($cfg);
+        my $n         = $notifiers[0];
+        is($n->{max_diff_bytes}, 8192,     'otlp notifier: max_diff_bytes propagates from config');
+        ok($n->{emit_recipients},          'otlp notifier: emit_recipients propagates as true from config');
+        is($n->{severity_change}, 'WARNING', 'otlp notifier: severity_change propagates from config');
+    }
+}
+
 done_testing();

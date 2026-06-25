@@ -231,4 +231,39 @@ my $cfg_path = write_config([$file1]);
         'BINARY: unchanged binary file is not warned repeatedly');
 }
 
+########################################################################
+# File_Meta Populated By Runner
+########################################################################
+{
+    my $output5 = tempdir(CLEANUP => 1);
+    my $file5   = "$tracked_dir/meta-test.conf";
+
+    open(my $fh, '>', $file5) or die $!;
+    print $fh "x=1\n";
+    close($fh);
+    chmod(0644, $file5);
+
+    my ($cfh, $cpath) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = rcs\noutput_dir = $output5\n\n[track]\n$file5\n";
+    close($cfh);
+
+    # First run: register baseline
+    my $runner = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
+    $runner->run;
+
+    # Modify file so second run detects a change
+    open($fh, '>', $file5) or die $!;
+    print $fh "x=2\n";
+    close($fh);
+
+    my $runner2 = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
+    my $report2 = $runner2->run;
+
+    ok($report2->has_changes, 'file_meta test: change detected on second run');
+    my $c = $report2->changes->[0];
+    ok(defined $c->{file_meta},           'file_meta: key present on change record');
+    ok(defined $c->{file_meta}{mode},     'file_meta.mode: populated by runner');
+    ok(defined $c->{file_meta}{mtime},    'file_meta.mtime: populated by runner');
+}
+
 done_testing();

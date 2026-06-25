@@ -185,7 +185,7 @@ enabled = false
 # overridden by $OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or $OTEL_EXPORTER_OTLP_ENDPOINT.
 endpoint =
 
-# Include full diff text in each OTLP log record attribute (ct.diff).
+# Include full unified diff text in each OTLP log record attribute (config_change.diff).
 # 0 = summary only (default) | 1 = full diff
 full_diff = 0
 
@@ -216,6 +216,29 @@ resource_attributes =
 # 0 = disabled | 1 = enabled (default)
 heartbeat = 1
 
+# When enabled, include the list of notified recipients as the
+# config_change.notified attribute on each event.  Off by default to avoid
+# leaking recipient lists into observability backends.
+# 0 = omit (default) | 1 = include
+# emit_recipients = 0
+
+# Maximum byte length of the config_change.diff attribute.
+# 0 = unlimited (default).  When truncated, config_change.diff_truncated = true
+# is also set.  Sensitive-suppressed diffs are never truncated.
+# max_diff_bytes = 0
+
+# OTel severity level for file change/create/remove events.
+# Accepted: DEBUG | INFO (default) | WARN | ERROR (case-insensitive).
+# severity_change = INFO
+
+# OTel severity level for heartbeat events.
+# Accepted: DEBUG (default) | INFO | WARN | ERROR (case-insensitive).
+# severity_heartbeat = DEBUG
+
+# OTel severity level for run-warning events.
+# Accepted: DEBUG | INFO | WARN (default) | ERROR (case-insensitive).
+# severity_warning = WARN
+
 # sensitive_notify = suppress
 
 ##########################
@@ -235,6 +258,29 @@ full_diff = 0
 # Append a heartbeat record on every run, even when there are no changes.
 # 0 = disabled (default) | 1 = enabled
 heartbeat = 0
+
+# When enabled, include the list of notified recipients as the
+# config_change.notified attribute on each event.  Off by default to avoid
+# leaking recipient lists into log files.
+# 0 = omit (default) | 1 = include
+# emit_recipients = 0
+
+# Maximum byte length of the config_change.diff attribute.
+# 0 = unlimited (default).  When truncated, config_change.diff_truncated = true
+# is also set.  Sensitive-suppressed diffs are never truncated.
+# max_diff_bytes = 0
+
+# OTel severity level for file change/create/remove events.
+# Accepted: DEBUG | INFO (default) | WARN | ERROR (case-insensitive).
+# severity_change = INFO
+
+# OTel severity level for heartbeat events.
+# Accepted: DEBUG (default) | INFO | WARN | ERROR (case-insensitive).
+# severity_heartbeat = DEBUG
+
+# OTel severity level for run-warning events.
+# Accepted: DEBUG | INFO | WARN (default) | ERROR (case-insensitive).
+# severity_warning = WARN
 
 # sensitive_notify = suppress
 

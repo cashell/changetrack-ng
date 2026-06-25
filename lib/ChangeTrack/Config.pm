@@ -114,9 +114,13 @@ my %KNOWN_NOTIFIER_KEYS = (
     otlp => { map { $_ => 1 } qw(
         enabled endpoint headers compression full_diff
         heartbeat timeout insecure resource_attributes
+        emit_recipients max_diff_bytes severity_change
+        severity_heartbeat severity_warning
     ) },
     file => { map { $_ => 1 } qw(
         enabled path heartbeat full_diff
+        emit_recipients max_diff_bytes severity_change
+        severity_heartbeat severity_warning
     ) },
 );
 
@@ -131,15 +135,15 @@ my %ARRAY_NOTIFIER_KEYS = (
 my %BOOL_NOTIFIER_KEYS = (
     email   => { enabled => 1 },
     webhook => { map { $_ => 1 } qw(enabled full_diff heartbeat insecure) },
-    otlp    => { map { $_ => 1 } qw(enabled full_diff heartbeat insecure) },
-    file    => { map { $_ => 1 } qw(enabled heartbeat full_diff) },
+    otlp    => { map { $_ => 1 } qw(enabled full_diff heartbeat insecure emit_recipients) },
+    file    => { map { $_ => 1 } qw(enabled heartbeat full_diff emit_recipients) },
 );
 
 my %INT_NOTIFIER_KEYS = (
     email   => {},
     webhook => { timeout => 1 },
-    otlp    => { timeout => 1 },
-    file    => {},
+    otlp    => { timeout => 1, max_diff_bytes => 1 },
+    file    => { max_diff_bytes => 1 },
 );
 
 my %PATH_NOTIFIER_KEYS = (

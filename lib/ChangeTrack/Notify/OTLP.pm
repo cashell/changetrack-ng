@@ -32,6 +32,7 @@ use JSON::PP ();
 use HTTP::Tiny ();
 
 use ChangeTrack::Util qw(hostname);
+use File::Basename qw(basename dirname);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -48,6 +49,11 @@ sub new {
     $self->{insecure}            //= 0;
     $self->{resource_attributes} //= {};
     $self->{sensitive_notify}    //= 'suppress';
+    $self->{emit_recipients}     //= 0;
+    $self->{max_diff_bytes}      //= 0;
+    $self->{severity_change}     //= 'INFO';
+    $self->{severity_heartbeat}  //= 'DEBUG';
+    $self->{severity_warning}    //= 'WARN';
     $self->{_endpoint_warned}    = 0;
     return $self;
 }
@@ -61,7 +67,7 @@ sub heartbeat_enabled {
 sub name { 'otlp' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(endpoint headers compression full_diff heartbeat timeout insecure resource_attributes) }
+sub config_keys { qw(endpoint headers compression full_diff heartbeat timeout insecure resource_attributes emit_recipients max_diff_bytes severity_change severity_heartbeat severity_warning) }
 
 # validate_config -- Return an error string when no endpoint is configured.
 sub validate_config {
@@ -91,89 +97,130 @@ sub send_heartbeat {
 }
 
 # _build_payload -- Construct the OTLP LogsData JSON payload for one run.
-# Heartbeat runs emit a single INFO log record with ct.heartbeat=true.
+# Heartbeat runs emit a single INFO log record with event.name=changetrack.run.heartbeat.
 # Change runs emit one record per changed file plus records for warnings.
 sub _build_payload {
     my ($self, $report, $is_heartbeat) = @_;
 
-    my $ts_nano = sprintf('%d000000000', $report->{start_time} // time());
+    my $observed_nano = sprintf('%d000000000', $report->{start_time} // time());
     my $dur     = $report->duration_ms;
     my $tracked = $report->files_tracked // 0;
 
     my @common_attrs = (
-        { key => 'ct.files_tracked', value => { intValue => "$tracked" } },
+        { key => 'changetrack.files_tracked', value => { intValue => "$tracked" } },
     );
     push @common_attrs,
-        { key => 'ct.run_duration_ms', value => { intValue => sprintf('%d', $dur) } }
+        { key => 'changetrack.run_duration_ms', value => { intValue => sprintf('%d', $dur) } }
         if defined $dur;
 
     my @log_records;
 
     if ($is_heartbeat) {
+        my ($hb_num, $hb_text) = $self->_severity_cfg('severity_heartbeat', 'DEBUG');
         push @log_records, {
-            timeUnixNano         => $ts_nano,
-            observedTimeUnixNano => $ts_nano,
-            severityNumber       => 9,
-            severityText         => 'INFO',
+            timeUnixNano         => $observed_nano,
+            observedTimeUnixNano => $observed_nano,
+            severityNumber       => $hb_num,
+            severityText         => $hb_text,
             body                 => { stringValue => 'changetrack-ng heartbeat (no changes)' },
             attributes           => [
-                { key => 'ct.heartbeat', value => { boolValue => JSON::PP::true() } },
+                { key => 'event.name', value => { stringValue => 'changetrack.run.heartbeat' } },
                 @common_attrs,
             ],
         };
     } else {
+        my ($chg_num, $chg_text) = $self->_severity_cfg('severity_change', 'INFO');
         for my $c (@{ $report->changes }) {
+            my $mtime = ($c->{file_meta} // {})->{mtime};
+            my $occurred_nano = defined $mtime
+                ? sprintf('%d000000000', $mtime)
+                : $observed_nano;
+
+            my ($type, $event_name, $body_msg);
+            if ($c->{is_removed}) {
+                $type       = 'removed';
+                $event_name = 'changetrack.file.removed';
+                $body_msg   = "config file removed: $c->{path}";
+            } elsif ($c->{is_new}) {
+                $type       = 'created';
+                $event_name = 'changetrack.file.created';
+                $body_msg   = "new config file: $c->{path}";
+            } else {
+                $type       = 'modified';
+                $event_name = 'changetrack.file.changed';
+                $body_msg   = "config file changed: $c->{path}";
+            }
+
             my @attrs = (
-                { key => 'ct.path',
-                  value => { stringValue => $c->{path} } },
-                { key => 'ct.is_new',
-                  value => { boolValue => $c->{is_new}       ? JSON::PP::true() : JSON::PP::false() } },
-                { key => 'ct.is_removed',
-                  value => { boolValue => $c->{is_removed}   ? JSON::PP::true() : JSON::PP::false() } },
-                { key => 'ct.is_sensitive',
+                { key => 'event.name',     value => { stringValue => $event_name } },
+                { key => 'file.path',      value => { stringValue => $c->{path} } },
+                { key => 'file.name',      value => { stringValue => basename($c->{path}) } },
+                { key => 'file.directory', value => { stringValue => dirname($c->{path}) } },
+                { key => 'config_change.type', value => { stringValue => $type } },
+                { key => 'config_change.sensitive',
                   value => { boolValue => $c->{is_sensitive} ? JSON::PP::true() : JSON::PP::false() } },
-                { key => 'ct.heartbeat',
-                  value => { boolValue => JSON::PP::false() } },
                 @common_attrs,
             );
 
+            my $fm = $c->{file_meta} // {};
+            push @attrs, { key => 'file.mode',       value => { stringValue => $fm->{mode} } }
+                if defined $fm->{mode};
+            push @attrs, { key => 'file.owner.name', value => { stringValue => $fm->{owner} } }
+                if defined $fm->{owner};
+            push @attrs, { key => 'file.group.name', value => { stringValue => $fm->{group} } }
+                if defined $fm->{group};
+            push @attrs, { key => 'file.size', value => { intValue => sprintf('%d', $fm->{size}) } }
+                if defined $fm->{size};
+
             if ($c->{meta_change}) {
                 push @attrs,
-                    { key => 'ct.meta_change', value => { stringValue => $c->{meta_change} } };
+                    { key => 'config_change.meta_summary', value => { stringValue => $c->{meta_change} } };
+            }
+
+            if ($self->{emit_recipients} && @{ $c->{recipients} // [] }) {
+                push @attrs, {
+                    key   => 'config_change.notified',
+                    value => { arrayValue => { values => [
+                        map { { stringValue => $_ } } @{ $c->{recipients} }
+                    ] } },
+                };
             }
 
             if ($self->{full_diff}) {
                 unless ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
+                    my ($diff_text, $truncated)
+                        = $self->_truncate_diff(join("\n", @{ $c->{diff} // [] }));
                     push @attrs, {
-                        key   => 'ct.diff',
-                        value => { stringValue => join("\n", @{ $c->{diff} // [] }) },
+                        key   => 'config_change.diff',
+                        value => { stringValue => $diff_text },
                     };
+                    push @attrs, {
+                        key   => 'config_change.diff_truncated',
+                        value => { boolValue => JSON::PP::true() },
+                    } if $truncated;
                 }
             }
 
-            my $body_msg = $c->{is_removed} ? "file removed: $c->{path}"
-                         : $c->{is_new}     ? "new file: $c->{path}"
-                         :                    "file changed: $c->{path}";
-
             push @log_records, {
-                timeUnixNano         => $ts_nano,
-                observedTimeUnixNano => $ts_nano,
-                severityNumber       => 9,
-                severityText         => 'INFO',
+                timeUnixNano         => $occurred_nano,
+                observedTimeUnixNano => $observed_nano,
+                severityNumber       => $chg_num,
+                severityText         => $chg_text,
                 body                 => { stringValue => $body_msg },
                 attributes           => \@attrs,
             };
         }
 
+        my ($warn_num, $warn_text) = $self->_severity_cfg('severity_warning', 'WARN');
         for my $w (@{ $report->warnings }) {
             push @log_records, {
-                timeUnixNano         => $ts_nano,
-                observedTimeUnixNano => $ts_nano,
-                severityNumber       => 13,
-                severityText         => 'WARN',
+                timeUnixNano         => $observed_nano,
+                observedTimeUnixNano => $observed_nano,
+                severityNumber       => $warn_num,
+                severityText         => $warn_text,
                 body                 => { stringValue => $w },
                 attributes           => [
-                    { key => 'ct.heartbeat', value => { boolValue => JSON::PP::false() } },
+                    { key => 'event.name', value => { stringValue => 'changetrack.run.warning' } },
                     @common_attrs,
                 ],
             };

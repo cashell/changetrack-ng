@@ -106,9 +106,11 @@ All whole-repo backends store tracked files in a mirror tree: `/etc/passwd` beco
 | Email | Plain-text with inline diffs | Always off | Human review; existing alerting workflows |
 | Webhook | JSON POST to one or more URLs | Opt-in | ChatOps, ticketing, custom integrations |
 | OTLP | OpenTelemetry log records (gzip) | On by default | Observability platforms; alert-on-absence |
-| File | Append-only JSONL | Opt-in | Local audit trail; log shipping |
+| File | Per-event OTel-shaped NDJSON | Opt-in | Local audit trail; log shipping |
 
 Notifications include: hostname, timestamp, list of changed files, metadata diffs, and (unless suppressed) content diffs.
+
+The OTLP and File notifiers share a canonical OTel attribute model. Each event record carries `event.name` (`changetrack.file.changed`, `changetrack.file.created`, `changetrack.file.removed`, `changetrack.run.heartbeat`, `changetrack.run.warning`), configurable `severity_text`/`severity_number` per record class, separate occurred-time (file mtime) and observed-time (scan start) timestamps, and an attributes map with canonical keys (`file.path`, `file.name`, `file.directory`, `config_change.type`, `config_change.sensitive`, `config_change.diff`). Diffs can be capped to a configurable byte limit (`max_diff_bytes`); when truncated, a `config_change.diff_truncated` flag is added. Configured recipients can optionally be emitted as a `config_change.notified` attribute (`emit_recipients`).
 
 ---
 

@@ -447,6 +447,7 @@ sub _process_file {
                 diff         => [],
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
+                stat         => $rec,
             );
             $self->_debug("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing) {
@@ -460,6 +461,7 @@ sub _process_file {
                 diff         => ['(new empty file)'],
                 meta_change  => '',
                 recipients   => $recipients,
+                stat         => $rec,
             );
             $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
             $self->_info("New: $real_path");
@@ -491,6 +493,7 @@ sub _process_file {
             diff         => ['(new file)'],
             meta_change  => '',
             recipients   => $recipients,
+            stat         => $rec,
         );
         $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
         $self->_info("New: $real_path");
@@ -515,6 +518,7 @@ sub _process_file {
                 diff         => $diff_lines,
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
+                stat         => $rec,
             );
             $self->_debug("Changed: $real_path"
                 . ($meta_summary ? " (meta: $meta_summary)" : ''));

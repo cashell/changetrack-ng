@@ -212,4 +212,37 @@ use ChangeTrack::Report;
     like($text, qr/Skipping FIFO/,       'to_text includes warning text');
 }
 
+########################################################################
+# File_Meta Normalization From Stat Record
+########################################################################
+{
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r->add_change(
+        path => '/etc/hosts',
+        diff => ['+1.2.3.4 host'],
+        stat => {
+            path => '/etc/hosts', mode => '0644', uid => 0, gid => 0,
+            user => 'root', group => 'root', type => 'file',
+            mtime => 1_700_000_000, size => 42,
+        },
+    );
+    my $c = $r->changes->[0];
+    is($c->{file_meta}{mode},  '0644',        'file_meta.mode from stat');
+    is($c->{file_meta}{owner}, 'root',        'file_meta.owner from stat user');
+    is($c->{file_meta}{group}, 'root',        'file_meta.group from stat group');
+    is($c->{file_meta}{size},  42,            'file_meta.size from stat');
+    is($c->{file_meta}{mtime}, 1_700_000_000, 'file_meta.mtime from stat');
+}
+
+########################################################################
+# Add_Change Without Stat: File_Meta Present, All Undef
+########################################################################
+{
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r->add_change(path => '/etc/hosts', diff => []);
+    my $c = $r->changes->[0];
+    ok(exists $c->{file_meta},          'file_meta present even without stat');
+    ok(!defined $c->{file_meta}{mode},  'file_meta.mode undef without stat');
+}
+
 done_testing;
