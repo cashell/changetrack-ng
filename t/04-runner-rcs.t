@@ -251,9 +251,12 @@ my $cfg_path = write_config([$file1]);
     my $runner = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
     $runner->run;
 
-    # Modify file so second run detects a change
+    # Modify file so second run detects a change. The new content must differ
+    # in byte size from the baseline: the runner's mtime+size fast-path skip
+    # (Metadata::can_skip_content_diff) would otherwise suppress detection when
+    # both runs fall within the same integer second and the size is unchanged.
     open($fh, '>', $file5) or die $!;
-    print $fh "x=2\n";
+    print $fh "x=value2\n";
     close($fh);
 
     my $runner2 = ChangeTrack::Runner->new(config => $cpath, quiet => 1);

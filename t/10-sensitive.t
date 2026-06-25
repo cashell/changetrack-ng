@@ -108,7 +108,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     chomp $line;
     require JSON::PP;
     my $rec = JSON::PP->new->decode($line);
-    my $diff_str = join("\n", @{ $rec->{files}[0]{diff} // [] });
+    my $diff_str = $rec->{attributes}{'config_change.diff'} // '';
     unlike($diff_str, qr/old_hash/, 'Notification: raw diff suppressed');
     like($diff_str,   qr/suppressed/i, 'Notification: suppression placeholder present');
 }
@@ -139,7 +139,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     chomp $line;
     require JSON::PP;
     my $rec = JSON::PP->new->decode($line);
-    my $diff_str = join("\n", @{ $rec->{files}[0]{diff} // [] });
+    my $diff_str = $rec->{attributes}{'config_change.diff'} // '';
     like($diff_str, qr/old_hash/, 'sensitive_notify=allow: full diff in notification');
 }
 
@@ -169,7 +169,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
     chomp $line;
     require JSON::PP;
     my $rec = JSON::PP->new->decode($line);
-    is($rec->{files}[0]{meta_change}, 'mode 0600 -> 0644',
+    is($rec->{attributes}{'config_change.meta_summary'}, 'mode 0600 -> 0644',
         'Permission loosening: meta_change always present in notification');
 }
 
@@ -216,7 +216,7 @@ use_ok('ChangeTrack::Test::MockSendmail');
 
         require JSON::PP;
         my $rec = JSON::PP->new->decode($line);
-        my $diff_str = join("\n", @{ $rec->{files}[0]{diff} // [] });
+        my $diff_str = $rec->{attributes}{'config_change.diff'} // '';
         if ($c->{expect_secret}) {
             like($diff_str, qr/token=/, "$c->{label}: full diff present");
         } else {
