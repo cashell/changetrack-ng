@@ -6,6 +6,8 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-25
+
 ### Added
 
 - **`emit_recipients` config key** (both `otlp` and `file` notifiers, default `0`).

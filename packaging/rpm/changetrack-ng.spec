@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.6.0
+Version:        0.6.1
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,20 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Thu Jun 25 2026 Christopher Cashell <topher@zyp.org> - 0.6.1-1
+- OTel conformance: canonical attribute model on the otlp and file notifiers
+  (file.path/name/directory, config_change.type/sensitive/diff, file.mode/owner/
+  group/size, changetrack.files_tracked/run_duration_ms) and namespaced event
+  names (changetrack.file.changed/created/removed, run.heartbeat, run.warning)
+- Add occurred-time vs observed-time: occurred = file mtime (timestamp /
+  timeUnixNano), observed = scan start (observed_timestamp / observedTimeUnixNano)
+- File notifier now emits one OTel record per event as append-only NDJSON,
+  replacing the single-object-per-run format
+- Add config keys (otlp and file): emit_recipients, max_diff_bytes,
+  severity_change, severity_heartbeat, severity_warning
+- Fix: register the new notifier keys in the config-file parse whitelist so
+  setting them no longer aborts parsing
+
 * Tue May 19 2026 Christopher Cashell <topher@zyp.org> - 0.6.0-1
 - BREAKING: Notifier configuration redesigned; [notifier:<type>:<name>] subsections
   replace the flat notify= list and all prefixed notifier keys (email_to, email_from,

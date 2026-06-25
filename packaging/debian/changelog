@@ -1,3 +1,22 @@
+changetrack-ng (0.6.1) unstable; urgency=medium
+
+  * OTel conformance: canonical attribute model on the otlp and file notifiers
+    (file.path/name/directory, config_change.type/sensitive/diff, file.mode,
+    file.owner.name, file.group.name, file.size, changetrack.files_tracked,
+    changetrack.run_duration_ms) and namespaced event names
+    (changetrack.file.changed/created/removed, run.heartbeat, run.warning).
+  * Add occurred-time vs observed-time distinction: occurred = file mtime
+    (timestamp / timeUnixNano), observed = scan start (observed_timestamp /
+    observedTimeUnixNano).
+  * File notifier now writes one OTel record per event as append-only NDJSON,
+    replacing the previous single-object-per-run format.
+  * Add config keys (otlp and file notifiers): emit_recipients, max_diff_bytes,
+    severity_change, severity_heartbeat, severity_warning.
+  * Fix: register the new notifier keys in the config-file parse whitelist so
+    setting them no longer aborts config parsing.
+
+ -- Christopher Cashell <topher@zyp.org>  Thu, 25 Jun 2026 00:00:00 +0000
+
 changetrack-ng (0.6.0) unstable; urgency=high
 
   * BREAKING: Notifier configuration redesigned. The flat notify= list and all
