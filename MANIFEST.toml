@@ -599,14 +599,6 @@ tags        = ["dev-doc"]
 description = "AI assistant instructions: architecture quick-ref, patterns, constraints, version bump checklist"
 tags        = ["dev-doc", "agent"]
 
-[dev_doc."docs/superpowers/specs/2026-05-20-manifest-design.md"]
-description = "Approved design spec for MANIFEST.toml format and tools/manifest-query interface"
-tags        = ["dev-doc", "spec"]
-
-[dev_doc."docs/superpowers/plans/2026-05-20-manifest.md"]
-description = "Implementation plan for the MANIFEST.toml and manifest-query work"
-tags        = ["dev-doc", "plan"]
-
 ########################################################################
 # packaging
 ########################################################################
@@ -758,13 +750,13 @@ tags        = ["build"]
 description = "Authoritative TOML file inventory: all repo files with install paths, dist targets, and tags"
 dist        = ["full"]
 tags        = ["build", "manifest"]
-notes       = "Phase 2 will wire dist targets to read file lists from this file via tools/manifest-query"
+notes       = "Authoritative file inventory; the dist/dist-minimal/dist-deploy targets read file lists from this file via tools/manifest-query"
 
 [build."tools/manifest-query"]
 description = "Perl script querying MANIFEST.toml: --validate, --dist, --category, --tag, --field, --deps-deb/rpm"
 dist        = ["full"]
 tags        = ["build", "manifest"]
-notes       = "Requires TOML::Tiny (build_requires); used by make manifest-lint and planned Phase 2 dist targets"
+notes       = "Requires TOML::Tiny (build_requires); used by make manifest-lint/manifest-extra and the dist/dist-minimal/dist-deploy targets"
 
 ########################################################################
 # legal

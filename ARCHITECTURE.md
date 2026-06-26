@@ -2,8 +2,8 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Date: 2026-05-04
-Version: 0.5.0
+Date: 2026-06-25
+Version: 0.6.1
 
 ---
 
@@ -53,8 +53,8 @@ Version: 0.5.0
 │         ││         ││          ││         ││         ││  ├── Git          │
 │ INI v2  ││ flock   ││ JSONL    ││ Change  ││ run_cmd ││  ├── RCS          │
 │ parser  ││ pidfile ││ sidecar  ││ accum-  ││ host-   ││  ├── Fossil       │
-│ + v1    ││         ││          ││ ulator  ││ name    ││  ├── SVN          │
-│ compat  ││         ││          ││         ││ mirror  ││  └── Mercurial    │
+│ + drop- ││         ││          ││ ulator  ││ name    ││  ├── SVN          │
+│ ins     ││         ││          ││         ││ mirror  ││  └── Mercurial    │
 └─────────┘└─────────┘└──────────┘└─────────┘└─────────┘└──────────────────┘
                                                           ┌──────────────────┐
                                                           │ Notify::Base     │
@@ -71,18 +71,18 @@ Version: 0.5.0
 |--------|---------------|
 | `bin/changetrack-ng` | CLI dispatch, option parsing (`Getopt::Long`), subcommand routing |
 | `ChangeTrack::Runner` | Main orchestration: config load → lock → build file list → per-file stat+diff → Report accumulation → VCS commit → notification dispatch |
-| `ChangeTrack::Config` | INI v2 parser with strict key validation; auto-detects legacy v1 format; `migrate_v1_to_v2()` migration tool; `HOSTNAME` interpolation |
+| `ChangeTrack::Config` | INI v2 parser with strict key whitelist (unknown keys fatal) and per-type value coercion/validation; `conf.d`/`track.d`/`notifier.d` drop-in dirs and `@include*` directives; `HOSTNAME` token + `${VAR}` env interpolation (undefined env var is fatal) |
 | `ChangeTrack::Lock` | `flock(2)`-based pidfile with timeout/force modes; non-blocking skip for cron safety |
 | `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
-| `ChangeTrack::Util` | `hostname()`, `run_cmd()` (IPC::Open3, IO::Select, no shell), `sync_mirror_path()`, `restore_mirror_path()` |
-| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.5.0'`) |
-| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `add`, `checkin`, `commit`, `diff`, `log_history`, `revert`, `model` |
-| `ChangeTrack::VCS::Git` | Whole-repo mirror model; batch commit; optional push_remote |
-| `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate ci -l per file |
-| `ChangeTrack::VCS::Fossil` | Whole-repo; fossil init/open; chdir-based commands |
-| `ChangeTrack::VCS::SVN` | Whole-repo; svnadmin create + svn checkout; file:// local repo |
-| `ChangeTrack::VCS::Mercurial` | Whole-repo; hg -R flag (no chdir); auto-creates .hg/hgrc |
+| `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, **hardcoded 30s timeout**), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
+| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.6.1'`) |
+| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `log_history`, `revert`, `is_dirty`, `model` |
+| `ChangeTrack::VCS::Git` | Whole-repo mirror model; `git -C`; batch commit; optional `push_remote` |
+| `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate `ci -l` per file |
+| `ChangeTrack::VCS::Fossil` | Whole-repo; `fossil init`/`open`; uses native `--chdir` flag (no Perl `chdir`); sets `FOSSIL_HOME` when `HOME` unset; optional `push_remote` |
+| `ChangeTrack::VCS::SVN` | Whole-repo; `svnadmin create` + `svn checkout file://`; uses Perl `chdir` (saved/restored via `getcwd`); commit pushes to the local repo |
+| `ChangeTrack::VCS::Mercurial` | Whole-repo; `hg -R` flag (no chdir); auto-creates `.hg/hgrc`; optional `push_remote` |
 | `ChangeTrack::Notify::Base` | Abstract interface: `send()` dispatcher (eval-wrapped), heartbeat gating, sensitive-diff suppression |
 | `ChangeTrack::Notify::Email` | Pipes RFC 2822 messages to sendmail; per-recipient grouping; heartbeat always off |
 | `ChangeTrack::Notify::Webhook` | HTTP POST JSON to one or more URLs via `HTTP::Tiny`; 3-attempt retry; TLS bypass option |
@@ -101,7 +101,7 @@ Version: 0.5.0
  Lock.acquire()         →  flock(LOCK_EX|LOCK_NB) or timeout loop
                              │
  _build_file_list()     →  Expand [track] entries (files + recursive dirs)
-                         →  Apply ignore patterns (precompiled to singular regex passes for scale)
+                         →  Apply ignore patterns (each glob precompiled to its own qr//, tested in turn)
                              │
  ┌─ For each tracked path ───────────────────────────────────────────────────┐
  │  1. Missing from disk? → report removed, done                              │
@@ -175,12 +175,14 @@ The fast path (`can_skip_content_diff`) skips all further processing when mtime+
 
 INI format with three section types: `[global]` (key=value settings), `[notifier:<type>:<name>]` (one notification instance per section), and `[track]` (file/directory entries).
 
-- Array-valued `[global]` keys (`ignore`, `push_remote`) are split on whitespace → arrayrefs
-- All other `[global]` keys return scalar strings
-- `[notifier:*]` keys are per-instance scalars; the `enabled` key is required in every notifier section
-- `HOSTNAME` in values is replaced with the system FQDN at parse time
+- Recognized `[global]` keys (whitelist, `Config.pm`): `vcs`, `output_dir`, `push_remote`, `ignore`, `sensitive_auto`, `sensitive_notify`, `warn_special_files`, `interval`, `lock_path`, `lock_timeout`
+- Array-valued `[global]` keys (`ignore`, `push_remote`) are split on whitespace → arrayrefs; all other `[global]` keys return scalar strings
+- Values are type-coerced/validated by class: booleans (`sensitive_auto`, `warn_special_files`), integers (`lock_timeout`, `interval`), paths (`output_dir`, `lock_path`), enums (`vcs` ∈ {rcs,git,fossil,svn,hg,mercurial}; `sensitive_notify` ∈ {suppress,allow})
+- **Dead key:** `interval` is whitelisted and integer-validated (`Config.pm`) but never read anywhere in the codebase — it is accepted silently and has no effect. Scheduling is driven entirely by the systemd timer / cron entry, not this key.
+- `[notifier:*]` keys are per-instance scalars validated against a per-type whitelist (`email`/`webhook`/`file`/`otlp`); the `enabled` key is required in every notifier section; `email.to` and `webhook.url` are array-valued
+- `HOSTNAME` in values is replaced with the system FQDN at parse time; `${VAR}` performs environment-variable expansion (an undefined variable is a fatal error)
 - Strict key validation: unknown keys cause a fatal parse error (fail-fast)
-- Multi-file loading: `conf.d/`, `track.d/`, `notifier.d/` drop-in directories and `@include` directives compose at load time; duplicate notifier `<type>:<name>` pairs across any files are a fatal error
+- Multi-file loading: `conf.d/`, `track.d/`, `notifier.d/` drop-in directories and `@include`/`@include-track`/`@include-notifier` directives compose at load time (recursion-guarded against include cycles); duplicate notifier `<type>:<name>` pairs across any files are a fatal error
 
 ### 4.2 Precedence (OTLP-specific)
 
@@ -197,10 +199,14 @@ OTEL_EXPORTER_OTLP_HEADERS > config headers
 | Method | Per-file (RCS) | Whole-repo (Git/Fossil/SVN/Hg) |
 |--------|---------------|-------------------------------|
 | `init` | Creates output_dir + RCS/ | Creates repo (git init / fossil init+open / svnadmin+co / hg init) |
+| `output_path($path)` | Colon-encoded flat path | Mirror-tree path under output_dir |
 | `checkin($path, $msg)` | Copy + `ci -l` immediately | Copy + stage (add); commit deferred |
 | `add($path)` | No-op | Copy to mirror + VCS add |
-| `commit($msg)` | No-op | Batch commit all staged; optional push |
-| `diff($path)` | `rcsdiff -u` on mirror | Copy to mirror, diff against HEAD |
+| `commit($msg)` | No-op | Batch commit all staged; optional `push_remote` (Git, Fossil, Hg) |
+| `diff($path)` | `rcsdiff -u` on mirror | Copy to mirror, diff against HEAD/tip |
+| `revert($path,$rev)` | `co -r` from RCS archive | Restore file/symlink from a revision |
+| `log_history($path)` | `rlog` | Native VCS log |
+| `is_dirty` | `rcsdiff -q` vs latest revision (true if no `,v` archive yet) | True if working copy has staged/uncommitted changes |
 | `model` | `'per-file'` | `'whole-repo'` |
 
 ---
@@ -223,9 +229,30 @@ Heartbeat is only sent when: no changes detected AND the run completed without e
 
 ### 6.3 Sensitive file handling
 
-- Auto-detection: file is "sensitive" if `mode & 0004 == 0` (no world-read)
-- Controlled by `sensitive_auto` (toggle detection) and `sensitive_notify` (suppress|allow diffs)
-- When suppressed, notification payloads receive a placeholder instead of diff content
+- Auto-detection: file is "sensitive" if `(mode & 0004) == 0` (no world-read); overridable per `[track]` entry
+- Controlled by `sensitive_auto` (toggle detection) and `sensitive_notify` (`suppress`|`allow` diffs)
+- Suppression behavior differs by notifier (it is not uniform):
+  - **Email** — diff body replaced with a placeholder line (`[diff suppressed -- sensitive file ...]`)
+  - **File** — `config_change.diff` field carries the placeholder string (and is never subject to `max_diff_bytes` truncation)
+  - **OTLP** and **Webhook** — the diff key is omitted from the payload entirely (no placeholder)
+
+### 6.4 Structured event model (File and OTLP)
+
+The File and OTLP notifiers emit OpenTelemetry-style structured log records. Each tracked change becomes one record:
+
+- `event.name`: one of `changetrack.file.changed`, `changetrack.file.created`, `changetrack.file.removed`, `changetrack.run.heartbeat`, `changetrack.run.warning`
+- File attributes: `file.path`, `file.name`, `file.directory`, `file.mode`, `file.owner.name`, `file.group.name`, `file.size`
+- Change attributes: `config_change.type`, `config_change.sensitive`, `config_change.meta_summary`, `config_change.diff`, `config_change.diff_truncated`, `config_change.notified`
+- Run attributes: `changetrack.files_tracked`, `changetrack.run_duration_ms`
+- OTLP resource attributes: `service.*`, `host.*`, `os.type`, plus machine-id
+
+Severity is mapped from event class via `%SEVERITY` in `Notify::Base` (OTLP severity numbers): DEBUG→5, INFO→9, WARN→13, ERROR→17.
+
+`max_diff_bytes` (File and OTLP) truncates oversized diffs and sets `config_change.diff_truncated = true`; suppressed-sensitive diffs are exempt from truncation (File) or omitted (OTLP). `emit_recipients` controls whether recipient metadata is included.
+
+### 6.5 Webhook delivery
+
+`Notify::Webhook` POSTs JSON via `HTTP::Tiny` to one or more URLs (`_parse_urls`), with 3 attempts and exponential backoff. The `insecure` key disables TLS verification (opt-in). The `full_diff` key controls whether complete diffs are sent; sensitive diffs are omitted entirely.
 
 ---
 
@@ -235,13 +262,14 @@ Heartbeat is only sent when: no changes detected AND the run completed without e
 
 All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 - Uses `IPC::Open3` with list-form arguments (no shell interpolation)
-- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks (timeout adjustable via parameter)
+- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks; the read timeout is **hardcoded at 30 seconds** (`Util.pm`, `can_read(30)`) — it is not configurable
 - Returns structured result `{ success, stdout, stderr, exit_code }`
 - No user-controlled data is ever interpolated into shell strings
 
-VCS Backend execution safety encompasses directory management:
-- Subcommand backends relying on external process scoping (Fossil, SVN) securely execute commands within the mirror path via dynamic `chdir()` wrapped in strict `eval { ... }; chdir($old) or croak` blocks ensuring cwd is securely restored despite subprocess crashes, preserving main agent thread context.
-- Backends with native repository flags (`hg -R`, `git -C`) utilize those instead of active state modification.
+VCS backend working-directory management differs by backend:
+- **SVN** is the only backend that uses Perl `chdir`: it saves the cwd via `Cwd::getcwd`, runs the command, and restores the cwd (guarded so it is restored even on failure).
+- **Fossil** uses its native `--chdir` flag (no Perl `chdir`); it also sets `FOSSIL_HOME` when `HOME` is unset.
+- **Git** (`git -C`) and **Mercurial** (`hg -R`) use native repository-path flags, never changing the process cwd.
 
 ### 7.2 Trust boundaries
 
@@ -263,7 +291,7 @@ VCS Backend execution safety encompasses directory management:
 
 - Designed to run as root (to read all tracked files)
 - Lock path adapts: root → `/var/run/`, non-root → `$XDG_CACHE_HOME/`
-- Config file should be 0640 (contains potential webhook secrets in `otlp_headers`)
+- Config file should be 0640 (contains potential webhook secrets / OTLP auth headers); the Runner warns at load time if the config file is group- or world-readable
 - Mirror directory created mode 0700
 
 ### 7.4 Threat surface summary
@@ -312,16 +340,27 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 | `log [path]` | Show VCS history |
 | `revert <path> <rev>` | Restore file to a specific revision |
 | `update-ignore` | Sync VCS-native ignore file with configured patterns |
-| `migrate-config` | Convert legacy v1 config to v2 format |
 
-### 8.4 Exit codes
+There is no `migrate-config` subcommand and no v1→v2 config migration tooling. (`Metadata::import_from_v1_statistics` exists only as a stub that `carp`s "not yet implemented".)
+
+### 8.4 Global options and diagnostics
+
+CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `--system`, `--user`, `-m`/`--message`, `--no-auto-init`, `-n`/`--dry-run`, `-q`/`--quiet`, `-v`/`--verbose`, `-d`/`--debug`, `-t`/`--trace`, `-f`/`--force`, `-V`/`--version`, `-h`/`--help`.
+
+- Config resolution order: `-c` > `$CHANGETRACK_CONFIG` > `--user`/`--system` > default `/etc/changetrack-ng/changetrack-ng.conf`.
+- Diagnostic tiers imply downward: `--trace` ⇒ `--debug` ⇒ `--verbose`. All diagnostics go to STDERR; STDOUT stays clean.
+- A `run`/`status`/`diff` against an uninitialized output dir auto-initializes the VCS unless `--no-auto-init` is given.
+- `-m`/`--message` supplies the commit annotation; the apt/dnf/pacman hooks pass a `-m` describing the package transaction so pre/post snapshots are labeled.
+- All write operations are skipped under `--dry-run`.
+
+### 8.5 Exit codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success (or no changes for `run`) |
-| 1 | Changes detected (`status`), or operational warning |
-| 2 | Runtime error |
-| 64 | Usage error (bad args, unknown subcommand) |
+| 1 | Changes detected (`status`); or an operational failure / aborted action |
+| 2 | Runtime exception |
+| 64 | Usage or config error (bad args, unknown subcommand, invalid config) |
 
 ---
 
@@ -332,9 +371,16 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 - `make test` — runs `prove -l t/`
 - `make install` — PREFIX-aware install with shebang/use-lib rewriting
 - `make install-hooks` — auto-detects package manager, installs hooks with `@BINDIR@` templating
-- `make install-systemd` — installs service+timer with `@BINDIR@` templating
-- `make dist` — release tarball
+- `make install-systemd` / `make install-cron` — install scheduler units with `@BINDIR@` templating
+- `make install-user` (+ `-systemd`/`-cron`/`-uninstall`) — per-user (non-root) install variants
+- `make dist` / `dist-minimal` / `dist-deploy` — release tarballs; the file lists are read from `MANIFEST.toml` via `tools/manifest-query --dist <target>` (no longer hardcoded in the Makefile)
+- `make manifest-lint` / `make manifest-extra` — validate that listed files exist / find on-disk files missing from the manifest
 - `make fatpack` — single-file standalone (via App::FatPacker)
+- `make man` — render man pages
+
+### 9.4 Manifest subsystem
+
+`MANIFEST.toml` is the authoritative inventory of distributable files, organized by category (deps, lib, tests, configs, examples, man, docs, packaging, build, legal) with per-file `dist` membership tags and `tested_by` cross-references. `tools/manifest-query` (uses `TOML::Tiny`) reads it to drive the `dist*` targets and the `manifest-lint`/`manifest-extra` checks; it is covered by `t/28-manifest-query.t` against `t/fixtures/manifest-test.toml`. `DEFAULTSDIR` in the Makefile auto-detects `/etc/sysconfig` (dnf systems) vs `/etc/default`.
 
 ### 9.2 Test strategy
 
@@ -346,7 +392,7 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 
 ### 9.3 Version management
 
-- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.5.0'`)
+- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.6.1'`)
 - All modules: `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`
 - Makefile `VERSION` variable must be kept in sync
 - RPM spec `Version:` and `%changelog` updated manually
@@ -365,7 +411,7 @@ Metadata tracks symlink targets via `readlink()`, while `sync_mirror_path()` wri
 
 ### 10.3 Config key drift potential
 
-The `%KNOWN_GLOBAL_KEYS` whitelist enforces valid keys at parse time, which is strong. However, some documented keys (`sensitive_auto`) are consumed only partially — the Runner reads it but the relationship between it and the notifier-level `sensitive_notify` is indirect.
+The `%KNOWN_GLOBAL_KEYS` whitelist enforces valid keys at parse time, which is strong. However, it also accepts the `interval` key, which is type-validated as an integer but **never read by any code** — a dead key that silently does nothing (scheduling is external, via the systemd timer or cron). The relationship between `sensitive_auto` and the notifier-level `sensitive_notify` is also indirect rather than enforced.
 
 ### 10.4 Config validation scope
 
@@ -405,33 +451,8 @@ All runtime dependencies are Perl core (≥5.14):
 | `POSIX` | `strftime`, timestamps | 5.0 |
 | `Getopt::Long` | CLI parsing | 5.0 |
 | `FindBin` | Locate lib/ relative to bin/ | 5.0 |
+| `Sys::Hostname` | Short hostname (`Util::hostname`) | 5.0 |
+| `Net::Domain` | FQDN fallback (`Util::fqdn`) | 5.7 |
+| `Cwd` | Save/restore cwd in SVN backend (`getcwd`) | 5.0 |
 
-Phase 1 (immediate, high priority):
-1. Fix notifier data-shape contract (F1, F2).
-2. Add integration tests for notifier wiring (F7).
-3. Resolve config/runtime drift for `sensitive_auto`, `otlp_insecure`, `webhook_insecure` (F3).
-
-Phase 2 (near term):
-1. Decide and enforce symlink model end-to-end (F4).
-2. Make install templates prefix-aware for service/hooks (F5).
-
-Phase 3 (quality/portability):
-1. Add Windows-safe account-name fallbacks (F6).
-2. Expand CI matrix by OS and notifier mode.
-
-## 8. Architecture hardening suggestions
-
-- Introduce a normalized internal config schema object after parse, before runner execution.
-- Add strict validation pass with explicit warnings/errors for unsupported keys.
-- Treat notifier constructors as typed interfaces; reject invalid shapes early.
-- Add an optional `--self-check` mode to validate config, endpoints, and dependencies.
-
-## 9. Open questions for maintainer alignment
-
-1. Should Linux production behavior be the primary target, with Windows only as a best-effort contributor platform?
-2. Should threat modeling assume config is root-trusted only, or include accidental/malicious config tampering scenarios?
-3. For multi-value notifier fields (`url` in webhook, `headers` and `resource_attributes` in OTLP), do you prefer strict structured syntax (recommended) or backward-compatible loose parsing?
-
-## 10. Conclusion
-
-The core architecture is sound and maintainable. The main risk is not algorithmic complexity but integration correctness and operator trust in alerting/telemetry behavior. Addressing the notifier data contracts and config/runtime drift will materially improve reliability and security posture with relatively contained code changes.
+Build-time tooling (`tools/manifest-query`) additionally uses `TOML::Tiny`, which is **not** a Perl core module. It is required only for the manifest-driven `dist*`/`manifest-*` Makefile targets, never at runtime, so the zero-non-core-runtime-dependency guarantee holds.

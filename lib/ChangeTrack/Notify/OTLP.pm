@@ -97,7 +97,8 @@ sub send_heartbeat {
 }
 
 # _build_payload -- Construct the OTLP LogsData JSON payload for one run.
-# Heartbeat runs emit a single INFO log record with event.name=changetrack.run.heartbeat.
+# Heartbeat runs emit a single log record with event.name=changetrack.run.heartbeat
+# at the severity_heartbeat severity (default DEBUG).
 # Change runs emit one record per changed file plus records for warnings.
 sub _build_payload {
     my ($self, $report, $is_heartbeat) = @_;

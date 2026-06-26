@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-A modernized Perl rewrite of the `changetrack` system file change tracker.
+A modernized rewrite of the `changetrack` system file change tracker.
 
 ## Overview
 
@@ -33,6 +33,8 @@ compatibility debt.
 - **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
 - **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).
 - **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage—all execution is polling-based or hook-driven.
+- **Configurable Tracking:** Track arbitrary files and directories, with per-file/per-directory overrides for notification recipients, sensitive-file flags, and ignore patterns.
+- **System and User Modes:** Run as root to track system paths, or as an unprivileged user to track home directories.  Each mode has its own config and VCS repo.
 
 ## How it Works
 
