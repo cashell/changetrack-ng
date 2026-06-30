@@ -6,6 +6,98 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-29
+
+Security hardening release. Consolidated from a multi-tool security review
+(`SECURITY-REVIEW.md`); see `SECURITY-PLAN.md` and `SECURITY-IMPL-LOG.md` for the
+phased implementation and per-finding status.
+
+### Security
+
+- **TLS verification is now explicit** on the webhook and OTLP notifiers
+  (`verify_SSL => 1` on the secure path). Previously verification relied on the
+  `HTTP::Tiny` default, which is unverified on the Perl 5.20 floor
+  (`HTTP::Tiny` < 0.083), so payloads with auth headers/tokens could be sent over
+  unverified TLS even without `insecure = 1`.
+- **Credential redaction in logs.** A shared `redact_secrets`/`redact_url` helper
+  masks URI userinfo and token-like parameters in: the `--debug` command trace,
+  the `--debug` effective-config dump (now also covering `url`/`uri`/`endpoint`/
+  `remote`), webhook failure warnings, and Git/Fossil/Mercurial push-failure
+  warnings.
+- **OTLP header CRLF-injection defense.** Header keys/values are stripped of
+  CR/LF/NUL after percent-decoding, preventing HTTP header injection via
+  `OTEL_EXPORTER_OTLP_HEADERS`.
+- **Email hardening.** Sendmail invocation adds a `--` end-of-options terminator
+  before the recipient (argument-injection defense); `From:`/`To:`/`Subject:`
+  values are stripped of CR/LF (header-injection defense); `_find_sendmail` skips
+  relative `PATH` entries.
+- **Path-traversal containment.** Track paths containing `..` are now rejected at
+  config load, and the whole-repo VCS backends assert mirror paths stay within
+  `output_dir`.
+- **Safer on-disk writes.** Metadata sidecar saves now use `File::Temp`
+  (`O_EXCL`, mode 0600) instead of a predictable `*.tmp.$$` name; the lock file is
+  opened with `O_NOFOLLOW` where available and no longer falls back to a bare,
+  world-writable `/tmp` path; `revert` re-checks the target is a regular file
+  immediately before `chmod`/`chown`.
+- **Webhook info-leak fix.** Diff line counts are zeroed for sensitive files when
+  the diff body is suppressed, and the webhook now honors `max_diff_bytes`.
+
+### Added
+
+- **`command_timeout` global config key** (default `120`, `0` = unlimited).
+  Bounds every external command with a wall-clock watchdog that kills the child,
+  so a hung or runaway tool cannot hang a scheduled (cron/systemd) run.
+- **`max_diff_bytes` for the webhook notifier** (default `0` = unlimited),
+  matching the otlp/file notifiers; truncation adds a `diff_truncated` flag.
+- **`ctime` in the metadata fast path**, so a same-size edit that restores the
+  previous mtime is no longer missed.
+
+### Changed
+
+- `run_cmd` now drains stdout/stderr to EOF (no more silent truncation after an
+  idle gap) and reports signal termination as `128 + signal`.
+- `status`/`diff`/`log` now fail loudly when a VCS backend errors instead of
+  reporting a false-clean (empty) result.
+- Notifier send failures are now surfaced as warnings and recorded on the run
+  report (previously visible only under `--debug`).
+- A failed metadata save now aborts the run before committing/notifying, instead
+  of proceeding with desynced state.
+- OTLP endpoint resolution ignores a defined-but-empty `OTEL_*` env var instead
+  of letting it silently disable sends.
+
+### Fixed
+
+- RCS flat-layout archive collision: distinct paths such as `/etc/a/b` and a real
+  file named `/etc/a:b` no longer map to the same archive (colon/percent are now
+  escaped).
+- `git diff --cached` errors are no longer misread as "has changes".
+- Unchecked I/O is now checked: `git config` results, `close` after content writes
+  (SVN/Mercurial/Fossil), and the `update-ignore` write.
+- `init` accepts the `mercurial` alias (not just `hg`).
+- An unknown command-line option is reported as such (exit 64) instead of being
+  mislabeled as an unknown subcommand.
+- A disabled notifier no longer reserves its name, so an enabled same-named
+  instance elsewhere loads correctly.
+- `revert <path> <rev>` rejects a revision beginning with `-` (argument-injection
+  defense).
+- Dead/unreachable branches removed; corrected the symlink-snapshot prefix typo;
+  fixed POD in `Report`, `VCS::Base`, and `Lock`.
+
+### Migration notes
+
+- **TLS:** endpoints using self-signed certificates without `insecure = 1` will
+  now fail TLS verification (correct behavior). Set `insecure = 1` per notifier if
+  you intentionally use self-signed certificates.
+- **RCS backend:** mirror/archive filenames for tracked paths that contain a
+  literal `:` change (the colon is now percent-escaped). Existing archives for
+  such paths will be re-created under the new name on the next run.
+- **Tracked symlinks** are re-snapshotted once after upgrade due to the corrected
+  snapshot prefix constant.
+- **Config:** any `[track]` entry containing a `..` segment is now a fatal config
+  error; rewrite it as a canonical absolute path.
+- **Lock path:** non-root runs without `HOME`/`XDG_*` now use a per-UID lock path
+  rather than a shared `/tmp/changetrack-ng.lock`.
+
 ## [0.6.1] - 2026-06-25
 
 ### Added

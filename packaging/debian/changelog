@@ -1,3 +1,33 @@
+changetrack-ng (0.7.0) unstable; urgency=high
+
+  * Security hardening release consolidated from a multi-tool security review
+    (see SECURITY-REVIEW.md / SECURITY-PLAN.md / SECURITY-IMPL-LOG.md).
+  * Explicit TLS verification (verify_SSL=1) on the webhook and otlp notifiers;
+    previously relied on the HTTP::Tiny default, unverified on the Perl 5.20 floor.
+  * Redact credentials (URI userinfo and token-like params) in the --debug command
+    trace, the --debug config dump, webhook failure warnings, and Git/Fossil/
+    Mercurial push-failure warnings.
+  * Strip CR/LF/NUL from OTLP headers; add a sendmail '--' terminator and strip
+    CR/LF from mail headers; skip relative PATH entries when locating sendmail.
+  * Reject '..' segments in track paths and assert whole-repo mirror paths stay
+    within output_dir.
+  * Atomic metadata save via File::Temp (O_EXCL, mode 0600); open the lock file
+    with O_NOFOLLOW and drop the bare /tmp fallback; revert re-checks the target
+    is a regular file before chmod/chown.
+  * New command_timeout global config key (default 120s, 0 = unlimited) bounds
+    every external command so a hung command cannot hang a scheduled run.
+  * run_cmd drains stdout/stderr to EOF (no truncation) and reports signal
+    termination; status/diff/log fail loudly on backend errors; notifier failures
+    warn and are recorded; a failed metadata save aborts before commit.
+  * Add ctime to the metadata fast path; fix RCS colon-encoding collisions; the
+    webhook honors max_diff_bytes and suppresses sensitive line counts.
+  * Numerous correctness and POD fixes (see CHANGELOG.md).
+  * Migration: self-signed TLS endpoints now require insecure=1; RCS archive names
+    change for paths containing a literal colon; tracked symlinks re-snapshot once;
+    '..' in track paths is now a fatal config error.
+
+ -- Christopher Cashell <topher@zyp.org>  Mon, 29 Jun 2026 00:00:00 +0000
+
 changetrack-ng (0.6.1) unstable; urgency=medium
 
   * OTel conformance: canonical attribute model on the otlp and file notifiers

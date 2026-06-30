@@ -9,8 +9,9 @@ This file provides guidance to AI coding assistants (Claude, Copilot, etc.) when
 ## Commands
 
 ```bash
-make test                  # Run full test suite via `prove -l t/`
+make test                  # Run full test suite via `prove -l t/` (also runs config-lint)
 prove -l t/06-vcs-git.t    # Run a single test file
+make config-lint           # Verify installed default config == canonical -default example (File::Compare)
 make install               # Install to /usr/local (override with PREFIX=...)
 make install-hooks         # Install package manager hooks (auto-detects apt/dnf/pacman)
 make install-systemd       # Install systemd timer (templates @BINDIR@)

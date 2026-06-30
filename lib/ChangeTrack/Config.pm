@@ -89,14 +89,14 @@ my %KNOWN_GLOBAL_KEYS = map { $_ => 1 } qw(
     vcs output_dir push_remote ignore
     sensitive_auto sensitive_notify
     warn_special_files interval
-    lock_path lock_timeout
+    lock_path lock_timeout command_timeout
 );
 
 # Global keys whose values are split into arrayrefs (append across files).
 my %ARRAY_GLOBAL_KEYS = map { $_ => 1 } qw(ignore push_remote);
 
 my %BOOL_GLOBAL_KEYS = map { $_ => 1 } qw(sensitive_auto warn_special_files);
-my %INT_GLOBAL_KEYS  = map { $_ => 1 } qw(lock_timeout interval);
+my %INT_GLOBAL_KEYS  = map { $_ => 1 } qw(lock_timeout interval command_timeout);
 my %PATH_GLOBAL_KEYS = map { $_ => 1 } qw(output_dir lock_path);
 my %ENUM_GLOBAL_KEYS = (
     vcs              => { map { $_ => 1 } qw(rcs git fossil svn hg mercurial) },
@@ -109,7 +109,7 @@ my %KNOWN_NOTIFIER_KEYS = (
         enabled to from sendmail_path
     ) },
     webhook => { map { $_ => 1 } qw(
-        enabled url full_diff heartbeat insecure timeout
+        enabled url full_diff heartbeat insecure timeout max_diff_bytes
     ) },
     otlp => { map { $_ => 1 } qw(
         enabled endpoint headers compression full_diff
@@ -141,7 +141,7 @@ my %BOOL_NOTIFIER_KEYS = (
 
 my %INT_NOTIFIER_KEYS = (
     email   => {},
-    webhook => { timeout => 1 },
+    webhook => { timeout => 1, max_diff_bytes => 1 },
     otlp    => { timeout => 1, max_diff_bytes => 1 },
     file    => { max_diff_bytes => 1 },
 );
@@ -407,11 +407,6 @@ sub _flush_notifier_section {
     }
 
     my $key = "$type:$name";
-    if (exists $self->{_notifier_seen}{$key}) {
-        croak "Config error in $path: duplicate notifier instance '$key' "
-            . "(first seen in $self->{_notifier_seen}{$key})";
-    }
-    $self->{_notifier_seen}{$key} = $path;
 
     # Coerce key types.
     my %inst = %$data;
@@ -433,7 +428,15 @@ sub _flush_notifier_section {
         }
     }
 
-    return unless $inst{enabled};   # discard disabled instances
+    return unless $inst{enabled};   # discard disabled instances; do not reserve the name
+
+    # Reserve the name only for surviving (enabled) instances so a disabled
+    # instance does not block a same-named enabled one elsewhere.
+    if (exists $self->{_notifier_seen}{$key}) {
+        croak "Config error in $path: duplicate notifier instance '$key' "
+            . "(first seen in $self->{_notifier_seen}{$key})";
+    }
+    $self->{_notifier_seen}{$key} = $path;
 
     push @{ $self->{notifiers}{$type} }, \%inst;
 }
@@ -483,6 +486,8 @@ sub _expand_track_path {
     }
     croak "Config error in $src line $lineno: track path must be absolute: '$path'"
         unless $path =~ m{^/};
+    croak "Config error in $src line $lineno: track path may not contain '..': '$path'"
+        if grep { $_ eq '..' } split m{/+}, $path;
     return $path;
 }
 

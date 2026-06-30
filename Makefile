@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.6.1
+VERSION    := 0.7.0
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
@@ -20,13 +20,14 @@ DESTDIR     ?=
 
 PERL       ?= perl
 
-.PHONY: all test install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
+.PHONY: all test config-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
 
 all:
 	@echo "$(NAME) $(VERSION)"
 	@echo ""
 	@echo "Targets:"
 	@echo "  make test            Run the test suite"
+	@echo "  make config-lint     Verify the installed default config matches the canonical -default example"
 	@echo "  make install         Install (PREFIX=$(PREFIX))"
 	@echo "  make install-man     Install man pages (requires pod2man)"
 	@echo "  make uninstall       Remove installed files"
@@ -48,8 +49,17 @@ all:
 	@echo "  make manifest-lint   Validate MANIFEST.toml (checks all listed files exist)"
 	@echo "  make manifest-extra  Find files on disk not listed in MANIFEST.toml"
 
-test:
+test: config-lint
 	prove -l t/
+
+# config-lint -- Enforce that the installed default config (etc/$(NAME).conf)
+# and the canonical packaging "-default" example stay byte-identical.  The
+# packaging example is the canonical source of the default config; etc/ ships
+# an identical copy so admins can diff their live config against the pristine
+# default.  Uses the core File::Compare module so it runs anywhere Perl does
+# (no external cmp/diff tooling required).
+config-lint:
+	@$(PERL) -MFile::Compare -e 'my($$f1,$$f2)=@ARGV; my $$r=compare($$f1,$$f2); if($$r==0){print "config-lint: OK ($$f1 == $$f2)\n"}elsif($$r>0){warn "config-lint: ERROR -- $$f1 and $$f2 differ.\n  They must be byte-identical.  $$f2 is canonical; resync with:\n    cp $$f2 $$f1\n"; exit 1}else{warn "config-lint: ERROR -- cannot compare $$f1 and $$f2: $$!\n"; exit 2}' etc/$(NAME).conf packaging/etc/examples/$(NAME).conf-default
 
 manifest-lint:
 	perl -MTOML::Tiny tools/manifest-query --validate

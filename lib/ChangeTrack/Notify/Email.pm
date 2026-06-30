@@ -134,9 +134,16 @@ sub _send_one {
     my $from    = $self->{from};
     my $subject = "[changetrack-ng] Changes on $host \@ $date";
 
-    my @cmd = ($sendmail, '-oi', '-f', $from, $to);
+    # Strip CR/LF to prevent mail-header injection via config-sourced values.
+    for my $field (\$from, \$to, \$subject) {
+        $$field =~ s/[\r\n]//g if defined $$field;
+    }
+
+    # '--' terminates option parsing so a recipient or sender beginning with
+    # '-' cannot be misinterpreted by sendmail as an option (arg injection).
+    my @cmd = ($sendmail, '-oi', '-f', $from, '--', $to);
     if ($^O eq 'MSWin32' && $sendmail !~ /\.(?:exe|bat|cmd|com)$/i) {
-        @cmd = ($^X, $sendmail, '-oi', '-f', $from, $to);
+        @cmd = ($^X, $sendmail, '-oi', '-f', $from, '--', $to);
     }
 
     open(my $pipe, '|-', @cmd)
@@ -169,6 +176,7 @@ sub _find_sendmail {
     }
 
     for my $dir (split /:/, ($ENV{PATH} // '/usr/bin:/usr/sbin')) {
+        next unless $dir =~ m{^/};    # skip relative PATH entries (untrusted)
         my $p = "$dir/sendmail";
         return $p if -x $p;
     }

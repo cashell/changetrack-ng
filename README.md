@@ -104,6 +104,16 @@ Security notes:
 - Prefer environment-backed secrets for OTLP headers (`${VAR}` expansion in
   config values is supported, and `OTEL_EXPORTER_OTLP_HEADERS` is preferred
   for secret tokens).
+- The webhook and OTLP notifiers verify TLS certificates by default. Set
+  `insecure = 1` on a notifier only if you intentionally use a self-signed
+  endpoint.
+
+Reliability notes:
+- `command_timeout` (global, default `120` seconds, `0` = unlimited) bounds every
+  external command with a watchdog that kills the child, so a hung or runaway tool
+  cannot stall a scheduled (cron/systemd) run.
+- The webhook notifier honors `max_diff_bytes` (default `0` = unlimited) to cap the
+  diff size in the POST payload, mirroring the `otlp` and `file` notifiers.
 
 ### Example Structure
 

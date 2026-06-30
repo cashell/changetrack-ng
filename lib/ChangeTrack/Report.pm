@@ -19,12 +19,12 @@ ChangeTrack::Report - accumulates per-file change records during a run
 =head1 SYNOPSIS
 
   my $report = ChangeTrack::Report->new;
-  $report->add_change({ path => '/etc/passwd', diff => '...', is_sensitive => 0 });
+  $report->add_change(path => '/etc/passwd', diff => ['...'], is_sensitive => 0);
   $report->add_warning('Could not read /etc/shadow: permission denied');
-  $report->finish;
+  $report->set_end_time(time());
 
-  my @changes = $report->changes;
-  my $count   = $report->change_count;
+  my $changes = $report->changes;
+  my $count   = scalar @$changes;
 
 =head1 DESCRIPTION
 
@@ -46,21 +46,17 @@ and C<stat> (a metadata hashref normalized into C<file_meta>).
 
 Append a warning string.
 
-=item $report->finish
+=item $report->set_end_time($epoch)
 
-Record the end time for the run.
+Record the run end time (used to compute C<duration_ms>).
 
 =item $report->changes
 
-Return the list of change record hashrefs.
+Return an arrayref of change record hashrefs.
 
 =item $report->warnings
 
-Return the list of warning strings.
-
-=item $report->change_count
-
-Return the number of recorded changes.
+Return an arrayref of warning strings.
 
 =item $report->has_changes
 

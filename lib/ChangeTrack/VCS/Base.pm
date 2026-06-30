@@ -24,8 +24,9 @@ L<ChangeTrack::VCS::Mercurial>.
 
 =head1 INTERFACE
 
-Subclasses must implement: C<init>, C<is_initialized>, C<add>, C<commit>,
-C<diff>, C<log>, C<revert>.
+Subclasses must implement: C<init>, C<is_initialized>, C<output_path>,
+C<add>, C<checkin>, C<commit>, C<diff>, C<log_history>, C<revert>,
+C<is_dirty>, C<model>.
 
 =over 4
 
@@ -55,13 +56,25 @@ Commit all staged changes with I<$message>.
 
 Return a unified diff string for I<$path>.
 
-=item $vcs->log($path)
+=item $vcs->output_path($real_path)
 
-Return a log string for I<$path>.
+Return the mirror/archive path under C<output_dir> for I<$real_path>.
+
+=item $vcs->log_history($path)
+
+Return the revision history for I<$path>.
 
 =item $vcs->revert($path, $rev)
 
 Restore I<$path> to revision I<$rev>.
+
+=item $vcs->is_dirty($path)
+
+Return true if I<$path> has uncommitted changes in the mirror.
+
+=item $vcs->model
+
+Return the backend storage model: C<'whole-repo'> or C<'per-file'>.
 
 =back
 
@@ -85,6 +98,19 @@ sub new {
 
 # _unimpl -- Die with a 'not implemented' message for unoverridden abstract methods.
 sub _unimpl { die ref(shift) . "::$_[0] not implemented\n" }
+
+# _mirror_rel -- Return $real_path with its leading slash(es) removed, after
+# asserting it contains no '..' segment.  Defense-in-depth shared by the
+# whole-repo backends so a computed mirror path can never escape output_dir
+# even if config-level validation is bypassed.
+sub _mirror_rel {
+    my ($self, $real_path) = @_;
+    require Carp;
+    Carp::croak("unsafe tracked path (contains '..'): $real_path")
+        if grep { $_ eq '..' } split m{/+}, $real_path;
+    (my $rel = $real_path) =~ s{^/+}{};
+    return $rel;
+}
 
 sub init           { _unimpl(shift, 'init')           }
 sub is_initialized { _unimpl(shift, 'is_initialized') }

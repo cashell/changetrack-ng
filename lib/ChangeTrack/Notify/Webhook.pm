@@ -42,6 +42,7 @@ sub new {
     $self->{heartbeat}        //= 0;
     $self->{insecure}         //= 0;
     $self->{timeout}          //= 10;
+    $self->{max_diff_bytes}   //= 0;
     $self->{sensitive_notify} //= 'suppress';
     return $self;
 }
@@ -55,7 +56,7 @@ sub heartbeat_enabled {
 sub name { 'webhook' }
 
 # config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(url full_diff heartbeat insecure timeout) }
+sub config_keys { qw(url full_diff heartbeat insecure timeout max_diff_bytes) }
 
 # validate_config -- Return an error string when no webhook URLs are configured.
 sub validate_config {
@@ -88,19 +89,24 @@ sub _build_payload {
     my @files;
     unless ($is_heartbeat) {
         for my $c (@{ $report->changes }) {
+            # For a sensitive file with suppression active, withhold both the
+            # diff body and its line counts (the counts disclose change
+            # magnitude to the endpoint suppression is meant to protect).
+            my $suppressed = $c->{is_sensitive} && !$self->_sensitive_notify_allowed;
             my $entry = {
                 path               => $c->{path},
                 is_new             => $c->{is_new}       ? JSON::PP::true() : JSON::PP::false(),
                 is_removed         => $c->{is_removed}   ? JSON::PP::true() : JSON::PP::false(),
                 is_sensitive       => $c->{is_sensitive} ? JSON::PP::true() : JSON::PP::false(),
                 metadata_changed   => ($c->{meta_change} ? JSON::PP::true() : JSON::PP::false()),
-                diff_lines_added   => _count_added($c->{diff}),
-                diff_lines_removed => _count_removed($c->{diff}),
+                diff_lines_added   => $suppressed ? 0 : _count_added($c->{diff}),
+                diff_lines_removed => $suppressed ? 0 : _count_removed($c->{diff}),
             };
-            if ($self->{full_diff}) {
-                unless ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-                    $entry->{diff} = join("\n", @{ $c->{diff} // [] });
-                }
+            if ($self->{full_diff} && !$suppressed) {
+                my ($text, $truncated)
+                    = $self->_truncate_diff(join("\n", @{ $c->{diff} // [] }));
+                $entry->{diff}           = $text;
+                $entry->{diff_truncated} = $truncated ? JSON::PP::true() : JSON::PP::false();
             }
             push @files, $entry;
         }
@@ -129,9 +135,9 @@ sub _post_to_all {
     my ($self, $payload) = @_;
     return unless @{ $self->{_urls} };
 
-    my $json = JSON::PP->new->encode($payload);
+    my $json = JSON::PP->new->utf8->encode($payload);
 
-    my %http_opts = (timeout => $self->{timeout});
+    my %http_opts = (timeout => $self->{timeout}, verify_SSL => 1);
     if ($self->{insecure}) {
         warn "[changetrack-ng] webhook: TLS verification disabled (insecure=1)\n";
         $http_opts{verify_SSL} = 0;
@@ -148,6 +154,7 @@ sub _post_to_all {
 sub _post_with_retry {
     my ($self, $http, $url, $json) = @_;
 
+    my $safe_url     = ChangeTrack::Util::redact_url($url);
     my $max_attempts = 3;
     my $delay        = 1;
 
@@ -164,7 +171,7 @@ sub _post_with_retry {
         }
 
         if ($status >= 400 && $status < 500) {
-            warn "[changetrack-ng] webhook POST to $url returned $status (client error, not retrying)\n";
+            warn "[changetrack-ng] webhook POST to $safe_url returned $status (client error, not retrying)\n";
             return;
         }
 
@@ -176,7 +183,7 @@ sub _post_with_retry {
             my $detail = $status == 599
                 ? $resp->{content}
                 : "HTTP $status";
-            warn "[changetrack-ng] webhook POST to $url failed after $max_attempts attempts: $detail\n";
+            warn "[changetrack-ng] webhook POST to $safe_url failed after $max_attempts attempts: $detail\n";
         }
     }
 }

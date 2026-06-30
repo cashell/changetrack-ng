@@ -72,10 +72,12 @@ sub config_keys { qw(endpoint headers compression full_diff heartbeat timeout in
 # validate_config -- Return an error string when no endpoint is configured.
 sub validate_config {
     my ($self) = @_;
-    my $ep = $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
-          // $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}
-          // $self->{endpoint}
-          // '';
+    my ($ep) = grep { defined && /\S/ } (
+        $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT},
+        $ENV{OTEL_EXPORTER_OTLP_ENDPOINT},
+        $self->{endpoint},
+    );
+    $ep //= '';
     return () if $ep =~ /\S/;
     return ('otlp notifier requires endpoint or OTEL_EXPORTER_OTLP[_LOGS]_ENDPOINT');
 }
@@ -274,10 +276,12 @@ sub _resource_attrs {
 sub _resolve_endpoint {
     my ($self) = @_;
 
-    my $ep = $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
-          // $ENV{OTEL_EXPORTER_OTLP_ENDPOINT}
-          // $self->{endpoint}
-          // '';
+    my ($ep) = grep { defined && /\S/ } (
+        $ENV{OTEL_EXPORTER_OTLP_LOGS_ENDPOINT},
+        $ENV{OTEL_EXPORTER_OTLP_ENDPOINT},
+        $self->{endpoint},
+    );
+    $ep //= '';
 
     return '' unless $ep =~ /\S/;
 
@@ -318,7 +322,7 @@ sub _resolve_headers {
 sub _post_with_retry {
     my ($self, $ep, $payload) = @_;
 
-    my $json = JSON::PP->new->encode($payload);
+    my $json = JSON::PP->new->utf8->encode($payload);
     my $body = $json;
     my %extra_hdrs;
 
@@ -340,7 +344,7 @@ sub _post_with_retry {
 
     my %headers = ($self->_resolve_headers, %extra_hdrs);
 
-    my %http_opts = (timeout => $self->{timeout});
+    my %http_opts = (timeout => $self->{timeout}, verify_SSL => 1);
     if ($self->{insecure}) {
         warn "[changetrack-ng] otlp: TLS verification disabled (insecure=1)\n";
         $http_opts{verify_SSL} = 0;
@@ -388,6 +392,8 @@ sub _parse_config_headers {
     while ($str =~ /(\S+?)=((?:[^\\ \t]|\\.)*)/g) {
         my ($k, $v) = ($1, $2);
         $v =~ s/\\(.)/$1/g;
+        $k =~ s/[\x00\x0D\x0A]//g;
+        $v =~ s/[\x00\x0D\x0A]//g;
         $h{$k} = $v;
     }
     return %h;
@@ -406,6 +412,8 @@ sub _parse_env_headers {
             $k =~ s/^\s+|\s+$//g;
             $v =~ s/^\s+|\s+$//g;
             $v =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
+            $k =~ s/[\x00\x0D\x0A]//g;
+            $v =~ s/[\x00\x0D\x0A]//g;
             $h{$k} = $v;
         }
     }

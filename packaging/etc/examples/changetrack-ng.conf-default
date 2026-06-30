@@ -1,7 +1,8 @@
 # changetrack-ng — default configuration
 #
 # All options shown with default values.
-# For detailed documentation, see the -full example config.
+# For detailed documentation, see the full reference config or the man page:
+#   man changetrack-ng.conf
 # Example configs installed to: /usr/share/doc/changetrack-ng/examples/
 
 ###################################################################
@@ -20,12 +21,16 @@ vcs = git
 # Directory where tracked file history is stored
 output_dir = /var/lib/changetrack-ng
 
+# Remote(s) to push to after each commit (space-separated)
+# Applies to whole-repo backends (git, fossil, svn, hg).
+push_remote =
+
 ##########################
 # Scheduling
 ##########################
 #
-# Run interval in seconds for systemd/cron install targets
-# (informational; not read at runtime by changetrack-ng itself)
+# Run interval in seconds for systemd/cron install targets.
+# This value is informational only and not read at runtime.
 interval = 3600
 
 ##########################
@@ -38,6 +43,11 @@ lock_path = /var/run/changetrack-ng.lock
 # Seconds to wait for lock; 0 = skip silently if locked (cron-friendly)
 lock_timeout = 0
 
+# Wall-clock timeout (seconds) for each external command (git/rcs/sendmail/etc).
+# A hung or runaway command is killed after this many seconds so it cannot hang
+# a scheduled (cron/systemd) run.  Most commands finish in seconds; 0 = no limit.
+command_timeout = 120
+
 ##########################
 # Sensitive Files
 ##########################
@@ -48,15 +58,12 @@ sensitive_auto = 1
 # Handling of sensitive diffs in notifications: suppress | allow
 sensitive_notify = suppress
 
-# Warn on non-regular files (sockets, FIFOs, device nodes, hard links)
-warn_special_files = 1
-
 ##########################
-# VCS Push
+# Special File Warnings
 ##########################
 #
-# Remote(s) to push to after each commit (space-separated)
-push_remote =
+# Warn on non-regular files (sockets, FIFOs, device nodes, hard links)
+warn_special_files = 1
 
 ###################################################################
 # File Tracking
@@ -66,72 +73,96 @@ push_remote =
 # Ignore Patterns
 ##########################
 #
-# Additional globs to skip during traversal (space-separated)
-# Built-in defaults already exclude: editor temps, archives, package
-# manager artifacts, bytecode, and common system runtime files.
+# Additional glob patterns to skip during directory traversal
+# (space-separated).  Applied on top of built-in defaults.
+#
+# Built-in defaults already exclude common noise:
+#   editor temp files:  *.swp  *~  #*#  .*.sw?  *.bak
+#   archives:           *.gz  *.bz2  *.bzip2  *.xz  *.zst  *.7z
+#                       *.zip  *.tar  *.tgz  *.tbz2  *.txz
+#   package manager:    *.dpkg-*  *.rpmnew  *.rpmsave  *.pacnew  *.pacorig
+#   compiled bytecode:  *.pyc  *.pyo  *.elc
+#   system runtime:     mtab  ld.so.cache  prelink.cache  adjtime
+#                       udev/hwdb.bin  lvm/cache  lvm/archive
 ignore =
 
 ###################################################################
 # Notifiers
 ###################################################################
 #
-# Uncomment and adjust any [notifier:*] section to enable it.
-# Multiple instances of the same type are supported — just use
-# different names, e.g. [notifier:webhook:ops] and [notifier:webhook:dev].
+# Configure notification channels using [notifier:<type>:<name>] sections.
+# Each section must include: enabled = true | false
+# Disabled instances are discarded at parse time.
+# Multiple instances of the same type are supported (use different names).
+#
+# Drop-in configs in notifier.d/ sibling directory are also loaded automatically.
+# See examples at: /usr/share/doc/changetrack-ng/examples/notifier.d/
 
-# [notifier:email:default]
-# enabled         = true
-# from            = changetrack-ng@HOSTNAME
-# to              =
-# sendmail_path   = /usr/sbin/sendmail
+[notifier:email:default]
+enabled         = false
+from            = changetrack-ng@HOSTNAME
+# to            = root@localhost
+# sendmail_path = /usr/sbin/sendmail
 
-# [notifier:webhook:default]
-# enabled         = true
-# url             =
-# full_diff       = 0
-# heartbeat       = 0
-# insecure        = 0
+[notifier:webhook:default]
+enabled         = false
+# url           =
+# full_diff     = 0
+# heartbeat     = 0
+# timeout       = 10
+# insecure      = 0    ; 1 disables TLS verification (verified by default)
+# max_diff_bytes   = 0    ; cap diff byte length in the payload (0 = unlimited)
 
-# [notifier:otlp:default]
-# enabled           = true
-# endpoint          =
-# compression       = gzip
-# full_diff         = 0
-# heartbeat         = 1
-# timeout           = 10
-# insecure          = 0
-# headers           =
+[notifier:otlp:default]
+enabled         = false
+# endpoint      =
+# compression   = gzip
+# full_diff     = 0
+# heartbeat     = 1
+# timeout       = 10
+# insecure      = 0
+# headers       =
 # resource_attributes =
-# emit_recipients   = 0
-# max_diff_bytes    = 0
-# severity_change   = INFO
-# severity_heartbeat = DEBUG
-# severity_warning  = WARN
+# emit_recipients  = 0    ; include notified recipients as config_change.notified attribute
+# max_diff_bytes   = 0    ; cap config_change.diff byte length (0 = unlimited)
+# severity_change  = INFO ; OTel severity for change/create/remove events
+# severity_heartbeat = DEBUG ; OTel severity for heartbeat events
+# severity_warning   = WARN  ; OTel severity for run-warning events
 
-# [notifier:file:default]
-# enabled           = true
-# path              = /var/log/changetrack-ng.jsonl
-# full_diff         = 0
-# heartbeat         = 0
-# emit_recipients   = 0
-# max_diff_bytes    = 0
-# severity_change   = INFO
-# severity_heartbeat = DEBUG
-# severity_warning  = WARN
+[notifier:file:default]
+enabled         = false
+# path          = /var/log/changetrack-ng.jsonl
+# full_diff     = 0
+# heartbeat     = 0
+# emit_recipients  = 0    ; include notified recipients as config_change.notified attribute
+# max_diff_bytes   = 0    ; cap config_change.diff byte length (0 = unlimited)
+# severity_change  = INFO ; OTel severity for change/create/remove events
+# severity_heartbeat = DEBUG ; OTel severity for heartbeat events
+# severity_warning   = WARN  ; OTel severity for run-warning events
 
-[track]
-##########################
+###################################################################
 # Track List
-##########################
+###################################################################
+#
+[track]
+#
+# Each line specifies a file or directory to track.
 #
 # Syntax:
-#   /path/to/file [: recip@addr ...] [option=value ...]
-#   DIRECTORY /path [: recip@addr ...] [option=value ...]
+#   /absolute/path/to/file [: email@example.com ...] [option=value ...]
+#   DIRECTORY /absolute/path [: email@example.com ...] [option=value ...]
+#
+# Optional per-entry recipients (after the colon) override the email
+# notifier's default to= for that entry.
 #
 # Per-entry options: sensitive=yes|no|auto
 #
 # Examples:
-# /etc/passwd
+# /etc/passwd : root@localhost
 # /etc/hosts
 # DIRECTORY /etc/ssh
 # DIRECTORY /etc/nginx : admin@example.com
+# DIRECTORY /etc/ssl/private sensitive=yes
+#
+# Drop-in track entries in track.d/ sibling directory are also loaded.
+# See examples at: /usr/share/doc/changetrack-ng/examples/track.d/

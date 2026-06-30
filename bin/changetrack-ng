@@ -86,6 +86,15 @@ my %dispatch = (
     'update-ignore'  => \&cmd_update_ignore,
 );
 
+# With Getopt::Long pass_through, an unrecognized global option is left in
+# @ARGV and would otherwise be mis-reported as a subcommand.  Detect a
+# leading-dash token here and report it accurately as an unknown option.
+if ($subcommand =~ /^-/) {
+    warn "changetrack-ng: unknown option '$subcommand'\n";
+    _usage(\*STDERR);
+    exit 64;
+}
+
 unless (exists $dispatch{$subcommand}) {
     warn "changetrack-ng: unknown subcommand '$subcommand'\n";
     _usage(\*STDERR);
@@ -133,6 +142,7 @@ sub cmd_init {
         fossil => 'ChangeTrack::VCS::Fossil',
         svn  => 'ChangeTrack::VCS::SVN',
         hg   => 'ChangeTrack::VCS::Mercurial',
+        mercurial => 'ChangeTrack::VCS::Mercurial',
     );
     my $vcs_class = $vcs_map{$vcs_name}
         or do { warn "changetrack-ng: unknown VCS '$vcs_name'\n"; return 64 };
@@ -214,6 +224,12 @@ sub cmd_revert {
         warn "Usage: changetrack-ng revert <path> <rev>\n";
         return 64;
     }
+    # A revision beginning with '-' could be consumed as a flag by the VCS
+    # backend (argument injection); reject it up front.
+    if ($rev =~ /^-/) {
+        warn "changetrack-ng: invalid revision '$rev' (must not begin with '-')\n";
+        return 64;
+    }
 
     unless ($opts{force}) {
         print "Revert $path to revision $rev? [y/N] ";
@@ -286,8 +302,10 @@ sub _update_gitignore {
         warn "changetrack-ng: cannot write $path: $!\n";
         return;
     };
-    print $fh $existing;
-    close($fh);
+    print $fh $existing
+        or do { warn "changetrack-ng: cannot write $path: $!\n"; return };
+    close($fh)
+        or do { warn "changetrack-ng: cannot finalize $path: $!\n"; return };
 
     say "Updated: $path" unless $opts{quiet};
 }

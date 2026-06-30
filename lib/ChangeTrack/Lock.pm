@@ -24,9 +24,10 @@ ChangeTrack::Lock - flock-based run lock for changetrack-ng
 
 =head1 DESCRIPTION
 
-Creates and C<flock>s a pidfile.  With C<timeout = 0> the acquire returns
+Creates and C<flock>s a lock file.  With C<timeout = 0> the acquire returns
 false immediately if the lock is held (cron-friendly).  With a positive
-C<timeout> it retries until the timeout expires, then warns and returns false.
+C<timeout> it retries until the timeout expires and then C<croak>s.  The lock
+file holds no PID; mutual exclusion comes from the advisory C<flock> alone.
 
 =head1 INSTANCE METHODS
 
@@ -38,7 +39,9 @@ Construct a lock object.  Does not acquire the lock.
 
 =item $lock->acquire
 
-Try to acquire the lock.  Returns true on success.
+Try to acquire the lock.  Returns true on success.  With C<timeout = 0>
+returns false immediately if the lock is held; with a positive C<timeout>
+C<croak>s if the deadline passes; with C<force> blocks until acquired.
 
 =item $lock->release
 
@@ -48,7 +51,7 @@ Release the lock and close the file.
 
 =cut
 
-use Fcntl qw(:flock);
+use Fcntl qw(:flock O_WRONLY O_APPEND O_CREAT);
 use Carp qw(croak);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -74,7 +77,14 @@ sub new {
 sub acquire {
     my ($self) = @_;
 
-    open(my $fh, '>>', $self->{path})
+    # Open with O_NOFOLLOW where available so a pre-planted symlink at the lock
+    # path cannot redirect the open to an arbitrary file (relevant for non-root
+    # runs whose lock dir may be less protected).  Mode 0600.
+    my $flags = O_WRONLY | O_APPEND | O_CREAT;
+    if (my $nofollow = eval { Fcntl::O_NOFOLLOW() }) {
+        $flags |= $nofollow;
+    }
+    sysopen(my $fh, $self->{path}, $flags, 0600)
         or croak "Cannot open lock file $self->{path}: $!";
 
     if ($self->{force}) {

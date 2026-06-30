@@ -25,6 +25,10 @@ interval = 3600
 # Default is auto-selected as $XDG_CACHE_HOME/changetrack-ng.lock
 # lock_path = ~/.cache/changetrack-ng.lock
 
+# Wall-clock timeout (seconds) for each external command; 0 = no limit.
+# The 120s default applies even when unset; uncomment to override.
+# command_timeout = 120
+
 ###################################################################
 # Notifiers
 ###################################################################

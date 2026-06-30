@@ -39,6 +39,10 @@ sub model { 'per-file' }
 sub output_path {
     my ($self, $real_path) = @_;
     (my $flat = $real_path) =~ s{^/}{};
+    # Percent-escape '%' and ':' before mapping '/' to ':' so distinct paths
+    # (e.g. /etc/a/b and a real file /etc/a:b) cannot collide onto one archive.
+    $flat =~ s/%/%25/g;
+    $flat =~ s/:/%3A/g;
     $flat =~ s{/}{:}g;
     return "$self->{output_dir}/$flat";
 }

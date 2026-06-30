@@ -94,21 +94,27 @@ sub _sensitive_notify_allowed {
 sub _diff_text_for {
     my ($self, $change) = @_;
     if ($change->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-        my $mode = $change->{mode} // '????';
         return ("[diff suppressed -- sensitive file (no group/world read)]");
     }
     return @{ $change->{diff} // [] };
 }
 
-# _truncate_diff -- Cap a diff string at max_diff_bytes characters.
+# _truncate_diff -- Cap a diff string at max_diff_bytes encoded UTF-8 bytes.
 # Returns ($text, $was_truncated).  max_diff_bytes of 0 (or unset) means
-# unlimited.  substr never splits a multibyte character.
+# unlimited.  Truncation happens on a UTF-8 byte boundary without splitting a
+# multibyte character.
 sub _truncate_diff {
     my ($self, $text) = @_;
     my $limit = $self->{max_diff_bytes} // 0;
     return ($text, 0) unless $limit && $limit > 0;
-    return ($text, 0) if length($text) <= $limit;
-    my $cut = substr($text, 0, $limit);
+
+    require Encode;
+    my $bytes = Encode::encode('UTF-8', $text);
+    return ($text, 0) if length($bytes) <= $limit;
+
+    # FB_QUIET stops decoding at the first incomplete trailing sequence, so the
+    # cut never yields a broken multibyte character.
+    my $cut = Encode::decode('UTF-8', substr($bytes, 0, $limit), Encode::FB_QUIET());
     return ($cut . "\n[diff truncated -- exceeded max_diff_bytes ($limit)]", 1);
 }
 

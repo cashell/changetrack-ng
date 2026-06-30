@@ -94,6 +94,8 @@ then rename).  Missing-type records are not written.
 use feature qw(state);
 use Carp qw(croak carp);
 use JSON::PP ();
+use File::Temp ();
+use File::Basename qw(dirname);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -169,6 +171,7 @@ sub update_from_stat {
     };
     if ($type eq 'file' || $type eq 'binary' || $type eq 'empty' || $type eq 'unreadable') {
         $rec->{mtime} = $s[9] + 0;
+        $rec->{ctime} = $s[10] + 0;
         $rec->{size}  = $s[7] + 0;
     }
     $rec->{target} = readlink($path) if $type eq 'symlink';
@@ -204,11 +207,18 @@ sub can_skip_content_diff {
 
         my $cur_size  = $s[7] + 0;
         my $cur_mtime = $s[9] + 0;
+        my $cur_ctime = $s[10] + 0;
 
         # Both empty: content is trivially identical regardless of mtime.
         return 1 if $cur_size == 0 && ($orig->{size} + 0) == 0;
 
-        return ($cur_mtime == ($orig->{mtime} + 0) && $cur_size == ($orig->{size} + 0)) ? 1 : 0;
+        return 0 unless $cur_mtime == ($orig->{mtime} + 0) && $cur_size == ($orig->{size} + 0);
+
+        # ctime additionally catches same-size edits that restore the old mtime
+        # (a content tracker must not miss those).  Older sidecar records may
+        # lack ctime; fall back to mtime+size for them until the next save.
+        return 1 unless defined $orig->{ctime};
+        return ($cur_ctime == ($orig->{ctime} + 0)) ? 1 : 0;
     }
 
     # special/directory/missing: no content to diff.
@@ -280,13 +290,20 @@ sub mark_removed {
 }
 
 # save -- Write the in-memory records to $path atomically.
-# Uses a tmpfile+rename pattern so readers never see a partial write.
+# Uses File::Temp (O_EXCL, mode 0600) in the destination directory plus a
+# rename, so a partial write is never visible and a predictable/symlinked temp
+# name cannot be used to clobber an arbitrary file.
 # Records with type 'missing' are not persisted (they are transient).
 sub save {
     my ($self, $path) = @_;
 
-    my $tmp = "$path.tmp.$$";
-    open(my $fh, '>', $tmp) or croak "Cannot write metadata tmp '$tmp': $!";
+    my $dir = dirname($path);
+    my ($fh, $tmp) = File::Temp::tempfile(
+        '.changetrack-metadata.XXXXXXXX',
+        DIR    => $dir,
+        UNLINK => 0,
+    );
+    chmod 0600, $tmp;
 
     for my $rpath (sort keys %{ $self->{records} }) {
         my $rec = $self->{records}{$rpath};
@@ -294,7 +311,7 @@ sub save {
         print $fh JSON::PP::encode_json($rec) . "\n";
     }
 
-    close($fh) or croak "Error flushing metadata '$tmp': $!";
+    close($fh) or do { unlink $tmp; croak "Error flushing metadata '$tmp': $!" };
 
     rename($tmp, $path) or do {
         unlink $tmp;

@@ -45,7 +45,7 @@ sub _repo_path {
 # /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
-    (my $rel = $real_path) =~ s{^/}{};
+    my $rel = $self->_mirror_rel($real_path);
     return "$self->{output_dir}/$rel";
 }
 
@@ -156,8 +156,7 @@ sub _set_binary_glob_for_path {
     my $current = '';
     if (-f $glob_file) {
         open(my $fh, '<', $glob_file)
-            or carp "Cannot read $glob_file: $!"
-            and return 0;
+            or do { carp "Cannot read $glob_file: $!"; return 0 };
         $current = do { local $/; <$fh> };
         close $fh;
         $current =~ s/\r//g;
@@ -167,13 +166,12 @@ sub _set_binary_glob_for_path {
     my $merged = $self->_merge_glob_list($current, $rel_path);
     return 1 if $merged eq $current;   # nothing to change
 
-    make_path($settings_dir, { mode => 0755 }) unless -d $settings_dir;
+    make_path($settings_dir, { mode => 0700 }) unless -d $settings_dir;
 
     open(my $fh, '>', $glob_file)
-        or carp "Cannot write $glob_file: $!"
-        and return 0;
+        or do { carp "Cannot write $glob_file: $!"; return 0 };
     print $fh "$merged\n";
-    close $fh;
+    close($fh) or carp "close $glob_file: $!";
 
     if ($self->{verbose}) {
         warn "[Fossil] wrote binary-glob: $merged\n";
@@ -274,7 +272,7 @@ sub commit {
     for my $remote (@remotes) {
         my $url = $remote =~ m{^[a-z]+://} ? $remote : "file://$remote";
         my $pr  = $self->_run('fossil', 'push', $url);
-        carp "fossil push $remote failed: $pr->{stderr}" unless $pr->{success};
+        carp 'fossil push ' . ChangeTrack::Util::redact_secrets($remote) . ' failed: ' . ChangeTrack::Util::redact_secrets($pr->{stderr}) unless $pr->{success};
     }
 }
 

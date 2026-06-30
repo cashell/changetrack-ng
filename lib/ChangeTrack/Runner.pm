@@ -86,7 +86,7 @@ use ChangeTrack::Config;
 use ChangeTrack::Lock;
 use ChangeTrack::Metadata;
 use ChangeTrack::Report;
-use ChangeTrack::Util qw(hostname set_debug);
+use ChangeTrack::Util qw(hostname set_debug redact_secrets);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -175,6 +175,11 @@ sub run {
 
     my $cfg        = ChangeTrack::Config->load($self->{config_path});
     $self->_verbose("Config loaded from $self->{config_path}");
+
+    # Bound every external command so a hung tool cannot hang the scheduled
+    # run.  command_timeout defaults to 120s; 0 disables the cap.
+    ChangeTrack::Util::set_default_timeout($cfg->global('command_timeout') // 120);
+
     $self->_warn_insecure_config_permissions($cfg, $self->{config_path});
     my @notifiers  = $self->_build_notifiers($cfg);
     $self->_validate_notifiers(\@notifiers);
@@ -249,8 +254,11 @@ sub run {
             my $val = $cfg->{global}{$key};
             $val = join(' ', @$val) if ref $val eq 'ARRAY';
             $val //= '';
-            if ($key =~ /header|secret|token|password/i) {
+            if ($key =~ /header|secret|token|password|url|uri|endpoint|remote/i) {
                 $val = '***REDACTED***';
+            }
+            else {
+                $val = redact_secrets($val);
             }
             $self->_debug("config: $key = $val");
         }
@@ -263,8 +271,11 @@ sub run {
                     my $val = $inst->{$key};
                     $val = join(' ', @$val) if ref $val eq 'ARRAY';
                     $val //= '';
-                    if ($key =~ /header|secret|token|password/i) {
+                    if ($key =~ /header|secret|token|password|url|uri|endpoint|remote/i) {
                         $val = '***REDACTED***';
+                    }
+                    else {
+                        $val = redact_secrets($val);
                     }
                     $self->_debug("config: notifier:$type:$iname:$key = $val");
                 }
@@ -302,10 +313,11 @@ sub run {
         }
     }
 
-    # Save metadata
+    # Save metadata.  A failed save desyncs the fast-path source of truth, so
+    # abort before committing/notifying rather than proceeding with stale state.
     unless ($self->{dry_run}) {
-        eval { $md->save($meta_path) };
-        $self->_warn("metadata save failed: $@") if $@;
+        eval { $md->save($meta_path); 1 }
+            or croak "metadata save failed (aborting before commit): $@";
     }
 
     # Batch commit for whole-repo VCS
@@ -333,7 +345,8 @@ sub run {
             eval { $notifier->send($report) };
             if ($@) {
                 (my $err = $@) =~ s/\n$//;
-                $self->_debug("Notifier $label: failed: $err");
+                $self->_warn("Notifier $label failed: $err");
+                $report->add_warning("Notifier $label failed: $err");
             } else {
                 $self->_debug("Notifier $label: sent OK");
             }
@@ -465,7 +478,7 @@ sub _process_file {
             );
             $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
             $self->_info("New: $real_path");
-        } elsif (!defined $existing) {
+        } else {
             $self->_trace("$real_path: empty, unchanged");
         }
         return;
@@ -721,17 +734,21 @@ sub _bool_or_default {
 sub _default_lock_path {
     return '/var/run/changetrack-ng.lock' if $> == 0;
 
-    my $cache_dir = $ENV{XDG_CACHE_HOME};
-    unless (defined($cache_dir) && $cache_dir =~ /\S/) {
-        my $home = $ENV{HOME};
-        if (!(defined($home) && $home =~ /\S/)) {
-            my @pw = getpwuid($<);
-            $home = $pw[7] if @pw;
-        }
-        $cache_dir = (defined($home) && $home =~ /\S/) ? "$home/.cache" : '/tmp';
+    # Prefer a private, user-owned runtime/cache directory.  Never fall back to
+    # a bare, world-writable /tmp path (predictable name -> symlink/DoS prone);
+    # use a per-UID name only as a last resort.
+    for my $dir ($ENV{XDG_RUNTIME_DIR}, $ENV{XDG_CACHE_HOME}) {
+        return "$dir/changetrack-ng.lock" if defined($dir) && $dir =~ /\S/;
     }
 
-    return "$cache_dir/changetrack-ng.lock";
+    my $home = $ENV{HOME};
+    if (!(defined($home) && $home =~ /\S/)) {
+        my @pw = getpwuid($<);
+        $home = $pw[7] if @pw;
+    }
+    return "$home/.cache/changetrack-ng.lock" if defined($home) && $home =~ /\S/;
+
+    return "/tmp/changetrack-ng-$<.lock";
 }
 
 # _ensure_lock_parent_dir -- Create the parent directory for $lock_path
@@ -825,7 +842,9 @@ sub status {
         next if defined $md->record_for($path)
              && $md->can_skip_content_diff($path)
              && !$md->changed_since_load($path);
-        my $diff = eval { $vcs->diff($path) } // [];
+        my $diff = eval { $vcs->diff($path) };
+        croak "status: diff failed for $path: $@" if $@;
+        $diff //= [];
         push @results, { path => $path, diff => $diff } if @$diff;
     }
     return \@results;
@@ -856,7 +875,9 @@ sub diff_path {
         next if defined $md->record_for($ep)
              && $md->can_skip_content_diff($ep)
              && !$md->changed_since_load($ep);
-        my $diff = eval { $vcs->diff($ep) } // [];
+        my $diff = eval { $vcs->diff($ep) };
+        croak "diff failed for $ep: $@" if $@;
+        $diff //= [];
         $result{$ep} = $diff if @$diff;
     }
     return \%result;
@@ -879,7 +900,9 @@ sub log_path {
         next unless -e $ep || -l $ep;
         next if _is_non_diffable($ep);
         next unless -e $vcs->output_path($ep);
-        my $log = eval { $vcs->log_history($ep) } // [];
+        my $log = eval { $vcs->log_history($ep) };
+        croak "log failed for $ep: $@" if $@;
+        $log //= [];
         $result{$ep} = $log;
     }
     return \%result;
@@ -933,14 +956,21 @@ sub _snapshot_existing_file {
 }
 
 # _restore_file_metadata -- Re-apply pre-revert mode and ownership to $path.
-# chown is only attempted when running as root (uid 0).
+# chown is only attempted when running as root (uid 0).  The target is
+# re-checked immediately before chmod/chown: mode/ownership restore applies
+# only to a regular file, so if the path now resolves to a symlink or a
+# non-regular file (a swap between revert and restore) it is skipped rather
+# than risk operating on the wrong target.
 sub _restore_file_metadata {
     my ($self, $path, $pre) = @_;
     return unless defined $pre;
-    return unless -e $path || -l $path;
 
-    # Mode/ownership restore is only safe on regular files.
-    return if -l $path;
+    my @cur = lstat($path);
+    return unless @cur;
+    if (-l _ || !-f _) {
+        $self->_warn("revert metadata restore skipped (not a regular file): $path");
+        return;
+    }
 
     chmod($pre->{mode}, $path)
         or $self->_warn("revert metadata restore failed (chmod $path): $!");

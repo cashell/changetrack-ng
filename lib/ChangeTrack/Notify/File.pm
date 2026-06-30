@@ -216,7 +216,7 @@ sub _append_records {
     return unless @records;
 
     my $path = $self->{path};
-    my $jp   = JSON::PP->new->canonical(1);
+    my $jp   = JSON::PP->new->utf8->canonical(1);
 
     open(my $fh, '>>', $path)
         or die "Cannot open log file $path: $!";

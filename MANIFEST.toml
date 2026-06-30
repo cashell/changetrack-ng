@@ -17,8 +17,8 @@
 #   notes        - non-obvious context or caveats
 
 [meta]
-version     = "0.6.1"
-updated     = "2026-06-25"
+version     = "0.7.0"
+updated     = "2026-06-29"
 homepage    = "https://github.com/cashell/changetrack-ng"
 license     = "GPL-3.0-or-later"
 min_perl    = "5.20"
@@ -435,6 +435,36 @@ dist        = ["full"]
 tags        = ["test"]
 tests       = ["tools/manifest-query"]
 
+[test."t/29-redaction.t"]
+description = "Tests for secret redaction in logs (redact_secrets/redact_url) and OTLP header CRLF stripping"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["secret-redaction", "ChangeTrack::Util", "ChangeTrack::Notify::OTLP"]
+
+[test."t/30-run-cmd.t"]
+description = "Tests for run_cmd drain-to-EOF, signal-aware exit code, and the wall-clock timeout watchdog (Unix only)"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["run-cmd-drain-timeout", "ChangeTrack::Util"]
+
+[test."t/31-path-safety.t"]
+description = "Tests for mirror-path traversal containment and RCS colon-encoding collision avoidance"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["path-safety", "ChangeTrack::Config", "ChangeTrack::VCS::Base"]
+
+[test."t/32-detection-fidelity.t"]
+description = "Tests for the ctime content fast-path and webhook sensitive-count suppression + diff cap"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["detection-fidelity", "ChangeTrack::Metadata", "ChangeTrack::Notify::Webhook"]
+
+[test."t/33-cleanup.t"]
+description = "Tests for disabled-notifier name reuse, revert revision validation, unknown-option handling, symlink prefix"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["correctness-cleanup", "ChangeTrack::Config", "bin/changetrack-ng"]
+
 ########################################################################
 # test_support
 ########################################################################
@@ -469,7 +499,7 @@ install_path = "$(SYSCONFDIR)/changetrack-ng/changetrack-ng.conf"
 permissions  = "0640"
 dist         = ["full", "deploy", "minimal", "deb", "rpm"]
 tags         = ["config", "system"]
-notes        = "Only installed if no config file already exists at the target path (see _install_conf in Makefile)"
+notes        = "Only installed if no config file already exists at the target path (see _install_conf in Makefile). Byte-identical copy of the canonical packaging/etc/examples/changetrack-ng.conf-default; kept in sync via 'make config-lint'."
 
 ########################################################################
 # example
@@ -497,11 +527,11 @@ dist         = ["full", "deploy", "minimal", "deb", "rpm"]
 tags         = ["example", "config", "user"]
 
 [example."packaging/etc/examples/changetrack-ng.conf-default"]
-description  = "Example showing defaults-file usage (CHANGETRACK_CONFIG, CHANGETRACK_EXTRA_ARGS)"
+description  = "Canonical default config (byte-identical to etc/changetrack-ng.conf; enforced by make config-lint)"
 install_path = "$(DOCDIR)/examples/changetrack-ng.conf-default"
 permissions  = "0644"
 dist         = ["full", "deploy", "minimal", "deb", "rpm"]
-tags         = ["example", "config", "defaults"]
+tags         = ["example", "config", "default"]
 
 [example."packaging/etc/examples/conf.d/local-settings.conf"]
 description  = "Example conf.d drop-in fragment for local overrides"

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.6.1
+Version:        0.7.0
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,25 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Mon Jun 29 2026 Christopher Cashell <topher@zyp.org> - 0.7.0-1
+- Security hardening release (consolidated multi-tool security review)
+- Explicit TLS verification (verify_SSL=1) on webhook and otlp notifiers
+- Redact credentials (URI userinfo, tokens) in debug traces, config dumps,
+  and webhook/VCS push failure warnings
+- Strip CR/LF/NUL from OTLP headers; sendmail '--' terminator and header
+  CR/LF stripping; skip relative PATH entries when locating sendmail
+- Reject '..' in track paths; assert whole-repo mirror paths stay in output_dir
+- Atomic metadata save via File::Temp (O_EXCL, 0600); lock file opened with
+  O_NOFOLLOW and no bare /tmp fallback; revert re-checks regular file
+- New command_timeout global (default 120s) bounds external commands so a hung
+  command cannot hang a scheduled run
+- run_cmd drains to EOF (no truncation) and reports signal termination
+- status/diff/log fail loudly on backend errors; notifier failures warn and are
+  recorded; failed metadata save aborts before commit
+- Add ctime to the fast path (catches same-size, mtime-restored edits)
+- RCS colon-encoding collision fixed; webhook honors max_diff_bytes and zeroes
+  sensitive line counts when the diff is suppressed
+- Numerous correctness/POD fixes (see CHANGELOG.md)
 * Thu Jun 25 2026 Christopher Cashell <topher@zyp.org> - 0.6.1-1
 - OTel conformance: canonical attribute model on the otlp and file notifiers
   (file.path/name/directory, config_change.type/sensitive/diff, file.mode/owner/

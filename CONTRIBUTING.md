@@ -242,13 +242,34 @@ prove -l -v t/               # Verbose output
 
 ## Config Changes
 
+### Sample config files
+
+The example configs must stay consistent:
+
+- `packaging/etc/examples/changetrack-ng.conf-default` is the **canonical** default config.
+  `etc/changetrack-ng.conf` is the installed default and a **byte-identical** copy of it, kept at
+  the repo root so it is easy to find and browse. After editing the canonical example, resync the
+  installed copy and verify with the lint target:
+  ```bash
+  cp packaging/etc/examples/changetrack-ng.conf-default etc/changetrack-ng.conf
+  make config-lint   # also runs automatically as part of `make test`
+  ```
+  `config-lint` uses the core `File::Compare` module (no external `cmp`/`diff`), so it runs anywhere
+  Perl does.
+- `changetrack-ng.conf-full` is the comprehensive reference: it must document **every** key the
+  parser accepts (all `%KNOWN_GLOBAL_KEYS` and `%KNOWN_NOTIFIER_KEYS`), and must not document keys
+  the parser would reject.
+- `changetrack-ng.conf-minimal` stays minimal; `changetrack-ng.conf-user` targets non-root installs.
+
 ### Adding a new global key
 
 1. Add it to `%KNOWN_GLOBAL_KEYS` in `Config.pm` (unknown keys are fatal parse errors)
 2. Decide if it's scalar or array-valued; update `%ARRAY_GLOBAL_KEYS` if array-valued
 3. Add the appropriate type table entry (`%BOOL_GLOBAL_KEYS`, `%INT_GLOBAL_KEYS`,
    `%ENUM_GLOBAL_KEYS`, or `%PATH_GLOBAL_KEYS`) if the value has constraints
-4. Document the key in `README.md` and the config example files
+4. Document the key in `README.md` and the config example files. Edit the canonical
+   `-default` example, resync `etc/changetrack-ng.conf` from it (`make config-lint` enforces they
+   match), and update the `-full` reference
 
 ### Adding a new notifier type
 

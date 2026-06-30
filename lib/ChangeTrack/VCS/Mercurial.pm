@@ -38,7 +38,7 @@ sub model { 'whole-repo' }
 # /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
-    (my $rel = $real_path) =~ s{^/}{};
+    my $rel = $self->_mirror_rel($real_path);
     return "$self->{output_dir}/$rel";
 }
 
@@ -59,7 +59,7 @@ sub init {
     my $hgrc = "$self->{output_dir}/.hg/hgrc";
     open(my $fh, '>', $hgrc) or croak "open $hgrc: $!";
     print $fh "[ui]\nusername = changetrack-ng <changetrack-ng\@localhost>\n";
-    close($fh);
+    close($fh) or croak "close $hgrc: $!";
 }
 
 # is_initialized -- Return true if an .hg directory exists in output_dir.
@@ -112,7 +112,7 @@ sub commit {
     my @remotes = ref($push_remote) eq 'ARRAY' ? @$push_remote : ($push_remote);
     for my $remote (@remotes) {
         my $pr = $self->_hg('push', $remote);
-        carp "hg push $remote failed: $pr->{stderr}" unless $pr->{success};
+        carp 'hg push ' . ChangeTrack::Util::redact_secrets($remote) . ' failed: ' . ChangeTrack::Util::redact_secrets($pr->{stderr}) unless $pr->{success};
     }
 }
 

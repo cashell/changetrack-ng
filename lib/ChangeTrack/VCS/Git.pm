@@ -38,7 +38,7 @@ sub model { 'whole-repo' }
 # /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
-    (my $rel = $real_path) =~ s{^/}{};
+    my $rel = $self->_mirror_rel($real_path);
     return "$self->{output_dir}/$rel";
 }
 
@@ -59,8 +59,10 @@ sub init {
     croak "git init failed: $r->{stderr}" unless $r->{success};
     my $name  = $self->{options}{git_user}  // 'changetrack-ng';
     my $email = $self->{options}{git_email} // 'changetrack-ng@localhost';
-    run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.name',  $name]);
-    run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.email', $email]);
+    my $cn = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.name',  $name]);
+    carp "git config user.name failed: $cn->{stderr}"  unless $cn->{success};
+    my $ce = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.email', $email]);
+    carp "git config user.email failed: $ce->{stderr}" unless $ce->{success};
 }
 
 # is_initialized -- Return true if a .git directory exists in output_dir.
@@ -94,6 +96,10 @@ sub commit {
     $msg //= 'changetrack-ng commit';
 
     my $staged = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--cached', '--quiet']);
+    # 'git diff --quiet' exits 0 (no staged changes) or 1 (staged changes);
+    # anything else (or an exec failure) is a real error, not "has changes".
+    croak "git diff --cached failed: $staged->{stderr}"
+        unless $staged->{exit_code} == 0 || $staged->{exit_code} == 1;
     return if $staged->{exit_code} == 0;
 
     my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'commit', '-m', $msg]);
@@ -108,7 +114,7 @@ sub commit {
 
     for my $remote (@remotes) {
         my $pr = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'push', $remote, "HEAD:refs/heads/$branch"]);
-        carp "git push $remote failed: $pr->{stderr}" unless $pr->{success};
+        carp 'git push ' . ChangeTrack::Util::redact_secrets($remote) . ' failed: ' . ChangeTrack::Util::redact_secrets($pr->{stderr}) unless $pr->{success};
     }
 }
 

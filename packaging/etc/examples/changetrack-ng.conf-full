@@ -58,6 +58,13 @@ lock_path = /var/run/changetrack-ng.lock
 # 0 = skip silently if already locked (cron-friendly, default)
 lock_timeout = 0
 
+# Wall-clock timeout (seconds) for each external command (git/rcs/sendmail/etc).
+# A hung or runaway command is killed after this many seconds so a single stuck
+# command cannot hang a scheduled (cron/systemd) run.  Most commands finish in
+# seconds; nothing should ever need more than a couple of minutes.
+# 0 = no limit.
+command_timeout = 120
+
 ##########################
 # Sensitive Files
 ##########################
@@ -141,10 +148,6 @@ to =
 # Checked locations: /usr/sbin/sendmail, /usr/lib/sendmail, then $PATH.
 # sendmail_path = /usr/sbin/sendmail
 
-# Per-notifier sensitive-file override: suppress | allow
-# Overrides global sensitive_notify for this notifier only.
-# sensitive_notify = suppress
-
 ##########################
 # Webhook
 ##########################
@@ -172,7 +175,10 @@ timeout = 10
 # 0 = verify (default) | 1 = skip verification
 insecure = 0
 
-# sensitive_notify = suppress
+# Maximum byte length of the diff included in the webhook payload.
+# 0 = unlimited (default).  When truncated, diff_truncated = true is set on the
+# affected file entry.  Sensitive-suppressed diffs are never truncated.
+# max_diff_bytes = 0
 
 ##########################
 # OTLP / OpenTelemetry
@@ -239,8 +245,6 @@ heartbeat = 1
 # Accepted: DEBUG | INFO | WARN (default) | ERROR (case-insensitive).
 # severity_warning = WARN
 
-# sensitive_notify = suppress
-
 ##########################
 # File (JSON Log)
 ##########################
@@ -281,8 +285,6 @@ heartbeat = 0
 # OTel severity level for run-warning events.
 # Accepted: DEBUG | INFO | WARN (default) | ERROR (case-insensitive).
 # severity_warning = WARN
-
-# sensitive_notify = suppress
 
 ###################################################################
 # Track List

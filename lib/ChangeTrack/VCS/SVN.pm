@@ -45,7 +45,7 @@ sub _repo_path {
 # /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
 sub output_path {
     my ($self, $real_path) = @_;
-    (my $rel = $real_path) =~ s{^/}{};
+    my $rel = $self->_mirror_rel($real_path);
     return "$self->{output_dir}/$rel";
 }
 
@@ -63,6 +63,8 @@ sub _rel_path {
 sub _run {
     my ($self, @cmd) = @_;
     my $old = getcwd();
+    croak "cannot determine current directory for svn operation: $!"
+        unless defined $old;
     chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
     my $r;
     my $err;
@@ -72,7 +74,10 @@ sub _run {
     } or do {
         $err = $@ || 'unknown svn command failure';
     };
-    chdir($old) or croak "chdir back to $old: $!";
+    unless (chdir($old)) {
+        # Do not mask an earlier command failure with the restore error.
+        $err //= "chdir back to $old failed: $!";
+    }
     die $err if defined $err;
     return $r;
 }
@@ -179,7 +184,7 @@ sub revert {
     croak "svn cat failed: $r->{stderr}" unless $r->{success};
     open(my $fh, '>', $mirror) or croak "open $mirror for write: $!";
     print $fh $r->{stdout};
-    close($fh);
+    close($fh) or croak "close $mirror after write: $!";
     restore_mirror_path($mirror, $real_path);
 }
 
