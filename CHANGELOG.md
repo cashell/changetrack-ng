@@ -6,6 +6,11 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarify automatic drop-in directories and explicit `@include*` support for
+  custom drop-in files/directories in the README and sample configs.
+
 ## [0.7.0] - 2026-06-29
 
 Security hardening release. Consolidated from a multi-tool security review

@@ -148,7 +148,7 @@ DIRECTORY /etc/NetworkManager : network-team@example.com
 
 ### Drop-in Directories
 
-Files can be split across sibling directories for composability:
+Automatic drop-ins are fixed sibling directories next to the main config file:
 
 | Directory | Allowed sections |
 |---|---|
@@ -157,7 +157,8 @@ Files can be split across sibling directories for composability:
 | `notifier.d/` | `[notifier:*]` only |
 
 All `*.conf` files in each directory are processed in sorted order and merged
-into the main config.
+into the main config. Custom automatic drop-in directories are not configured
+separately; use explicit `@include` directives for custom files or directories.
 
 ### `@include` Directives
 
@@ -167,8 +168,11 @@ into the main config.
 @include-notifier /etc/changetrack-ng/notifier.d/
 ```
 
-`@include-track` and `@include-notifier` enforce section restrictions in the
-included path.  Recursion is prevented by a visited-paths guard.
+The include path may be a file or a directory. Directory includes process
+sorted `*.conf` files, which makes them the supported mechanism for custom
+drop-in directories. `@include-track` and `@include-notifier` enforce section
+restrictions in the included path.  Recursion is prevented by a visited-paths
+guard.
 
 For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).

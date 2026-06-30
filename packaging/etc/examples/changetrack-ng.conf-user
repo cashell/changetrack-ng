@@ -3,6 +3,18 @@
 # For an unprivileged (non-root) install: make install-user
 # Copy to ~/.config/changetrack-ng/changetrack-ng.conf and adjust.
 # For all options, see the full reference config or run: man changetrack-ng.conf
+#
+# Drop-in config files:
+# - Automatic drop-ins are loaded from sibling directories next to this file:
+#     conf.d/*.conf      [global] sections only
+#     track.d/*.conf     [track] sections only
+#     notifier.d/*.conf  [notifier:*] sections only
+# - Files are processed in sorted order.
+# - Custom drop-in files or directories are supported with explicit include
+#   directives in this file:
+#     @include /path/to/extra.conf
+#     @include-track /path/to/track.d/
+#     @include-notifier /path/to/notifier.d/
 
 ###################################################################
 # Global Configuration

@@ -13,6 +13,23 @@
 # notifier's headers key or webhook url with embedded tokens).
 # Recommended file mode: 0640, owned root:root (or your service account).
 
+########################################################################
+# Drop-in Files and Include Directives
+########################################################################
+#
+# Automatic drop-ins are fixed sibling directories next to the main config:
+#
+#   conf.d/*.conf      [global] only
+#   track.d/*.conf     [track] only
+#   notifier.d/*.conf  [notifier:*] only
+#
+# Custom drop-in locations are supported through explicit include directives.
+# The path may be a file or a directory; directories load sorted *.conf files.
+#
+# @include /etc/changetrack-ng/site.conf
+# @include-track /etc/changetrack-ng/local-track.d/
+# @include-notifier /etc/changetrack-ng/local-notifier.d/
+
 ###################################################################
 # Global Configuration
 ###################################################################
@@ -125,7 +142,8 @@ ignore =
 # Each section MUST contain: enabled = true | false
 # Disabled instances are discarded at parse time.
 #
-# Configs can be split across drop-in files in notifier.d/ sibling directory.
+# Notifiers can be split across notifier.d/*.conf automatic drop-ins or
+# custom directories loaded with @include-notifier.
 
 ##########################
 # Email

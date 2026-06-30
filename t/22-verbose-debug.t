@@ -150,7 +150,12 @@ sub capture_both {
 ########################################################################
 # Test: Debug Run_Cmd Emits [DEBUG] Exec: Lines
 ########################################################################
-{
+SKIP: {
+    # 'echo' is an external binary on Unix but a cmd.exe builtin on Windows
+    # (no echo.exe), so run_cmd's open3 takes the exec-failure path there.
+    # This assertion is Unix-specific; the Linux suite is authoritative.
+    skip 'run_cmd [DEBUG] exec: trace needs echo as an execable binary (Unix-only)', 1
+        if $^O eq 'MSWin32';
     # Set DEBUG on Util and run a command, verify [DEBUG] exec: line appears on STDERR
     ChangeTrack::Util::set_debug(1);
     my $stderr = '';
@@ -200,7 +205,12 @@ sub capture_both {
 ########################################################################
 # Test: Trace Emits [VERBOSE] + [DEBUG] + [TRACE]
 ########################################################################
-{
+SKIP: {
+    # Exercises a real rcs commit followed by a fast-path skip, which needs the
+    # rcs backend and Unix process semantics.  Windows has neither (no rcs, and
+    # run_cmd's pipe drain is Unix-only); the Linux suite is authoritative.
+    skip 'trace/fast-path test requires the rcs backend and Unix semantics (Unix-only)', 4
+        if $^O eq 'MSWin32';
     my $dir = tempdir(CLEANUP => 1);
     my ($fh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
     my ($tf, $tracked_file) = tempfile(UNLINK => 1);
