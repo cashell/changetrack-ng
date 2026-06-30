@@ -73,13 +73,17 @@ unlike(redact_url('https://h/services/SECRETTOKEN'), qr/SECRETTOKEN/,
     set_debug(1);
     # Command almost certainly fails to exec; the redacted trace is emitted
     # regardless of whether the binary exists.
-    run_cmd(cmd => ['definitely-not-a-real-binary-xyz', 'push',
+    my $res = run_cmd(cmd => ['definitely-not-a-real-binary-xyz', 'push',
             'https://bob:tok3n@example.com/repo.git']);
     set_debug(0);
     my $all = join('', @warnings);
     like($all, qr/\[DEBUG\]/, 'debug trace was emitted');
     unlike($all, qr/tok3n/, 'run_cmd debug trace does not leak the token');
     like($all, qr{https://\*\*\*\@example\.com}, 'run_cmd debug trace masks userinfo');
+    # The returned stderr must also be redacted: on an exec failure the
+    # IPC::Open3 exception text embeds the raw (credentialed) command.
+    unlike($res->{stderr}, qr/tok3n/,
+        'run_cmd return value does not leak the token in stderr');
 }
 
 ########################################################################

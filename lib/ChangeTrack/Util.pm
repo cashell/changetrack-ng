@@ -255,11 +255,14 @@ sub run_cmd {
 
     eval { $pid = IPC::Open3::open3($in_fh, $out_fh, $err_fh, @$cmd) };
     if ($@) {
+        # The open3 failure text embeds the raw command (including any
+        # credentials in argv), so redact it before logging or returning it.
+        my $err = redact_secrets("$@");
         if ($DEBUG) {
             my $cmd_str = join(' ', map { redact_secrets($_) } @$cmd);
-            warn "[changetrack-ng][][DEBUG] exec failed: $cmd_str -- $@\n";
+            warn "[changetrack-ng][][DEBUG] exec failed: $cmd_str -- $err\n";
         }
-        return { success => 0, stdout => '', stderr => "exec failed: $@", exit_code => -1, timed_out => 0 };
+        return { success => 0, stdout => '', stderr => "exec failed: $err", exit_code => -1, timed_out => 0 };
     }
 
     if ($DEBUG) {
@@ -333,7 +336,9 @@ sub run_cmd {
     my $exit_code = ($status & 127) ? 128 + ($status & 127) : ($status >> 8);
 
     if ($DEBUG && $exit_code != 0) {
-        my $err_out = $buf{fileno($err_fh)} // '';
+        # Redact before truncating so a credential URL the child may have
+        # echoed on failure cannot leak (and is not cut mid-match).
+        my $err_out = redact_secrets($buf{fileno($err_fh)} // '');
         $err_out = substr($err_out, 0, 200) . '...' if length($err_out) > 200;
         $err_out =~ s/\n/ /g;
         my $cmd_str = join(' ', map { redact_secrets($_) } @$cmd);
