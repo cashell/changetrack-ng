@@ -788,6 +788,12 @@ dist        = ["full"]
 tags        = ["build", "manifest"]
 notes       = "Requires TOML::Tiny (build_requires); used by make manifest-lint/manifest-extra and the dist/dist-minimal/dist-deploy targets"
 
+[build."tools/doc-lint"]
+description = "Perl script verifying subcommand documentation alignment across source, usage, manual, and readme"
+dist        = ["full"]
+tags        = ["build", "lint"]
+notes       = "Invoked during make test to prevent subcommand documentation drift"
+
 ########################################################################
 # legal
 ########################################################################

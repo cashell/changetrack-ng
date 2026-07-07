@@ -20,14 +20,15 @@ DESTDIR     ?=
 
 PERL       ?= perl
 
-.PHONY: all test config-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
+.PHONY: all test config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
 
 all:
 	@echo "$(NAME) $(VERSION)"
 	@echo ""
 	@echo "Targets:"
-	@echo "  make test            Run the test suite"
+	@echo "  make test            Run the test suite (includes config-lint and doc-lint)"
 	@echo "  make config-lint     Verify the installed default config matches the canonical -default example"
+	@echo "  make doc-lint        Check for subcommand documentation drift across source and manuals"
 	@echo "  make install         Install (PREFIX=$(PREFIX))"
 	@echo "  make install-man     Install man pages (requires pod2man)"
 	@echo "  make uninstall       Remove installed files"
@@ -49,8 +50,11 @@ all:
 	@echo "  make manifest-lint   Validate MANIFEST.toml (checks all listed files exist)"
 	@echo "  make manifest-extra  Find files on disk not listed in MANIFEST.toml"
 
-test: config-lint
+test: config-lint doc-lint
 	prove -l t/
+
+doc-lint:
+	@$(PERL) tools/doc-lint
 
 # config-lint -- Enforce that the installed default config (etc/$(NAME).conf)
 # and the canonical packaging "-default" example stay byte-identical.  The

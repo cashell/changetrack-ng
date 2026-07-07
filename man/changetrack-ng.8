@@ -57,12 +57,6 @@ unless B<--force> is given.
 Write or refresh the VCS-native ignore file (e.g., C<.gitignore>) using the
 built-in defaults plus any patterns in the config C<ignore> key.
 
-=item B<migrate-config> I<v1-config> [I<v2-output>]
-
-Read a legacy C<changetrack> v1 config file and write an equivalent v2 INI
-file.  If I<v2-output> is omitted it is derived from I<v1-config> with
-C<.ng.conf> suffix.
-
 =back
 
 =head1 OPTIONS
@@ -186,10 +180,6 @@ View the diff for a specific file:
 Revert a file to a specific Git commit:
 
   sudo changetrack-ng revert /etc/passwd abc1234
-
-Migrate a legacy changetrack config:
-
-  sudo changetrack-ng migrate-config /etc/changetrack.conf
 
 =head1 SEE ALSO
 
