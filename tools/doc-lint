@@ -1,0 +1,253 @@
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+########################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+########################################################################
+# tools/doc-lint - Cross-references CLI subcommands with documentation in
+#   bin/changetrack-ng, man/changetrack-ng.8, CLAUDE.md, and README.md.
+#
+
+use strict;
+use warnings;
+use File::Spec;
+use File::Basename qw(dirname);
+use Cwd qw(abs_path);
+
+# Resolve paths relative to the script directory
+my $script_dir = dirname(abs_path($0));
+my $repo_dir   = abs_path(File::Spec->catdir($script_dir, '..'));
+
+my $bin_file    = File::Spec->catfile($repo_dir, 'bin', 'changetrack-ng');
+my $man_file    = File::Spec->catfile($repo_dir, 'man', 'changetrack-ng.8');
+my $claude_file = File::Spec->catfile($repo_dir, 'CLAUDE.md');
+my $readme_file = File::Spec->catfile($repo_dir, 'README.md');
+
+# Validate existence of expected files
+for my $file ($bin_file, $man_file, $claude_file, $readme_file) {
+    if (!-f $file) {
+        die "Error: Required file not found: $file\n";
+    }
+}
+
+# Get canonical subcommands list from the dispatch table in bin/changetrack-ng
+my $canonical = parse_dispatch_table($bin_file);
+
+my $failed = 0;
+
+# Run checks across all documented sources
+check_source('bin/changetrack-ng header comment', parse_bin_header($bin_file), $canonical);
+check_source('bin/changetrack-ng usage help',     parse_bin_usage($bin_file),  $canonical);
+check_source('bin/changetrack-ng inline POD',     parse_bin_pod($bin_file),    $canonical);
+check_source('man/changetrack-ng.8 manual page',  parse_man_page($man_file),   $canonical);
+check_source('CLAUDE.md architectural reference', parse_claude_md($claude_file), $canonical);
+check_source('README.md subcommands table',       parse_readme_md($readme_file), $canonical);
+
+if ($failed) {
+    warn "\ndoc-lint: ERROR -- subcommand documentation drift detected!\n";
+    exit 1;
+}
+
+print "doc-lint: OK (all sources in sync with dispatch table)\n";
+exit 0;
+
+########################################################################
+# Parsing Implementations
+########################################################################
+
+# parse_dispatch_table -- Extract canonical subcommands list from bin/changetrack-ng
+sub parse_dispatch_table {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    my $in_dispatch = 0;
+    while (<$fh>) {
+        if (/my\s+%dispatch\s*=\s*\(/) {
+            $in_dispatch = 1;
+            next;
+        }
+        if ($in_dispatch) {
+            if (/^\s*\);/) {
+                last;
+            }
+            if (/^\s*['"]([^'"]+)['"]\s*=>/) {
+                push @cmds, $1;
+            }
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_bin_header -- Extract subcommands from comments at top of bin/changetrack-ng
+sub parse_bin_header {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    while (<$fh>) {
+        if (/subcommands\s*\(([^)]+)\)/) {
+            my $raw = $1;
+            $raw =~ s/[\.\s]//g;
+            @cmds = split /,/, $raw;
+            last;
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_bin_usage -- Extract subcommands from _usage heredoc in bin/changetrack-ng
+sub parse_bin_usage {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    my $in_subcommands = 0;
+    while (<$fh>) {
+        if (/Subcommands:/) {
+            $in_subcommands = 1;
+            next;
+        }
+        if ($in_subcommands) {
+            if (/Options:/ || /^\s*$/ || /^USAGE/) {
+                last;
+            }
+            if (/^\s+([a-z\-]+)\s+/) {
+                push @cmds, $1;
+            }
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_bin_pod -- Extract subcommands from POD section in bin/changetrack-ng
+sub parse_bin_pod {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    my $in_subcommands = 0;
+    while (<$fh>) {
+        if (/^=head1\s+SUBCOMMANDS/) {
+            $in_subcommands = 1;
+            next;
+        }
+        if ($in_subcommands) {
+            if (/^=head1/ || /^=head2/ || /^=cut/) {
+                last;
+            }
+            if (/^=item\s+C<([a-z\-]+)(?:\s+[^>]+)?>/) {
+                push @cmds, $1;
+            }
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_man_page -- Extract subcommands from man/changetrack-ng.8 POD
+sub parse_man_page {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    my $in_subcommands = 0;
+    while (<$fh>) {
+        if (/^=head1\s+SUBCOMMANDS/) {
+            $in_subcommands = 1;
+            next;
+        }
+        if ($in_subcommands) {
+            if (/^=head1/ || /^=head2/ || /^=cut/) {
+                last;
+            }
+            if (/^=item\s+B<([a-z\-]+)>/) {
+                push @cmds, $1;
+            }
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_claude_md -- Extract subcommands from CLAUDE.md
+sub parse_claude_md {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    while (<$fh>) {
+        if (/dispatches subcommands\s*\(([^)]+)\)/) {
+            my $raw = $1;
+            $raw =~ s/[`\s]//g;
+            @cmds = split /,/, $raw;
+            last;
+        }
+    }
+    close $fh;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+# parse_readme_md -- Extract subcommands from README.md Subcommands table
+sub parse_readme_md {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my @cmds;
+    my $in_subcommands = 0;
+    while (<$fh>) {
+        if (/^##\s+Subcommands/) {
+            $in_subcommands = 1;
+            next;
+        }
+        if ($in_subcommands) {
+            if (/^##/ || /^#\s/) {
+                last;
+            }
+            if (/^\|\s*`([a-z\-]+)(?:\s+[^`]+)?`\s*\|/) {
+                push @cmds, $1;
+            }
+        }
+    }
+    close $fh;
+    my %seen;
+    @cmds = grep { !$seen{$_}++ } @cmds;
+    @cmds = sort @cmds;
+    return \@cmds;
+}
+
+########################################################################
+# Verification Helpers
+########################################################################
+
+# check_source -- Compare parsed subcommands against the canonical list
+sub check_source {
+    my ($source_name, $found_ref, $canonical_ref) = @_;
+
+    my @found     = @$found_ref;
+    my @canonical = @$canonical_ref;
+
+    # Check length first
+    my $differs = 0;
+    if (scalar @found != scalar @canonical) {
+        $differs = 1;
+    }
+    else {
+        for my $i (0 .. $#canonical) {
+            if ($found[$i] ne $canonical[$i]) {
+                $differs = 1;
+                last;
+            }
+        }
+    }
+
+    if ($differs) {
+        warn "Mismatch in '$source_name':\n";
+        warn "  Expected (canonical): " . join(', ', @canonical) . "\n";
+        warn "  Found:                " . (scalar @found ? join(', ', @found) : '(none)') . "\n";
+        $failed = 1;
+    }
+}
