@@ -6,6 +6,19 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Config parser now strips inline comments.** `#` or `;` preceded by
+  whitespace is treated as an inline comment and removed before parsing.
+  Previously only full-line `#` comments were recognized, so uncommenting a
+  sample config line like `max_diff_bytes = 0  # unlimited` would fail with
+  a parse error.
+- **Full-line `;` comments are now recognized** in addition to `#`, following
+  standard INI conventions.
+- **Sample config inline comments corrected.** All four copies of the default
+  config file used `;` for inline comments (an INI convention the parser did
+  not previously support).  Replaced with `#` for consistency.
+
 ### Documentation
 
 - Clarify automatic drop-in directories and explicit `@include*` support for

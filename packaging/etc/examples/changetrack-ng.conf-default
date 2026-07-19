@@ -122,8 +122,8 @@ enabled         = false
 # full_diff     = 0
 # heartbeat     = 0
 # timeout       = 10
-# insecure      = 0    ; 1 disables TLS verification (verified by default)
-# max_diff_bytes   = 0    ; cap diff byte length in the payload (0 = unlimited)
+# insecure      = 0    # 1 disables TLS verification (verified by default)
+# max_diff_bytes   = 0    # cap diff byte length in the payload (0 = unlimited)
 
 [notifier:otlp:default]
 enabled         = false
@@ -135,22 +135,22 @@ enabled         = false
 # insecure      = 0
 # headers       =
 # resource_attributes =
-# emit_recipients  = 0    ; include notified recipients as config_change.notified attribute
-# max_diff_bytes   = 0    ; cap config_change.diff byte length (0 = unlimited)
-# severity_change  = INFO ; OTel severity for change/create/remove events
-# severity_heartbeat = DEBUG ; OTel severity for heartbeat events
-# severity_warning   = WARN  ; OTel severity for run-warning events
+# emit_recipients  = 0    # include notified recipients as config_change.notified attribute
+# max_diff_bytes   = 0    # cap config_change.diff byte length (0 = unlimited)
+# severity_change  = INFO # OTel severity for change/create/remove events
+# severity_heartbeat = DEBUG # OTel severity for heartbeat events
+# severity_warning   = WARN  # OTel severity for run-warning events
 
 [notifier:file:default]
 enabled         = false
 # path          = /var/log/changetrack-ng.jsonl
 # full_diff     = 0
 # heartbeat     = 0
-# emit_recipients  = 0    ; include notified recipients as config_change.notified attribute
-# max_diff_bytes   = 0    ; cap config_change.diff byte length (0 = unlimited)
-# severity_change  = INFO ; OTel severity for change/create/remove events
-# severity_heartbeat = DEBUG ; OTel severity for heartbeat events
-# severity_warning   = WARN  ; OTel severity for run-warning events
+# emit_recipients  = 0    # include notified recipients as config_change.notified attribute
+# max_diff_bytes   = 0    # cap config_change.diff byte length (0 = unlimited)
+# severity_change  = INFO # OTel severity for change/create/remove events
+# severity_heartbeat = DEBUG # OTel severity for heartbeat events
+# severity_warning   = WARN  # OTel severity for run-warning events
 
 ###################################################################
 # Track List

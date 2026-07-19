@@ -38,6 +38,11 @@ processed in sorted order.
 C<@include E<lt>pathE<gt>>, C<@include-track E<lt>pathE<gt>>,
 C<@include-notifier E<lt>pathE<gt>>; file or directory path; recursion-safe.
 
+=item Comments
+
+Full-line and inline comments using C<#> or C<;>.  Inline comments must
+be preceded by whitespace (e.g. C<timeout = 10  # seconds>).
+
 =back
 
 =head1 METHODS
@@ -250,8 +255,12 @@ sub _load_file {
         chomp $line;
         $line =~ s/\s+$//;
 
-        # Skip blank lines and comments.
-        next if $line =~ /^\s*(?:#.*)?$/;
+        # Skip blank lines and full-line comments (# or ;).
+        next if $line =~ /^\s*(?:[#;].*)?$/;
+
+        # Strip inline comments: # or ; preceded by whitespace.
+        $line =~ s/\s+[#;].*//;
+        next unless $line =~ /\S/;
 
         # @include directives.
         if ($line =~ /^\@include(-track|-notifier)?\s+(\S.*?)\s*$/) {

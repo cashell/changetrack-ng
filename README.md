@@ -98,6 +98,8 @@ DIRECTORY /etc
 Config uses a single INI format with `[global]`, `[track]`, and
 `[notifier:<type>:<name>]` sections.  The installed default at
 `/etc/changetrack-ng/changetrack-ng.conf` is fully commented.
+Comments start with `#` or `;` — either as a full line or inline after a
+value (when preceded by whitespace, e.g. `timeout = 10  # seconds`).
 
 Security notes:
 - Treat the config as sensitive data and set mode `0640` or stricter.
