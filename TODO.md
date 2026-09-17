@@ -63,39 +63,65 @@ Items are prioritized by severity and grouped by category.
 
 ## Security Issues
 
-None currently open.
+### SEC-5: `_warn_insecure_config_permissions` only checks main config file (Medium)
+
+**Issue:** World-readability warnings (`0004` check) are only evaluated against the primary config path. If notifier secrets are stored in `notifier.d/*.conf` drop-ins or `@include` files, permissions on those secondary files are uninspected.
+**Fix:** Track individual source file paths for secrets in `Config.pm` and inspect the permissions of each secret-bearing file. (See `docs/agy-fixes.md`).
 
 ---
 
 ## Data Integrity / Correctness
 
-(All correctness blockers currently resolved.)
+Detailed implementation specifications and hand-off guide for these items are available in `docs/agy-fixes.md`.
+
+### CORR-3: Deletions inside tracked directories (`DIRECTORY /path`) are completely undetected (High)
+
+**Issue:** `_build_file_list` uses `File::Find::find()` on the filesystem, which only discovers currently living files. If a file inside a tracked directory is deleted, it is never queued into `@entries`, `_process_file()` is never called, no removal notification is emitted, the metadata record persists indefinitely, and the file is never removed from VCS.
+**Fix:** Reconcile stored `$md->{records}` against the live scan: any missing path falling within an active `DIRECTORY` root that is not ignored must be enqueued as removed. (See `docs/agy-fixes.md`).
+
+### CORR-4: File deletions are never propagated to VCS repositories (High)
+
+**Issue:** When a file is detected as removed, `Runner` marks it removed in report and metadata, but never unlinks the mirror file or removes it from VCS. No VCS backend implements a `remove()` method. As a result, VCS commits never record file deletions, and mirror trees retain deleted files forever.
+**Fix:** Add `remove($real_path)` to `ChangeTrack::VCS::Base` and implement across Git, SVN, Mercurial, Fossil, and RCS backends. Call `$vcs->remove()` in `_process_file()`. (See `docs/agy-fixes.md`).
+
+### CORR-5: File type transitions cause files to be lost or diffed improperly (High)
+
+**Issue:**
+1. Files initially classified as `special`, `binary`, or `unreadable` (skipping VCS checkin) that later become normal text files are treated as existing VCS files; `diff` returns empty and the file is never checked into VCS.
+2. `can_skip_content_diff()` assumes `special` or `directory` can always skip diffing without verifying the live disk type.
+3. Replacing a regular file with a symlink yields an empty diff and omits the new symlink target in metadata change summaries.
+**Fix:** Compare current disk type with `$orig->{type}` before skipping diffs. Stage previously non-trackable files as new checkins. Update `diff_summary` and `changed_since_load` to detect and describe type changes. (See `docs/agy-fixes.md`).
 
 ---
 
 ## Robustness / Operational
 
-### OPS-3: `run_cmd()` IO::Select timeout is hardcoded to 30s (Low)
+### OPS-5: Subcommands (`status`, `diff`, `log`, `revert`) silently ignore `--debug` and `--trace` (Medium)
 
-**Issue:** The `can_read(30)` call in `Util::run_cmd()` means that a hung VCS subprocess will block for 30 seconds per read cycle. For large repos, some VCS operations (e.g., `svn commit` to a slow remote) may legitimately take longer.
-
-**Recommendation:** Accept a `timeout` parameter in `run_cmd()` args hash, defaulting to 30. Pass through from callers who need longer operations.
+**Issue:** In `bin/changetrack-ng`, `cmd_status`, `cmd_diff`, `cmd_log`, and `cmd_revert` do not pass `debug` or `trace` to `Runner->new`, and `ChangeTrack::Util::set_debug(1)` is only called inside `Runner::run()`. Passing `-d` or `-t` to these subcommands has no effect.
+**Fix:** Call `set_debug(1)` early in `bin/changetrack-ng` when `$opts{debug}` is set, and forward `debug` and `trace` options in all subcommand runner instantiations. (See `docs/agy-fixes.md`).
 
 ---
 
 ## Testing
 
-### TEST-7: No test for `Config::dump_v2` (Low)
-
-**Issue:** The `dump_v2` method in Config.pm has no test coverage. Round-trip correctness (parse v2 → dump → parse again → equivalent) should be verified.
-
 ### TEST-9: No notifier failure isolation test (Low)
 
 **Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
 
-### TEST-10: No file type transition tests (Low)
+### TEST-10: File type transition test coverage (Linked to CORR-5)
 
-**Issue:** No tests verify correct behavior when a tracked file changes type between runs (e.g., regular file replaced by symlink, empty file gains content, text file becomes binary). These transitions exercise the metadata type system and VCS mirror sync logic.
+**Issue:** Add comprehensive test coverage verifying behavior when tracked files change type between runs (`file` ↔ `symlink`, `empty` → `content`, `binary` → `text`). (See `docs/agy-fixes.md`).
+
+### TEST-12: Add symlink capability probe to `t/03-metadata.t` (Low)
+
+**Issue:** Line 212 of `t/03-metadata.t` executes `symlink()` unconditionally, causing an unhandled test failure on platforms or restricted environments where creating symlinks is unprivileged.
+**Fix:** Probe symlink support with `eval { symlink('', ''); 1 }` and skip cleanly when unavailable (as in `t/20-util-symlink-mirror.t`). (See `docs/agy-fixes.md`).
+
+### TEST-13: Fix `IO::Uncompress::Gunzip` typo in `t/19-notify-otlp.t` (Low)
+
+**Issue:** `t/19-notify-otlp.t` lines 119–122 use `require IO::Compress::Gunzip;` and `$IO::Compress::Gunzip::GunzipError`, emitting a Perl typo warning.
+**Fix:** Change to `require IO::Uncompress::Gunzip;` and `$IO::Uncompress::Gunzip::GunzipError`. (See `docs/agy-fixes.md`).
 
 ---
 
@@ -119,19 +145,7 @@ None currently open.
 
 ## Packaging / Distribution
 
-### PKG-3: Reverse lint for MANIFEST.toml (files on disk not in manifest)
-
-`make manifest-lint` currently runs `tools/manifest-query --validate`, which checks that every file
-listed in MANIFEST.toml exists on disk.  The complement — detecting files present on disk that are
-not listed in MANIFEST.toml — is not yet implemented.
-
-**Desired behaviour:** A `--reverse-validate` (or `make manifest-reverse-lint`) mode that walks the
-tracked directories (bin/, lib/, etc/, man/, t/, tools/, packaging/, and root-level files) and
-reports any file not referenced in MANIFEST.toml.
-
-**Why deferred:** Requires encoding the directory-walk scope in either the manifest or the script,
-and handling generated files (.gz man pages, *.tar.gz, fatpack .pl) that intentionally exist on
-disk but are not listed.  Low priority until Phase 2 manifest-driven dist refactor is complete.
+(All open packaging tickets currently resolved. Reverse manifest linting implemented as `tools/manifest-query --find-extra` / `make manifest-extra`).
 
 ---
 
