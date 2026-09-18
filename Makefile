@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.7.0
+VERSION    := 0.7.1
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin

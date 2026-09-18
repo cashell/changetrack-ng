@@ -227,6 +227,17 @@ sub checkin {
     $self->add($real_path);
 }
 
+# remove -- Unregister file from Fossil and remove mirror file.
+sub remove {
+    my ($self, $real_path) = @_;
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    my $r      = $self->_run('fossil', 'rm', '--', $rel);
+    if (-e $mirror || -l $mirror) {
+        unlink($mirror) or croak "unlink '$mirror' failed: $!";
+    }
+}
+
 # commit -- Commit all pending changes with $msg.
 # If the commit fails due to invalid UTF-8, retries after flagging the
 # offending file as binary in .fossil-settings/binary-glob.

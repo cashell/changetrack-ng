@@ -74,6 +74,9 @@ unless (defined $opts{config}) {
 $opts{debug}   = 1 if $opts{trace};
 $opts{verbose} = 1 if $opts{debug};
 
+require ChangeTrack::Util;
+ChangeTrack::Util::set_debug(1) if $opts{debug};
+
 my $subcommand = @ARGV ? shift @ARGV : 'run';
 
 my %dispatch = (
@@ -167,6 +170,8 @@ sub cmd_status {
         config  => $opts{config},
         quiet   => $opts{quiet},
         verbose => $opts{verbose},
+        debug   => $opts{debug},
+        trace   => $opts{trace},
     );
     my $changed = eval { $runner->status };
     if ($@) { warn "changetrack-ng: $@\n"; return 2 }
@@ -185,6 +190,8 @@ sub cmd_diff {
         config  => $opts{config},
         quiet   => $opts{quiet},
         verbose => $opts{verbose},
+        debug   => $opts{debug},
+        trace   => $opts{trace},
     );
     my $diffs = eval { $runner->diff_path($path) };
     if ($@) { warn "changetrack-ng: $@\n"; return 2 }
@@ -204,6 +211,8 @@ sub cmd_log {
         config  => $opts{config},
         quiet   => $opts{quiet},
         verbose => $opts{verbose},
+        debug   => $opts{debug},
+        trace   => $opts{trace},
     );
     my $logs = eval { $runner->log_path($path) };
     if ($@) { warn "changetrack-ng: $@\n"; return 2 }
@@ -245,6 +254,8 @@ sub cmd_revert {
         config  => $opts{config},
         quiet   => $opts{quiet},
         verbose => $opts{verbose},
+        debug   => $opts{debug},
+        trace   => $opts{trace},
     );
     eval { $runner->revert_path($path, $rev) };
     if ($@) { warn "changetrack-ng: $@\n"; return 1 }

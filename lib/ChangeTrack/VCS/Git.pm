@@ -88,6 +88,21 @@ sub checkin {
     $self->add($real_path);
 }
 
+# remove -- Unlink mirror file and stage removal from Git.
+sub remove {
+    my ($self, $real_path) = @_;
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    if (-e $mirror || -l $mirror) {
+        unlink($mirror) or croak "unlink '$mirror' failed: $!";
+    }
+    my $in_head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'cat-file', '-e', "HEAD:$rel"]);
+    if ($in_head->{success}) {
+        my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'rm', '-f', '--', $rel]);
+        croak "git rm failed for '$rel': $r->{stderr}" unless $r->{success};
+    }
+}
+
 # commit -- Commit all staged changes with $msg.
 # No-ops if nothing is staged.  After a successful commit, pushes to
 # each configured push_remote (best-effort; failures only warn).

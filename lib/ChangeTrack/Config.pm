@@ -77,6 +77,12 @@ per-instance config hashrefs for enabled instances only:
 Each instance hashref contains all keys from its C<[notifier:*]> section
 plus C<instance_name>.
 
+=item $cfg->loaded_files
+
+Return the list (in list context) or arrayref (in scalar context) of absolute
+file paths loaded during configuration processing, including drop-ins and
+C<@include> files.
+
 =back
 
 =cut
@@ -232,6 +238,7 @@ sub _load_file {
 
     my $abs = _abs_path($path);
     return if $visited->{$abs}++;
+    push @{ $self->{_loaded_files} ||= [] }, $abs;
 
     open(my $fh, '<', $path)
         or croak "Cannot open config '$path': $!";
@@ -654,6 +661,12 @@ sub tracks {
 sub notifiers {
     my ($self) = @_;
     return $self->{notifiers};
+}
+
+# loaded_files -- Return the list of absolute file paths loaded during parsing.
+sub loaded_files {
+    my ($self) = @_;
+    return wantarray ? @{ $self->{_loaded_files} // [] } : [ @{ $self->{_loaded_files} // [] } ];
 }
 
 1;

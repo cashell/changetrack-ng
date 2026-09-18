@@ -25,7 +25,7 @@ L<ChangeTrack::VCS::Mercurial>.
 =head1 INTERFACE
 
 Subclasses must implement: C<init>, C<is_initialized>, C<output_path>,
-C<add>, C<checkin>, C<commit>, C<diff>, C<log_history>, C<revert>,
+C<add>, C<checkin>, C<commit>, C<diff>, C<remove>, C<log_history>, C<revert>,
 C<is_dirty>, C<model>.
 
 =over 4
@@ -55,6 +55,10 @@ Commit all staged changes with I<$message>.
 =item $vcs->diff($path)
 
 Return a unified diff string for I<$path>.
+
+=item $vcs->remove($real_path)
+
+Remove or unregister I<$real_path> from the VCS mirror/repository.
 
 =item $vcs->output_path($real_path)
 
@@ -119,6 +123,7 @@ sub checkin        { _unimpl(shift, 'checkin')        }
 sub add            { _unimpl(shift, 'add')            }
 sub commit         { _unimpl(shift, 'commit')         }
 sub diff           { _unimpl(shift, 'diff')           }
+sub remove         { _unimpl(shift, 'remove')         }
 sub log_history    { _unimpl(shift, 'log_history')    }
 sub revert         { _unimpl(shift, 'revert')         }
 sub is_dirty       { _unimpl(shift, 'is_dirty')       }

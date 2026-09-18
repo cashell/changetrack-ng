@@ -143,6 +143,8 @@ sub new {
     $debug   = 1 if $trace;
     $verbose = 1 if $debug;
 
+    set_debug($debug ? 1 : 0);
+
     return bless {
         config_path        => $args{config}             // '/etc/changetrack-ng/changetrack-ng.conf',
         no_auto_init       => $args{no_auto_init}       // 0,
@@ -290,7 +292,7 @@ sub run {
 
     # Build file list from track entries
     $self->_verbose("Building file list...");
-    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg));
+    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md);
     my $track_count  = scalar @{ $cfg->tracks };
     my $ignore_count = scalar @user_ignore;
     $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
@@ -382,14 +384,22 @@ sub _process_file {
 
     $report->increment_tracked;
 
-    my $existing = $md->record_for($real_path);
-    my $prev_type = defined($existing) ? ($existing->{type} // '') : '';
+    my $existing          = $md->record_for($real_path);
+    my $prev_type         = defined($existing) ? ($existing->{type} // '') : '';
+    my $prev_vcs_eligible = ($prev_type eq 'file' || $prev_type eq 'symlink' || $prev_type eq 'empty');
 
     # File no longer on disk
     unless (-e $real_path || -l $real_path) {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
+            eval { $vcs->remove($real_path) unless $self->{dry_run} };
+            if ($@) {
+                my $err = $@;
+                $err =~ s/\n$//;
+                $self->_warn("VCS remove failed for $real_path: $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+            }
             $self->_debug("Removed: $real_path");
             $self->_info("Removed: $real_path");
         } else {
@@ -417,7 +427,27 @@ sub _process_file {
     # Non-trackable types: special, unreadable, binary, empty
     if ($type eq 'special') {
         $self->_trace("$real_path: classified as special, metadata only");
-        unless ($prev_type eq 'special' && !$md->changed_since_load($real_path)) {
+        if ($prev_vcs_eligible) {
+            eval { $vcs->remove($real_path) unless $self->{dry_run} };
+            if ($@) {
+                my $err = $@;
+                $err =~ s/\n$//;
+                $self->_warn("VCS remove failed for $real_path: $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+            }
+            $report->add_change(
+                path         => $real_path,
+                is_new       => 0,
+                is_removed   => 1,
+                is_sensitive => 0,
+                diff         => [],
+                meta_change  => "transition from $prev_type to $type (removed from VCS)",
+                recipients   => $recipients,
+                stat         => $rec,
+            );
+            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
+            $self->_info("Removed from VCS (became $type): $real_path");
+        } elsif (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping special file (FIFO/socket/device): $real_path");
             }
@@ -428,7 +458,27 @@ sub _process_file {
 
     if ($type eq 'unreadable') {
         $self->_trace("$real_path: classified as unreadable, metadata only");
-        unless ($prev_type eq 'unreadable' && !$md->changed_since_load($real_path)) {
+        if ($prev_vcs_eligible) {
+            eval { $vcs->remove($real_path) unless $self->{dry_run} };
+            if ($@) {
+                my $err = $@;
+                $err =~ s/\n$//;
+                $self->_warn("VCS remove failed for $real_path: $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+            }
+            $report->add_change(
+                path         => $real_path,
+                is_new       => 0,
+                is_removed   => 1,
+                is_sensitive => 0,
+                diff         => [],
+                meta_change  => "transition from $prev_type to $type (removed from VCS)",
+                recipients   => $recipients,
+                stat         => $rec,
+            );
+            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
+            $self->_info("Removed from VCS (became $type): $real_path");
+        } elsif (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
             $report->add_warning("Skipping unreadable: $real_path");
         }
         return;
@@ -436,7 +486,27 @@ sub _process_file {
 
     if ($type eq 'binary') {
         $self->_trace("$real_path: classified as binary, metadata only");
-        unless ($prev_type eq 'binary') {
+        if ($prev_vcs_eligible) {
+            eval { $vcs->remove($real_path) unless $self->{dry_run} };
+            if ($@) {
+                my $err = $@;
+                $err =~ s/\n$//;
+                $self->_warn("VCS remove failed for $real_path: $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+            }
+            $report->add_change(
+                path         => $real_path,
+                is_new       => 0,
+                is_removed   => 1,
+                is_sensitive => 0,
+                diff         => [],
+                meta_change  => "transition from $prev_type to $type (removed from VCS)",
+                recipients   => $recipients,
+                stat         => $rec,
+            );
+            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
+            $self->_info("Removed from VCS (became $type): $real_path");
+        } elsif ($prev_type ne 'binary') {
             if ($self->{warn_special_files}) {
                 $self->_warn("skipping binary file: $real_path");
             }
@@ -447,7 +517,7 @@ sub _process_file {
 
     if ($type eq 'empty') {
         # Empty files have no content to diff.  Report only meta changes.
-        if (defined $existing && $md->changed_since_load($real_path)) {
+        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path)) {
             my $meta_summary = $md->diff_summary($real_path);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             $vcs->checkin($real_path, $msg) unless $self->{dry_run};
@@ -463,16 +533,19 @@ sub _process_file {
                 stat         => $rec,
             );
             $self->_debug("Changed (meta): $real_path ($meta_summary)");
-        } elsif (!defined $existing) {
+        } elsif (!defined $existing || !$prev_vcs_eligible) {
             $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+            my $trans_meta = (defined $existing && !$prev_vcs_eligible)
+                ? "transition from $prev_type to $type"
+                : '';
             $report->add_change(
                 path         => $real_path,
                 is_new       => 1,
                 is_sensitive => $is_sensitive,
                 diff         => ['(new empty file)'],
-                meta_change  => '',
+                meta_change  => $trans_meta,
                 recipients   => $recipients,
                 stat         => $rec,
             );
@@ -496,15 +569,18 @@ sub _process_file {
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
         defined($rec->{mode}) ? oct($rec->{mode}) : undef);
 
-    if (!defined $existing) {
-        # New file / symlink
+    if (!defined $existing || !$prev_vcs_eligible) {
+        # New file / symlink or transitioned from non-trackable
         $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
+        my $trans_meta = (defined $existing && !$prev_vcs_eligible)
+            ? "transition from $prev_type to $type"
+            : '';
         $report->add_change(
             path         => $real_path,
             is_new       => 1,
             is_sensitive => $is_sensitive,
             diff         => ['(new file)'],
-            meta_change  => '',
+            meta_change  => $trans_meta,
             recipients   => $recipients,
             stat         => $rec,
         );
@@ -548,10 +624,14 @@ sub _process_file {
 # _build_file_list -- Resolve all track entries into a sorted list of
 # { path, sensitive, recipients } hashrefs, applying ignore and exclude
 # patterns.  Directory entries are expanded recursively via File::Find.
+# When $md is provided, reconciles deleted files from tracked directories.
 sub _build_file_list {
-    my ($self, $tracks, $ignore_pats, $exclude_paths) = @_;
+    my ($self, $tracks, $ignore_pats, $exclude_paths, $md) = @_;
     my @entries;
     $exclude_paths ||= [];
+
+    my %live_paths;
+    my %dir_opts;
 
     for my $track (@$tracks) {
         my $opt_sensitive = $track->{options}{sensitive};
@@ -570,10 +650,12 @@ sub _build_file_list {
                 $self->_trace("$p: excluded (internal path)");
                 next;
             }
+            $live_paths{$p} = 1;
             push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
 
         } elsif ($track->{kind} eq 'directory') {
             my $dir = $track->{path};
+            $dir_opts{$dir} = { sensitive => $opt_sensitive, recipients => $recips };
             next unless -d $dir;
             next if _is_excluded_path($dir, $exclude_paths);
 
@@ -589,10 +671,40 @@ sub _build_file_list {
                         $self->_trace("$p: excluded (internal path)");
                         return;
                     }
+                    $live_paths{$p} = 1;
                     push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
                 },
                 no_chdir => 1,
             }, $dir);
+        }
+    }
+
+    # Reconcile deleted files from tracked directories using metadata
+    if ($md && $md->{records}) {
+        for my $stored_path (sort keys %{ $md->{records} }) {
+            next if $live_paths{$stored_path};
+            next if -e $stored_path || -l $stored_path;
+
+            # Check if stored path falls under an actively tracked directory
+            my $matched_dir;
+            for my $dir (sort { length($b) <=> length($a) } keys %dir_opts) {
+                my $prefix = $dir =~ m{/$} ? $dir : "$dir/";
+                if (index($stored_path, $prefix) == 0) {
+                    $matched_dir = $dir;
+                    last;
+                }
+            }
+            next unless $matched_dir;
+
+            # Skip if the path matches ignore or exclude patterns
+            next if _should_ignore($stored_path, basename($stored_path), $ignore_pats);
+            next if _is_excluded_path($stored_path, $exclude_paths);
+
+            push @entries, {
+                path       => $stored_path,
+                sensitive  => $dir_opts{$matched_dir}{sensitive},
+                recipients => $dir_opts{$matched_dir}{recipients},
+            };
         }
     }
 
@@ -794,11 +906,11 @@ sub _setup {
 # _tracked_entries -- Resolve all track entries for the current config,
 # applying ignore and exclude patterns.  Returns an arrayref.
 sub _tracked_entries {
-    my ($self, $cfg) = @_;
+    my ($self, $cfg, $md) = @_;
     my @user_ignore = @{ $cfg->global('ignore') // [] };
     my @ignore_pats = ($self->builtin_ignore_patterns, @user_ignore);
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
-    return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg))];
+    return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md)];
 }
 
 # _build_notifiers -- Instantiate all enabled notifier instances from config.
@@ -831,13 +943,18 @@ sub _build_notifiers {
 sub status {
     my ($self) = @_;
     my ($vcs, $cfg) = $self->_setup;
-    my $entries = $self->_tracked_entries($cfg);
     my $md      = $self->_load_metadata($cfg);
+    my $entries = $self->_tracked_entries($cfg, $md);
 
     my @results;
     for my $entry (@$entries) {
         my $path = $entry->{path};
-        next unless -e $path || -l $path;
+        if (!-e $path && !-l $path) {
+            if (defined $md->record_for($path)) {
+                push @results, { path => $path, diff => ['(deleted)'] };
+            }
+            next;
+        }
         next if _is_non_diffable($path);
         next if defined $md->record_for($path)
              && $md->can_skip_content_diff($path)
@@ -858,6 +975,12 @@ sub diff_path {
     my $md          = $self->_load_metadata($cfg);
 
     if (defined $path) {
+        if (!-e $path && !-l $path) {
+            if (defined $md->record_for($path)) {
+                return { $path => ['(deleted)'] };
+            }
+            return { $path => [] };
+        }
         if (defined $md->record_for($path)
             && $md->can_skip_content_diff($path)
             && !$md->changed_since_load($path)) {
@@ -866,11 +989,16 @@ sub diff_path {
         return { $path => $vcs->diff($path) };
     }
 
-    my $entries = $self->_tracked_entries($cfg);
+    my $entries = $self->_tracked_entries($cfg, $md);
     my %result;
     for my $entry (@$entries) {
         my $ep = $entry->{path};
-        next unless -e $ep || -l $ep;
+        if (!-e $ep && !-l $ep) {
+            if (defined $md->record_for($ep)) {
+                $result{$ep} = ['(deleted)'];
+            }
+            next;
+        }
         next if _is_non_diffable($ep);
         next if defined $md->record_for($ep)
              && $md->can_skip_content_diff($ep)
@@ -997,15 +1125,11 @@ sub _validate_notifiers {
     }
 }
 
-# _warn_insecure_config_permissions -- Warn if the config file is world-readable
-# and contains notifier secrets (OTLP headers, webhook URLs).
+# _warn_insecure_config_permissions -- Warn if any loaded config file is world-readable
+# and the configuration contains notifier secrets (OTLP headers, webhook URLs).
 sub _warn_insecure_config_permissions {
     my ($self, $cfg, $path) = @_;
-    return unless defined $path && -e $path;
-
-    my @st = stat($path);
-    return unless @st;
-    my $mode = $st[2] & 07777;
+    return unless defined $cfg;
 
     my $all = $cfg->notifiers;
     my $has_secret = 0;
@@ -1031,13 +1155,23 @@ sub _warn_insecure_config_permissions {
     }
 
     return unless $has_secret;
-    return unless ($mode & 0004); # world-readable
 
-    $self->_warn(sprintf(
-        'config %s is world-readable (%04o) and contains notifier secrets; set mode 0640 or stricter',
-        $path,
-        $mode,
-    ));
+    my @files = $cfg->can('loaded_files') ? $cfg->loaded_files : ();
+    push @files, $path if defined $path && !grep { $_ eq $path } @files;
+
+    for my $f (@files) {
+        next unless defined $f && -e $f;
+        my @st = stat($f);
+        next unless @st;
+        my $mode = $st[2] & 07777;
+        if ($mode & 0004) { # world-readable
+            $self->_warn(sprintf(
+                'config %s is world-readable (%04o) and contains notifier secrets; set mode 0640 or stricter',
+                $f,
+                $mode,
+            ));
+        }
+    }
 }
 
 ########################################################################

@@ -283,36 +283,41 @@ close($fh);
 # CLI: Revert Symlink Target End-To-End
 ########################################################################
 {
-    my $target_a = "$tracked_dir/target-a.txt";
-    my $target_b = "$tracked_dir/target-b.txt";
-    my $link     = "$tracked_dir/link.conf";
+    SKIP: {
+        my $can_symlink = eval { symlink('', ''); 1 };
+        skip 'symlink creation not available on this platform/user', 3 unless $can_symlink;
 
-    open(my $fha, '>', $target_a) or die $!;
-    print $fha "A\n";
-    close($fha);
-    open(my $fhb, '>', $target_b) or die $!;
-    print $fhb "B\n";
-    close($fhb);
+        my $target_a = "$tracked_dir/target-a.txt";
+        my $target_b = "$tracked_dir/target-b.txt";
+        my $link     = "$tracked_dir/link.conf";
 
-    unlink $link if -e $link || -l $link;
-    symlink($target_a, $link) or die "cannot create symlink: $!";
+        open(my $fha, '>', $target_a) or die $!;
+        print $fha "A\n";
+        close($fha);
+        open(my $fhb, '>', $target_b) or die $!;
+        print $fhb "B\n";
+        close($fhb);
 
-    my $cfg2 = write_config($link);
-    my $runner = ChangeTrack::Runner->new(config => $cfg2, quiet => 1);
-    $runner->run; # commit link -> target_a
+        unlink $link if -e $link || -l $link;
+        symlink($target_a, $link) or die "cannot create symlink: $!";
 
-    unlink $link or die $!;
-    symlink($target_b, $link) or die "cannot switch symlink target: $!";
-    $runner->run; # commit link -> target_b
+        my $cfg2 = write_config($link);
+        my $runner = ChangeTrack::Runner->new(config => $cfg2, quiet => 1);
+        $runner->run; # commit link -> target_a
 
-    my $cur = readlink($link);
-    is($cur, $target_b, 'symlink setup: current target is target_b');
+        unlink $link or die $!;
+        symlink($target_b, $link) or die "cannot switch symlink target: $!";
+        $runner->run; # commit link -> target_b
 
-    my $rc = system($^X, $bin, '--config', $cfg2, '--force', 'revert', $link, 'HEAD~1');
-    is($rc >> 8, 0, 'CLI revert symlink --force: exits 0');
+        my $cur = readlink($link);
+        is($cur, $target_b, 'symlink setup: current target is target_b');
 
-    my $rev = readlink($link);
-    is($rev, $target_a, 'CLI revert symlink: target restored to previous revision');
+        my $rc = system($^X, $bin, '--config', $cfg2, '--force', 'revert', $link, 'HEAD~1');
+        is($rc >> 8, 0, 'CLI revert symlink --force: exits 0');
+
+        my $rev = readlink($link);
+        is($rev, $target_a, 'CLI revert symlink: target restored to previous revision');
+    }
 }
 
 ########################################################################

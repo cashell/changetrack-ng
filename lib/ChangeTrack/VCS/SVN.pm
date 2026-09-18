@@ -119,6 +119,20 @@ sub checkin {
     $self->add($real_path);
 }
 
+# remove -- Unregister file from Subversion and remove mirror file.
+sub remove {
+    my ($self, $real_path) = @_;
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    my $st     = $self->_run('svn', 'status', $rel);
+    if ($st->{stdout} =~ /^[ MA]/m) {
+        my $r = $self->_run('svn', 'rm', '--force', $rel);
+        croak "svn rm failed for '$rel': $r->{stderr}" unless $r->{success};
+    } elsif (-e $mirror || -l $mirror) {
+        unlink($mirror) or croak "unlink '$mirror' failed: $!";
+    }
+}
+
 # commit -- Commit all pending changes with $msg.
 # SVN commit is inherently a push (no separate push step needed).
 sub commit {

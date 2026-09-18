@@ -116,10 +116,11 @@ sub read_payload {
     # Try gunzip
     my $json = $data;
     eval {
-        require IO::Compress::Gunzip;
+        require IO::Uncompress::Gunzip;
+        no warnings 'once';
         my $out = '';
-        IO::Compress::Gunzip::gunzip(\$data, \$out)
-            or die $IO::Compress::Gunzip::GunzipError;
+        IO::Uncompress::Gunzip::gunzip(\$data, \$out)
+            or die $IO::Uncompress::Gunzip::GunzipError;
         $json = $out;
     };
 

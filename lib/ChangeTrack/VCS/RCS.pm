@@ -98,6 +98,13 @@ sub checkin {
 sub add    { }
 sub commit { }
 
+# remove -- Remove working mirror file; preserves ,v archive file for history.
+sub remove {
+    my ($self, $real_path) = @_;
+    my $op = $self->output_path($real_path);
+    unlink($op) if -e $op || -l $op;
+}
+
 # diff -- Copy the real file to output_path and run rcsdiff.
 # Returns [] if unchanged, arrayref of unified-diff lines if changed.
 # Returns ['(new file)'] if no RCS history exists yet.

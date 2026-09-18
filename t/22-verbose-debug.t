@@ -254,4 +254,37 @@ SKIP: {
     like($stderr, qr/\[VERBOSE\]|^\s*$/, 'STDERR has diagnostic output');
 }
 
+########################################################################
+# Test: Subcommands inherit debug/trace and run_cmd debug
+########################################################################
+SKIP: {
+    skip 'CLI subcommand tests require Unix process semantics', 2 if $^O eq 'MSWin32';
+    my $bin = File::Spec->catfile($RealBin, '..', 'bin', 'changetrack-ng');
+    my $dir = tempdir(CLEANUP => 1);
+    my ($fh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    my ($tf, $tracked_file) = tempfile(UNLINK => 1);
+    print {$tf} "content\n";
+    close($tf);
+    print {$fh} "[global]\nvcs = rcs\noutput_dir = $dir\n\n[track]\n$tracked_file\n";
+    close($fh);
+
+    # Initialize via CLI
+    system($^X, $bin, '--config', $cfg_path, '-q', 'run');
+
+    # Modify file to create dirty state
+    open(my $mfh, '>>', $tracked_file) or die $!;
+    print {$mfh} "modified content\n";
+    close($mfh);
+
+    # Run status with --debug: should emit [DEBUG] exec: lines from run_cmd
+    my $cmd = "$^X $bin --config $cfg_path --debug status 2>&1";
+    my $out = `$cmd`;
+    like($out, qr/\[DEBUG\] exec:/, 'CLI status with --debug emits [DEBUG] exec: from run_cmd');
+
+    # Run diff with --debug: should also emit [DEBUG] exec:
+    $cmd = "$^X $bin --config $cfg_path --debug diff 2>&1";
+    $out = `$cmd`;
+    like($out, qr/\[DEBUG\] exec:/, 'CLI diff with --debug emits [DEBUG] exec: from run_cmd');
+}
+
 done_testing();

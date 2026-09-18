@@ -196,43 +196,48 @@ use_ok('ChangeTrack::Metadata');
 # Symlink Metadata Lifecycle
 ########################################################################
 {
-    my $dir = tempdir(CLEANUP => 1);
-    my $target_a = "$dir/target-a.txt";
-    my $target_b = "$dir/target-b.txt";
-    my $link     = "$dir/link.conf";
-
-    open(my $fa, '>', $target_a) or die $!;
-    print $fa "A\n";
-    close($fa);
-
-    open(my $fb, '>', $target_b) or die $!;
-    print $fb "B\n";
-    close($fb);
-
-    symlink($target_a, $link) or die "cannot create symlink: $!";
-
-    my $md = ChangeTrack::Metadata->load('/nonexistent/symlink-metadata');
-    $md->update_from_stat($link);
-
-    my $rec = $md->record_for($link);
-    is($rec->{type}, 'symlink', 'symlink: type recorded');
-    is(File::Spec->canonpath($rec->{target}), File::Spec->canonpath($target_a),
-        'symlink: target captured');
-
-    $md->{original} = { map { $_ => { %{ $md->{records}{$_} } } } keys %{ $md->{records} } };
-
     SKIP: {
-        skip 'symlink target normalization differs on Windows', 1 if $^O eq 'MSWin32';
-        ok($md->can_skip_content_diff($link), 'symlink: can skip when target unchanged');
+        my $can_symlink = eval { symlink('', ''); 1 };
+        skip 'symlink creation not available on this platform/user', 6 unless $can_symlink;
+
+        my $dir = tempdir(CLEANUP => 1);
+        my $target_a = "$dir/target-a.txt";
+        my $target_b = "$dir/target-b.txt";
+        my $link     = "$dir/link.conf";
+
+        open(my $fa, '>', $target_a) or die $!;
+        print $fa "A\n";
+        close($fa);
+
+        open(my $fb, '>', $target_b) or die $!;
+        print $fb "B\n";
+        close($fb);
+
+        symlink($target_a, $link) or die "cannot create symlink: $!";
+
+        my $md = ChangeTrack::Metadata->load('/nonexistent/symlink-metadata');
+        $md->update_from_stat($link);
+
+        my $rec = $md->record_for($link);
+        is($rec->{type}, 'symlink', 'symlink: type recorded');
+        is(File::Spec->canonpath($rec->{target}), File::Spec->canonpath($target_a),
+            'symlink: target captured');
+
+        $md->{original} = { map { $_ => { %{ $md->{records}{$_} } } } keys %{ $md->{records} } };
+
+        SKIP: {
+            skip 'symlink target normalization differs on Windows', 1 if $^O eq 'MSWin32';
+            ok($md->can_skip_content_diff($link), 'symlink: can skip when target unchanged');
+        }
+
+        unlink($link) or die $!;
+        symlink($target_b, $link) or die "cannot switch symlink target: $!";
+
+        ok($md->changed_since_load($link), 'symlink: target change detected');
+        my $summary = $md->diff_summary($link);
+        like($summary, qr/target/, 'symlink: diff summary mentions target');
+        ok(!$md->can_skip_content_diff($link), 'symlink: cannot skip when target changed');
     }
-
-    unlink($link) or die $!;
-    symlink($target_b, $link) or die "cannot switch symlink target: $!";
-
-    ok($md->changed_since_load($link), 'symlink: target change detected');
-    my $summary = $md->diff_summary($link);
-    like($summary, qr/target/, 'symlink: diff summary mentions target');
-    ok(!$md->can_skip_content_diff($link), 'symlink: cannot skip when target changed');
 }
 
 ########################################################################

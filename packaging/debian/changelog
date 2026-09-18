@@ -1,3 +1,20 @@
+changetrack-ng (0.7.1) unstable; urgency=medium
+
+  * Reconcile deleted files in tracked directories against metadata sidecar
+    and stage/record removal across Git, SVN, Mercurial, Fossil, and RCS.
+  * Bidirectional file type transition handling (file <-> symlink, trackable <->
+    non-trackable).
+  * Propagate --debug and --trace flags from CLI subcommands to Runner and run_cmd.
+  * Drop-in configuration permission audit: check all loaded config files for
+    0640 permissions when secrets are present.
+  * Config parser strips inline '#' and ';' comments and supports full-line ';'
+    comments.
+  * Test suite platform safety: probe symlink creation capability and use core
+    IO::Uncompress::Gunzip.
+  * Add loaded_files() accessor to ChangeTrack::Config and remove() to VCS backends.
+
+ -- Christopher Cashell <topher@zyp.org>  Fri, 18 Sep 2026 00:00:00 +0000
+
 changetrack-ng (0.7.0) unstable; urgency=high
 
   * Security hardening release consolidated from a multi-tool security review

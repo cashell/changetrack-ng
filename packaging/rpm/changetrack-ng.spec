@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.7.0
+Version:        0.7.1
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,16 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Fri Sep 18 2026 Christopher Cashell <topher@zyp.org> - 0.7.1-1
+- Directory deletion detection and VCS removal: reconcile vanished files against
+  metadata sidecar; stage removal across Git, SVN, Mercurial, Fossil, and RCS
+- Bidirectional file type transition handling (file <-> symlink, trackable <-> non-trackable)
+- Propagate --debug and --trace flags from CLI subcommands to Runner and run_cmd
+- Drop-in configuration permission audit: check all loaded config files for 0640 permissions
+- Config parser strips inline '#' and ';' comments and supports full-line ';' comments
+- Test suite platform safety: probe symlink creation support, use core IO::Uncompress::Gunzip
+- Add loaded_files() accessor to ChangeTrack::Config and remove() to VCS backends
+
 * Mon Jun 29 2026 Christopher Cashell <topher@zyp.org> - 0.7.0-1
 - Security hardening release (consolidated multi-tool security review)
 - Explicit TLS verification (verify_SSL=1) on webhook and otlp notifiers

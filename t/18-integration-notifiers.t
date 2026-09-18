@@ -123,6 +123,34 @@ if ($^O eq 'MSWin32' || $^O eq 'cygwin') {
     $runner->_warn_insecure_config_permissions($cfg, $path);
 
     ok(grep(/world-readable/i, @warn), 'world-readable config with secrets emits warning');
+
+    # SEC-2 with drop-in: main file is 0600, but drop-in in notifier.d/ is 0644
+    {
+        my $tmpdir = File::Temp::tempdir(CLEANUP => 1);
+        my $main_cfg = File::Spec->catfile($tmpdir, 'changetrack-ng.conf');
+        open(my $mfh, '>', $main_cfg) or die $!;
+        print $mfh "[global]\nvcs = git\noutput_dir = /tmp/changetrack-ng-test\n\n[track]\n/etc/hosts\n";
+        close($mfh);
+        chmod 0600, $main_cfg or die "chmod: $!";
+
+        my $notif_dir = File::Spec->catdir($tmpdir, 'notifier.d');
+        mkdir($notif_dir) or die "mkdir: $!";
+        my $dropin = File::Spec->catfile($notif_dir, 'webhook.conf');
+        open(my $dfh, '>', $dropin) or die $!;
+        print $dfh "[notifier:webhook:hook1]\nenabled = true\nurl = https://example.com/api/webhook?token=secret123\n";
+        close($dfh);
+        chmod 0644, $dropin or die "chmod: $!";
+
+        my $dcfg = ChangeTrack::Config->load($main_cfg);
+        my $drunner = ChangeTrack::Runner->new(config => $main_cfg, quiet => 1);
+
+        my @dwarn;
+        local $SIG{__WARN__} = sub { push @dwarn, @_ };
+        $drunner->_warn_insecure_config_permissions($dcfg, $main_cfg);
+
+        ok(grep(/world-readable/i, @dwarn), 'world-readable drop-in config with secrets emits warning');
+        ok(grep(/webhook\.conf/i, @dwarn), 'warning names the world-readable drop-in file');
+    }
 }
 
 ########################################################################

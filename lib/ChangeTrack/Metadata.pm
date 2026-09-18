@@ -96,6 +96,7 @@ use Carp qw(croak carp);
 use JSON::PP ();
 use File::Temp ();
 use File::Basename qw(dirname);
+use Fcntl qw(:mode);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -139,6 +140,22 @@ sub record_for {
     return $self->{records}{$path};
 }
 
+# _classify_file -- Helper to determine file type from lstat results.
+# Shared across update_from_stat, can_skip_content_diff, changed_since_load,
+# and diff_summary to ensure uniform classification behavior.
+sub _classify_file {
+    my ($path, $stat_ref) = @_;
+    return 'missing' unless $stat_ref && @$stat_ref;
+    my $m = $stat_ref->[2];
+    if    (S_ISLNK($m))         { return 'symlink'; }
+    elsif (S_ISDIR($m))         { return 'directory'; }
+    elsif (!S_ISREG($m))        { return 'special'; }
+    elsif (!-r $path)           { return 'unreadable'; }
+    elsif ($stat_ref->[7] == 0) { return 'empty'; }
+    elsif (-B $path)            { return 'binary'; }
+    else                        { return 'file'; }
+}
+
 # update_from_stat -- Re-stat $path and update (or create) the in-memory record.
 # Determines file type from lstat results; sets mtime/size for file-like types;
 # records readlink() target for symlinks.
@@ -151,14 +168,7 @@ sub update_from_stat {
         return;
     }
 
-    my $type;
-    if    (-l _) { $type = 'symlink'   }
-    elsif (-d _) { $type = 'directory' }
-    elsif (!-f _) { $type = 'special'  }
-    elsif (!-r $path) { $type = 'unreadable' }
-    elsif ($s[7] == 0) { $type = 'empty' }
-    elsif (-B $path)   { $type = 'binary' }
-    else               { $type = 'file' }
+    my $type = _classify_file($path, \@s);
 
     my $rec = {
         path  => $path,
@@ -190,6 +200,12 @@ sub can_skip_content_diff {
 
     my $otype = $orig->{type} // '';
 
+    my @s = lstat($path);
+    return 0 unless @s;
+
+    my $cur_type = _classify_file($path, \@s);
+    return 0 if $cur_type ne $otype;  # Type changed -> NEVER skip content diff
+
     # Symlinks: compare stored target to live readlink  --  no file I/O needed.
     if ($otype eq 'symlink') {
         my $cur_target = readlink($path);
@@ -200,9 +216,7 @@ sub can_skip_content_diff {
     # Non-content types: unchanged mtime+size means nothing to reprocess.
     # Regular files: unchanged mtime+size means content hasn't changed.
     if ($otype eq 'file' || $otype eq 'binary' || $otype eq 'empty' || $otype eq 'unreadable') {
-        my @s = lstat($path);
-        return 0 unless @s;
-        return 0 unless -f _;
+        return 0 unless S_ISREG($s[2]);
         return 0 unless defined $orig->{mtime} && defined $orig->{size};
 
         my $cur_size  = $s[7] + 0;
@@ -237,11 +251,14 @@ sub changed_since_load {
     my @s = lstat($path);
     return 1 unless @s;                  # vanished since last run
 
+    my $cur_type = _classify_file($path, \@s);
+    return 1 if $cur_type ne ($orig->{type} // '');
+
     return 1 if sprintf('%04o', $s[2] & 07777) ne ($orig->{mode} // '');
     return 1 if ($s[4] + 0) != ($orig->{uid} // -1);
     return 1 if ($s[5] + 0) != ($orig->{gid} // -1);
 
-    if (-l _) {
+    if ($cur_type eq 'symlink') {
         my $target = readlink($path) // '';
         return 1 if $target ne ($orig->{target} // '');
     }
@@ -250,7 +267,7 @@ sub changed_since_load {
 }
 
 # diff_summary -- Return a human-readable string describing what changed
-# in mode/uid/gid/target vs the loaded snapshot.  Returns '' if nothing changed.
+# in mode/uid/gid/target/type vs the loaded snapshot.  Returns '' if nothing changed.
 sub diff_summary {
     my ($self, $path) = @_;
     my $orig = $self->{original}{$path};
@@ -259,7 +276,13 @@ sub diff_summary {
     my @s = lstat($path);
     return '(file vanished)' unless @s;
 
+    my $cur_type = _classify_file($path, \@s);
     my @parts;
+
+    if ($cur_type ne ($orig->{type} // '')) {
+        push @parts, "type " . ($orig->{type} // '(unknown)') . " -> $cur_type";
+    }
+
     my $new_mode = sprintf('%04o', $s[2] & 07777);
     if ($new_mode ne ($orig->{mode} // '')) {
         push @parts, "mode $orig->{mode} -> $new_mode";
@@ -273,10 +296,11 @@ sub diff_summary {
         my $og = $orig->{group} // $orig->{gid};
         push @parts, "group $og -> " . _groupname($new_gid);
     }
-    if (-l _ && defined $orig->{target}) {
+    if ($cur_type eq 'symlink') {
         my $new_tgt = readlink($path) // '';
-        if ($new_tgt ne $orig->{target}) {
-            push @parts, "target $orig->{target} -> $new_tgt";
+        my $old_tgt = $orig->{target} // '(none)';
+        if ($new_tgt ne ($orig->{target} // '')) {
+            push @parts, "target $old_tgt -> $new_tgt";
         }
     }
 

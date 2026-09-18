@@ -2,8 +2,8 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Date: 2026-06-25
-Version: 0.7.0
+Date: 2026-09-18
+Version: 0.7.1
 
 ---
 
@@ -76,8 +76,8 @@ Version: 0.7.0
 | `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
 | `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, **hardcoded 30s timeout**), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
-| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.0'`) |
-| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `log_history`, `revert`, `is_dirty`, `model` |
+| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.1'`) |
+| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `remove`, `log_history`, `revert`, `is_dirty`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; `git -C`; batch commit; optional `push_remote` |
 | `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate `ci -l` per file |
 | `ChangeTrack::VCS::Fossil` | Whole-repo; `fossil init`/`open`; uses native `--chdir` flag (no Perl `chdir`); sets `FOSSIL_HOME` when `HOME` unset; optional `push_remote` |
@@ -392,7 +392,7 @@ CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `
 
 ### 9.3 Version management
 
-- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.7.0'`)
+- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.7.1'`)
 - All modules: `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`
 - Makefile `VERSION` variable must be kept in sync
 - RPM spec `Version:` and `%changelog` updated manually

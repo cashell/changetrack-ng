@@ -17,8 +17,8 @@
 #   notes        - non-obvious context or caveats
 
 [meta]
-version     = "0.7.0"
-updated     = "2026-06-29"
+version     = "0.7.1"
+updated     = "2026-09-18"
 homepage    = "https://github.com/cashell/changetrack-ng"
 license     = "GPL-3.0-or-later"
 min_perl    = "5.20"
@@ -464,6 +464,24 @@ description = "Tests for disabled-notifier name reuse, revert revision validatio
 dist        = ["full"]
 tags        = ["test"]
 tests       = ["correctness-cleanup", "ChangeTrack::Config", "bin/changetrack-ng"]
+
+[test."t/34-config-inline-comments.t"]
+description = "Tests for inline comment stripping in config parser (# and ; preceded by whitespace)"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["inline-comments", "ChangeTrack::Config"]
+
+[test."t/35-vcs-removal.t"]
+description = "Tests for directory deletion reconciliation, status of deleted files, and VCS removal operations"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["vcs-removal", "ChangeTrack::Runner", "ChangeTrack::VCS::Git", "ChangeTrack::VCS::RCS"]
+
+[test."t/36-type-transitions.t"]
+description = "Tests for bidirectional file type transitions (file <-> symlink, trackable <-> non-trackable) and metadata safety"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["type-transitions", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::VCS::Git"]
 
 ########################################################################
 # test_support

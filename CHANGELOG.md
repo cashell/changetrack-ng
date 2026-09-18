@@ -6,6 +6,8 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-18
+
 ### Fixed
 
 - **Config parser now strips inline comments.** `#` or `;` preceded by
@@ -18,6 +20,30 @@ All notable changes will be documented here.
 - **Sample config inline comments corrected.** All four copies of the default
   config file used `;` for inline comments (an INI convention the parser did
   not previously support).  Replaced with `#` for consistency.
+- **Directory deletion detection and VCS removal.** Tracked directories now
+  reconcile vanished files against recorded metadata sidecar entries. When a
+  file in a tracked directory is deleted from disk, `Runner` detects the deletion,
+  removes the mirror working copy and stages/records removal across all VCS backends
+  (Git, SVN, Mercurial, Fossil, RCS), removes the metadata record, and reports
+  the removal in run reports and `status`/`diff` subcommands.
+- **Bidirectional file type transition handling.** When files transition between
+  trackable types (`file`, `symlink`, `empty`) and non-trackable types (`special`,
+  `binary`, `unreadable`), transitions are now detected and recorded cleanly:
+  trackable-to-non-trackable transitions remove the mirror from the VCS backend,
+  while non-trackable-to-trackable transitions treat the file as a new checkin.
+- **Subcommand debug and trace propagation.** CLI subcommands (`status`, `diff`,
+  `log`, `revert`) now pass `--debug` and `--trace` flags into `Runner`, activating
+  command execution debug tracing in `ChangeTrack::Util::run_cmd`.
+- **Test suite platform safety.** Wrapped symlink creation tests in capability
+  probes to prevent test aborts on restricted filesystems, and corrected the
+  decompression module in OTLP tests to core `IO::Uncompress::Gunzip`.
+
+### Security
+
+- **Drop-in configuration permission audit.** Insecure permission warnings now
+  inspect all loaded configuration files returned by `ChangeTrack::Config->loaded_files`
+  (including drop-in directories and `@include` files), warning if any configuration
+  file in a secret-bearing setup is world-readable (`mode & 0004`).
 
 ### Documentation
 
