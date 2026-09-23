@@ -94,7 +94,17 @@ stderr.
 
 =item B<-v>, B<--verbose>
 
-Enable verbose debug output showing per-step internal state.
+Enable verbose output showing high-level run structure and key settings.
+
+=item B<-d>, B<--debug>
+
+Enable debug diagnostics showing all external command executions, effective
+configuration values, and action details. Forwarded to subcommands.
+
+=item B<-t>, B<--trace>
+
+Enable trace diagnostics showing per-file disposition for all tracked files.
+Implies both B<--debug> and B<--verbose>. Forwarded to subcommands.
 
 =item B<-V>, B<--version>
 

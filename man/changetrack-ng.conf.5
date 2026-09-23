@@ -11,8 +11,9 @@ F</etc/changetrack-ng/changetrack-ng.conf>
 =head1 DESCRIPTION
 
 B<changetrack-ng> reads an INI-format config file on every run.
-Lines beginning with C<#> are comments; blank lines are ignored.
-Key-value pairs use C<key = value> syntax.
+Lines beginning with C<#> or C<;> are comments; blank lines are ignored.
+Inline comments beginning with C<#> or C<;> and preceded by whitespace
+are stripped before parsing.  Key-value pairs use C<key = value> syntax.
 
 The config may contain notifier credentials (for example in the OTLP notifier's
 C<headers> key).  Set file permissions to C<0640> or stricter.

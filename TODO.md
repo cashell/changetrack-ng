@@ -1,10 +1,22 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-05-06
+Last updated: 2026-09-23
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-09-18)
+
+- CORR-3: Reconcile vanished files in tracked directories (`DIRECTORY /path`) against recorded metadata sidecar in `_build_file_list()`, enqueuing them for removal processing.
+- CORR-4: Implemented `remove($real_path)` across `ChangeTrack::VCS::Base` and all 5 backends (Git, SVN, Mercurial, Fossil, RCS), updating Runner to unlink mirror working copies and stage VCS deletions upon file removal.
+- CORR-5: Handled bidirectional file type transitions (`file` ↔ `symlink`, `empty` ↔ `content`, trackable ↔ non-trackable): updated `can_skip_content_diff()` to verify disk state before skipping diffs, updated `changed_since_load()` and `diff_summary()` to detect and report type changes, and trigger new checkin or VCS removal accordingly.
+- SEC-5: Insecure permission audit in `_warn_insecure_config_permissions()` now inspects all loaded configuration files returned by `ChangeTrack::Config->loaded_files` (including `conf.d/`, `notifier.d/`, `track.d/`, and `@include` files).
+- OPS-5: Subcommand debug and trace propagation — CLI subcommands (`status`, `diff`, `log`, `revert`) in `bin/changetrack-ng` forward `--debug` and `--trace` flags into Runner and activate `run_cmd` debug tracing.
+- TEST-10: Comprehensive test coverage for bidirectional file type transitions (`t/36-type-transitions.t`) and directory deletion reconciliation & VCS removals (`t/35-vcs-removal.t`).
+- TEST-12: Added symlink capability probe to `t/03-metadata.t` to skip gracefully on restricted environments.
+- TEST-13: Fixed `IO::Uncompress::Gunzip` require and error variable typos in `t/19-notify-otlp.t`.
+- CONF-1: Config parser inline comment stripping (`#` or `;` preceded by whitespace), full-line `;` comment recognition, and sample config inline comment corrections (`t/34-config-inline-comments.t`).
 
 ## Completed (2026-05-06)
 
@@ -62,68 +74,30 @@ Items are prioritized by severity and grouped by category.
 ---
 
 ## Security Issues
-
-### SEC-5: `_warn_insecure_config_permissions` only checks main config file (Medium)
-
-**Issue:** World-readability warnings (`0004` check) are only evaluated against the primary config path. If notifier secrets are stored in `notifier.d/*.conf` drop-ins or `@include` files, permissions on those secondary files are uninspected.
-**Fix:** Track individual source file paths for secrets in `Config.pm` and inspect the permissions of each secret-bearing file. (See `docs/agy-fixes.md`).
-
----
-
-## Data Integrity / Correctness
-
-Detailed implementation specifications and hand-off guide for these items are available in `docs/agy-fixes.md`.
-
-### CORR-3: Deletions inside tracked directories (`DIRECTORY /path`) are completely undetected (High)
-
-**Issue:** `_build_file_list` uses `File::Find::find()` on the filesystem, which only discovers currently living files. If a file inside a tracked directory is deleted, it is never queued into `@entries`, `_process_file()` is never called, no removal notification is emitted, the metadata record persists indefinitely, and the file is never removed from VCS.
-**Fix:** Reconcile stored `$md->{records}` against the live scan: any missing path falling within an active `DIRECTORY` root that is not ignored must be enqueued as removed. (See `docs/agy-fixes.md`).
-
-### CORR-4: File deletions are never propagated to VCS repositories (High)
-
-**Issue:** When a file is detected as removed, `Runner` marks it removed in report and metadata, but never unlinks the mirror file or removes it from VCS. No VCS backend implements a `remove()` method. As a result, VCS commits never record file deletions, and mirror trees retain deleted files forever.
-**Fix:** Add `remove($real_path)` to `ChangeTrack::VCS::Base` and implement across Git, SVN, Mercurial, Fossil, and RCS backends. Call `$vcs->remove()` in `_process_file()`. (See `docs/agy-fixes.md`).
-
-### CORR-5: File type transitions cause files to be lost or diffed improperly (High)
-
-**Issue:**
-1. Files initially classified as `special`, `binary`, or `unreadable` (skipping VCS checkin) that later become normal text files are treated as existing VCS files; `diff` returns empty and the file is never checked into VCS.
-2. `can_skip_content_diff()` assumes `special` or `directory` can always skip diffing without verifying the live disk type.
-3. Replacing a regular file with a symlink yields an empty diff and omits the new symlink target in metadata change summaries.
-**Fix:** Compare current disk type with `$orig->{type}` before skipping diffs. Stage previously non-trackable files as new checkins. Update `diff_summary` and `changed_since_load` to detect and describe type changes. (See `docs/agy-fixes.md`).
-
----
-
-## Robustness / Operational
-
-### OPS-5: Subcommands (`status`, `diff`, `log`, `revert`) silently ignore `--debug` and `--trace` (Medium)
-
-**Issue:** In `bin/changetrack-ng`, `cmd_status`, `cmd_diff`, `cmd_log`, and `cmd_revert` do not pass `debug` or `trace` to `Runner->new`, and `ChangeTrack::Util::set_debug(1)` is only called inside `Runner::run()`. Passing `-d` or `-t` to these subcommands has no effect.
-**Fix:** Call `set_debug(1)` early in `bin/changetrack-ng` when `$opts{debug}` is set, and forward `debug` and `trace` options in all subcommand runner instantiations. (See `docs/agy-fixes.md`).
-
----
-
-## Testing
-
-### TEST-9: No notifier failure isolation test (Low)
-
-**Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
-
-### TEST-10: File type transition test coverage (Linked to CORR-5)
-
-**Issue:** Add comprehensive test coverage verifying behavior when tracked files change type between runs (`file` ↔ `symlink`, `empty` → `content`, `binary` → `text`). (See `docs/agy-fixes.md`).
-
-### TEST-12: Add symlink capability probe to `t/03-metadata.t` (Low)
-
-**Issue:** Line 212 of `t/03-metadata.t` executes `symlink()` unconditionally, causing an unhandled test failure on platforms or restricted environments where creating symlinks is unprivileged.
-**Fix:** Probe symlink support with `eval { symlink('', ''); 1 }` and skip cleanly when unavailable (as in `t/20-util-symlink-mirror.t`). (See `docs/agy-fixes.md`).
-
-### TEST-13: Fix `IO::Uncompress::Gunzip` typo in `t/19-notify-otlp.t` (Low)
-
-**Issue:** `t/19-notify-otlp.t` lines 119–122 use `require IO::Compress::Gunzip;` and `$IO::Compress::Gunzip::GunzipError`, emitting a Perl typo warning.
-**Fix:** Change to `require IO::Uncompress::Gunzip;` and `$IO::Uncompress::Gunzip::GunzipError`. (See `docs/agy-fixes.md`).
-
----
+ 
+ (All open security tickets currently resolved.)
+ 
+ ---
+ 
+ ## Data Integrity / Correctness
+ 
+ (All open data integrity / correctness tickets currently resolved.)
+ 
+ ---
+ 
+ ## Robustness / Operational
+ 
+ (All open robustness / operational tickets currently resolved.)
+ 
+ ---
+ 
+ ## Testing
+ 
+ ### TEST-9: No notifier failure isolation test (Low)
+ 
+ **Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
+ 
+ ---
 
 ## Code Quality / Technical Debt
 
