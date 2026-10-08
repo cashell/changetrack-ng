@@ -28,8 +28,8 @@ L<ChangeTrack::Notify::OTLP>, L<ChangeTrack::Notify::File>.
 =item $notifier->send($report)
 
 Send a notification based on the L<ChangeTrack::Report> object.
-Wrapped in eval by C<send()>; failures are logged as warnings and do not
-abort the run.
+Dispatches to C<send_changes> or C<send_heartbeat>.  Failures emit a warning
+and are rethrown so the runner can record them as warnings.
 
 =item $notifier->send_heartbeat($report)
 
@@ -50,8 +50,8 @@ sub new {
     return bless { %args }, $class;
 }
 
-# send -- Best-effort dispatcher; catches errors from send_changes/send_heartbeat.
-# On failure, emits a carp warning but never dies.
+# send -- Dispatcher for changes and heartbeat notifications.
+# On failure, emits a carp warning and rethrows so Runner can record the failure.
 sub send {
     my ($self, $report) = @_;
     eval {
@@ -60,11 +60,13 @@ sub send {
         } elsif ($self->heartbeat_enabled && $report->is_heartbeat_eligible) {
             $self->send_heartbeat($report);
         }
+        1;
+    } or do {
+        my $err = $@;
+        (my $clean_err = $err) =~ s/\n$//;
+        carp sprintf('[changetrack-ng] %s notifier failed: %s', $self->name, $clean_err);
+        die $err;
     };
-    if ($@) {
-        (my $err = $@) =~ s/\n$//;
-        carp sprintf('[changetrack-ng] %s notifier failed: %s', $self->name, $err);
-    }
     return;
 }
 

@@ -307,12 +307,13 @@ sub make_report {
     my @w;
     local *ChangeTrack::Notify::Webhook::_sleep = sub { push @sleep_calls, $_[1] };
     local $SIG{__WARN__} = sub { push @w, @_ };
-    $n->send(make_report(with_change => 1));
+    eval { $n->send(make_report(with_change => 1)) };
+    my $err = $@;
     waitpid($pid, 0);
 
     is_deeply(\@sleep_calls, [1, 2], '500 response: retries use expected exponential backoff delays');
-    ok(scalar(grep { /500|failed|attempts/i } @w), 'Warning logged after 500 retries');
-    pass('Run did not die on 500 response');
+    ok(scalar(grep { /500|failed|attempts/i } @w) || $err =~ /500|failed|attempts/i, 'Warning/error logged after 500 retries');
+    ok($err, 'Exception raised on 500 response after retries exhausted');
 }
 
 ########################################################################
@@ -337,7 +338,7 @@ sub make_report {
 }
 
 ########################################################################
-# Unreachable Host: Run Continues, No Exception
+# Unreachable Host: Error Propagated To Caller
 ########################################################################
 {
     # Use a port that should not be listening
@@ -346,7 +347,7 @@ sub make_report {
     );
     my $report = make_report(with_change => 1);
     eval { $n->send($report) };
-    ok(!$@, 'No exception on unreachable host');
+    ok($@, 'Exception raised on unreachable host');
 }
 
 ########################################################################

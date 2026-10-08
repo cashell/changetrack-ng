@@ -74,30 +74,63 @@ Items are prioritized by severity and grouped by category.
 ---
 
 ## Security Issues
- 
- (All open security tickets currently resolved.)
- 
- ---
- 
- ## Data Integrity / Correctness
- 
- (All open data integrity / correctness tickets currently resolved.)
- 
- ---
- 
- ## Robustness / Operational
- 
- (All open robustness / operational tickets currently resolved.)
- 
- ---
- 
- ## Testing
- 
- ### TEST-9: No notifier failure isolation test (Low)
- 
- **Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
- 
- ---
+
+### SEC-6: Enforce private umask (0077) and auto-tighten output directory storage permissions (Critical)
+
+**Issue:** Output directory `/var/lib/changetrack-ng` and sibling repository files (`.fossil`, `-svnrepo`) may be world/group readable when created under default system umasks. Stored copies of sensitive files (e.g. `/etc/shadow`) are exposed to unprivileged users.
+**Fix:** Enforce `umask(0077)` at initialization. In `Runner::run()`, probe `$output_dir` and sibling repositories; tighten any group/world permissions to `0700`/`0600` and emit an alert warning recorded in the report. Ensure packaging templates specify mode `0700`.
+
+---
+
+## Data Integrity / Correctness
+
+### CORR-6: Prevent permanent loss of file changes on VCS failure & diff errors (High)
+
+**Issue:** `_process_file` updates in-memory stat snapshots prior to checkin/diff. If an error occurs, the failed state is saved to metadata, causing subsequent runs to skip content diffs via fast-path. Whole-repo metadata sidecar was also saved before VCS commit. VCS diff execution errors in Git/Hg/SVN/Fossil were treated as empty diffs rather than errors.
+**Fix:** Roll back in-memory metadata records upon per-file exception. Save metadata sidecar only after successful VCS batch commit. Croak on VCS diff execution errors.
+
+### CORR-7: Atomic temporary-file-and-rename pattern for `revert` (Phase 1 Low-Risk)
+
+**Issue:** `restore_mirror_path()` in `Util.pm` copies directly over live system paths using `File::Copy::copy`, which truncates target files during write. An interrupted restore leaves system files truncated.
+**Fix:** Write restored file to a sibling temporary file and `rename` atomically onto destination.
+
+---
+
+## Robustness / Operational
+
+### OPS-6: Make DNF package-manager pre-transaction hook non-blocking (Medium)
+
+**Issue:** `packaging/hooks/dnf/changetrack_ng.py` called `self._run("pre-install", required=True)`, raising `dnf.exceptions.Error` on any non-zero exit and aborting package transactions.
+**Fix:** Set `required=False` and emit prominent warnings to `sys.stderr` on non-zero exit status without blocking package management.
+
+### NOTIFY-1: Propagate notifier transport failures and populate webhook report metadata (Medium)
+
+**Issue:** Notifier dispatch swallowed transport errors without bubbling to `Runner::run()`, preventing warnings from appearing in reports. Webhook notifier read `$report->{message}` and `$report->{vcs}`, which were never initialized.
+**Fix:** Propagate transport failures so `Runner` records them in `$report->add_warning()`. Pass `vcs` and `message` to `ChangeTrack::Report->new()`.
+
+---
+
+## Performance / Scalability
+
+### PERF-3: Lazy DNS evaluation for `HOSTNAME` token expansion (Phase 1 Low-Risk)
+
+**Issue:** `ChangeTrack::Config` calls `_config_hostname()` (triggering forward and reverse DNS queries) on every key line parsed, even when the value does not contain the `HOSTNAME` token. Misconfigured or offline DNS causes noticeable startup stalls.
+**Fix:** Only invoke `_config_hostname()` when the config value contains `\bHOSTNAME\b`.
+
+### PERF-4: Single-pass `lstat` and cached classification in `Metadata.pm` (Phase 2C Medium-Risk)
+
+**Issue:** `can_skip_content_diff()`, `changed_since_load()`, and `update_from_stat()` each issue separate `lstat()` calls and invoke `_classify_file()` (which runs `-B` block reads) for every tracked file on every run.
+**Fix:** Perform a single `lstat` per file per run, pass stat buffer into comparison helpers, and defer `-B` binary tests until mtime/size actually change.
+
+---
+
+## Testing
+
+### TEST-9: No notifier failure isolation test (Low)
+
+**Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
+
+---
 
 ## Code Quality / Technical Debt
 
@@ -105,27 +138,43 @@ Items are prioritized by severity and grouped by category.
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
-**Impact:** Low — built-in ignore patterns don't use character classes, and user-defined patterns rarely need them.
+### DEBT-8: Deprecate unused config keys and prune dead stubs (Phase 1 Low-Risk)
 
----
+**Issue:** The global `interval` config key is parsed and validated but never consumed. `Metadata::import_from_v1_statistics` and `Runner::_glob_match` are dead stubs.
+**Fix:** Mark `interval` deprecated/ignored; remove dead stubs.
 
-## Feature Gaps
+### DEBT-9: Deduplicate non-trackable file handling in `Runner::_process_file` (Phase 2A Medium-Risk)
 
-### FEAT-3: No health-check / self-test subcommand (Low)
+**Issue:** `special`, `unreadable`, and `binary` file classifications duplicate ~25 lines of VCS removal, change emission, and warning logic.
+**Fix:** Extract into a shared `_handle_non_trackable()` helper while preserving warning strings.
 
-**Issue:** Operators have no way to validate their configuration without running a full scan. A `changetrack-ng check` that validates config, tests VCS access, and optionally tests notification delivery would reduce deployment issues.
+### DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` (Phase 2B Medium-Risk)
+
+**Issue:** `output_path`, `_rel_path`, and push-remote loop are duplicated across whole-repo backends. `is_dirty` is implemented 5 times but never called by application logic. `SVN.pm` uses unnecessary process-wide `chdir`.
+**Fix:** Hoist shared methods to `ChangeTrack::VCS::Base`, modernize SVN to use working-copy paths without `chdir`, and retire dead `is_dirty` methods.
+
+### DEBT-11: Consolidate HTTP retry/backoff in `Notify::Base` (Phase 2D Medium-Risk)
+
+**Issue:** `Webhook.pm` and `OTLP.pm` maintain nearly identical 3-attempt exponential backoff loops with `HTTP::Tiny`.
+**Fix:** Hoist common HTTP request dispatch into `ChangeTrack::Notify::Base`.
 
 ---
 
 ## Packaging / Distribution
 
-(All open packaging tickets currently resolved. Reverse manifest linting implemented as `tools/manifest-query --find-extra` / `make manifest-extra`).
+### PKG-4: Substitute `@BINDIR@` and `@DEFAULTSDIR@` placeholders in debian and RPM packaging (High)
+
+**Issue:** `packaging/debian/rules` installed apt hooks directly without `sed` placeholder replacement, leaving `@BINDIR@` unexpanded and silently failing hooks. `packaging/rpm/changetrack-ng.spec` only replaced `@BINDIR@` and omitted `@DEFAULTSDIR@` (`/etc/sysconfig`).
+**Fix:** Template `@BINDIR@` and `@DEFAULTSDIR@` consistently across Debian rules and RPM spec.
 
 ---
 
 ## Documentation
 
-(All documentation tickets currently resolved.)
+### DOC-4: Reconcile developer/assistant documentation with codebase reality (Phase 1 Low-Risk)
+
+**Issue:** `CLAUDE.md` and `ARCHITECTURE.md` state external command timeout is a "hardcoded 30s timeout" (now configurable `command_timeout`, default 120s), state Config "auto-detects v1" (v1 was removed), and list outdated test counts.
+**Fix:** Update `CLAUDE.md`, `ARCHITECTURE.md`, and references to match actual codebase implementation.
 
 ---
 

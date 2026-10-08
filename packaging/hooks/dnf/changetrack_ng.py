@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 
 import dnf
 
@@ -45,7 +46,7 @@ def _load_defaults() -> dict[str, str]:
 class ChangeTrackNg(dnf.Plugin):
     name = "changetrack_ng"
 
-    def _run(self, stage: str, required: bool) -> None:
+    def _run(self, stage: str, required: bool = False) -> None:
         defaults = _load_defaults()
         env = {**os.environ, **defaults}
 
@@ -61,17 +62,16 @@ class ChangeTrackNg(dnf.Plugin):
                 env=env,
             )
         except Exception as exc:
-            if required:
-                raise dnf.exceptions.Error(f"changetrack-ng hook failed: {exc}")
+            sys.stderr.write(f"[changetrack-ng] WARNING: {stage} hook failed: {exc}\n")
             return
 
-        if result.returncode != 0 and required:
-            raise dnf.exceptions.Error(
-                f"changetrack-ng hook exited with status {result.returncode}"
+        if result.returncode != 0:
+            sys.stderr.write(
+                f"[changetrack-ng] WARNING: {stage} hook exited with status {result.returncode}\n"
             )
 
     def resolved(self) -> None:
-        self._run("pre-install", required=True)
+        self._run("pre-install", required=False)
 
     def transaction(self) -> None:
         self._run("post-install", required=False)

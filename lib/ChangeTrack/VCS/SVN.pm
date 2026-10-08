@@ -165,6 +165,7 @@ sub diff {
     return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
 
     my $r = $self->_run('svn', 'diff', $rel);
+    croak "svn diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
 }

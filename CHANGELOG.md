@@ -6,6 +6,31 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **Enforce private permissions and restrictive umask.**
+  - `bin/changetrack-ng` initializes with `umask(0077)` so all created files, repositories, mirrors, and temp files are created with private permissions.
+  - `ChangeTrack::Runner` inspects the permissions of `output_dir` and sibling repositories (`output_dir.fossil`, `output_dir-svnrepo`), tightening permissions (`chmod $mode & ~0077`) when group or world access is detected, and records a warning in both logger and run report.
+  - `Makefile` and `packaging/rpm/changetrack-ng.spec` configure `/var/lib/changetrack-ng` with `0700` permissions on installation.
+
+### Fixed
+
+- **Prevent permanent loss of changes on VCS and file processing failures.**
+  - `ChangeTrack::Runner` rolls back in-memory metadata records to their loaded state (or deletes newly tracked records) when `_process_file` encounters an error, preventing updated mtime/size from being written to the sidecar.
+  - Metadata sidecar persistence is sequenced to occur after whole-repo VCS commit completes, ensuring failed commits do not advance the metadata snapshot.
+  - VCS backends (`Git`, `Mercurial`, `SVN`, `Fossil`) now croak with stderr details when `diff()` commands fail, preventing failed VCS executions from being treated as "unchanged".
+- **Packaging template placeholder substitutions.**
+  - `packaging/debian/rules` now substitutes `@BINDIR@` and `@DEFAULTSDIR@` in `packaging/hooks/apt-pre`, `packaging/hooks/apt-post`, and `packaging/cron/changetrack-ng`.
+  - `packaging/debian/changetrack-ng.service` is synced with `packaging/systemd/changetrack-ng.service` (`EnvironmentFile`, `WorkingDirectory`, `--system`, and `$CHANGETRACK_EXTRA_ARGS`).
+  - `packaging/rpm/changetrack-ng.spec` substitutes `@DEFAULTSDIR@` with `%{_sysconfdir}/sysconfig` in service, cron, and dnf plugin files.
+- **Non-blocking DNF hook execution.**
+  - `packaging/hooks/dnf/changetrack_ng.py` executes pre-install hook with `required=False` and outputs warnings to `sys.stderr` on hook exit failures rather than raising `dnf.exceptions.Error`, preventing changetrack failures from blocking package manager transactions.
+- **Notifier error propagation and report context.**
+  - `ChangeTrack::Report` supports `vcs` and `message` fields, initialized by `Runner` to ensure notifiers receive VCS type and commit message metadata.
+  - `ChangeTrack::Notify::Base::send` bubbles errors from `send_changes` to `Runner`, which catches notifier exceptions and records actionable warnings in the report.
+  - `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` now die on terminal failure after 3 failed attempts in `_post_with_retry`.
+  - `ChangeTrack::Notify::Email` dies if the sendmail delivery pipe fails to close cleanly.
+
 ## [0.7.1] - 2026-09-18
 
 ### Fixed

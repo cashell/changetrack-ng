@@ -209,7 +209,11 @@ sub run {
     unless ($lock->acquire) {
         $self->_verbose("Skipping: another instance holds lock");
         $self->_info("Another instance is running; skipping this run.");
-        return ChangeTrack::Report->new(start_time => $start_time);
+        return ChangeTrack::Report->new(
+            start_time => $start_time,
+            vcs        => $vcs_name,
+            message    => ($self->{message} || ''),
+        );
     }
     $self->_verbose("Lock acquired");
 
@@ -302,7 +306,14 @@ sub run {
     my $commit_msg = "changetrack-ng run \@ $ts";
     $commit_msg   .= " [hook: $self->{message}]" if $self->{message};
 
-    my $report = ChangeTrack::Report->new(start_time => $start_time);
+    my $report = ChangeTrack::Report->new(
+        start_time => $start_time,
+        vcs        => $vcs_name,
+        message    => ($self->{message} || $commit_msg),
+    );
+
+    # Enforce private permissions (0700 dirs, 0600 files) on output_dir and siblings
+    $self->_enforce_output_permissions($output_dir, $report);
 
     $self->_verbose("Processing " . scalar(@entries) . " tracked paths");
 
@@ -310,16 +321,11 @@ sub run {
         eval { $self->_process_file($entry, $vcs, $md, $report, $commit_msg) };
         if ($@) {
             (my $err = $@) =~ s/\n$//;
+            my $real_path = $entry->{path};
+            $md->rollback($real_path);
             $self->_warn($err);
             $report->add_warning($err);
         }
-    }
-
-    # Save metadata.  A failed save desyncs the fast-path source of truth, so
-    # abort before committing/notifying rather than proceeding with stale state.
-    unless ($self->{dry_run}) {
-        eval { $md->save($meta_path); 1 }
-            or croak "metadata save failed (aborting before commit): $@";
     }
 
     # Batch commit for whole-repo VCS
@@ -330,6 +336,13 @@ sub run {
         croak "VCS commit failed: $@" if $@;
     } elsif ($self->{verbose} && !$report->has_changes) {
         $self->_verbose("No changes to commit");
+    }
+
+    # Save metadata after VCS commit so that if the commit fails, the on-disk
+    # metadata sidecar is not advanced (preventing permanent loss of changes).
+    unless ($self->{dry_run}) {
+        eval { $md->save($meta_path); 1 }
+            or croak "metadata save failed (aborting after commit): $@";
     }
 
     $report->set_end_time(time());
@@ -1170,6 +1183,34 @@ sub _warn_insecure_config_permissions {
                 $f,
                 $mode,
             ));
+        }
+    }
+}
+
+# _enforce_output_permissions -- Verify and tighten permissions on output_dir and
+# sibling VCS repositories ($output_dir.fossil, $output_dir-svnrepo).
+# Warns and records a warning in $report if permissions are group- or world-accessible.
+sub _enforce_output_permissions {
+    my ($self, $output_dir, $report) = @_;
+    return unless defined $output_dir;
+
+    my @check_paths = ($output_dir, "$output_dir.fossil", "$output_dir-svnrepo");
+    for my $path (@check_paths) {
+        next unless -e $path;
+        my @st = stat($path);
+        next unless @st;
+        my $mode = $st[2];
+        if (($mode & 0077) != 0) {
+            my $new_mode = ($mode & ~0077) & 07777;
+            chmod($new_mode, $path);
+            my $msg = sprintf(
+                "Tightened insecure permissions on %s from %04o to %04o",
+                $path,
+                $mode & 07777,
+                $new_mode,
+            );
+            $self->_warn($msg);
+            $report->add_warning($msg) if $report;
         }
     }
 }

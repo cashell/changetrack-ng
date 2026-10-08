@@ -376,7 +376,7 @@ sub _post_with_retry {
             $delay *= 2;
         } else {
             my $detail = $status == 599 ? $resp->{content} : "HTTP $status";
-            warn "[changetrack-ng] otlp: POST to $ep failed after $max_attempts attempts: $detail\n";
+            die "otlp: POST to $ep failed after $max_attempts attempts: $detail\n";
         }
     }
 }

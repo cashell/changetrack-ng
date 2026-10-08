@@ -19,6 +19,10 @@ use ChangeTrack::Version;
 
 our $VERSION = $ChangeTrack::Version::VERSION;
 
+# Restrict default file permissions so all created repositories, mirrors,
+# metadata sidecars, and temporary files are private (0700 dirs, 0600 files).
+umask(0077);
+
 my %opts = (
     config       => undef,
     system_mode  => 0,

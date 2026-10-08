@@ -149,6 +149,7 @@ sub diff {
     return ['(new file)'] unless $in_head->{success};
 
     my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--no-color', 'HEAD', '--', $mirror]);
+    croak "git diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
 }

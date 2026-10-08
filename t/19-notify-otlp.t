@@ -638,12 +638,13 @@ SKIP: {
     my @w;
     local *ChangeTrack::Notify::OTLP::_sleep = sub { push @sleep_calls, $_[1] };
     local $SIG{__WARN__} = sub { push @w, @_ };
-    $n->send(make_report(with_change => 1));
+    eval { $n->send(make_report(with_change => 1)) };
+    my $err = $@;
     waitpid($pid, 0);
 
     is_deeply(\@sleep_calls, [1, 2], '503 x3: retries exhausted after expected backoff delays');
-    ok(scalar(grep { /failed|503|attempts/i } @w), 'Warning logged after 503 exhausts retries');
-    pass('Does not die after exhausting 503 retries');
+    ok(scalar(grep { /failed|503|attempts/i } @w) || $err =~ /failed|503|attempts/i, 'Warning/error logged after 503 exhausts retries');
+    ok($err, 'Exception raised after exhausting 503 retries');
 }
 
 ########################################################################
