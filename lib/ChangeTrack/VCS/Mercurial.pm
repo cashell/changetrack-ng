@@ -141,6 +141,7 @@ sub diff {
     return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
 
     my $r = $self->_hg('diff', $mirror);
+    croak "hg diff failed: $r->{stderr}" unless $r->{success};
     return ['(new file)'] if $r->{stdout} =~ /^diff\s+-r\s+0{12}\b/m;
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];

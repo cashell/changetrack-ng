@@ -110,7 +110,7 @@ _install_dirs:
 	install -d $(DESTDIR)$(DOCDIR)/examples/conf.d
 	install -d $(DESTDIR)$(DOCDIR)/examples/track.d
 	install -d $(DESTDIR)$(DOCDIR)/examples/notifier.d
-	install -d $(DESTDIR)$(DATADIR)
+	install -d -m 0700 $(DESTDIR)$(DATADIR)
 	install -d $(DESTDIR)$(MANDIR)/man8
 	install -d $(DESTDIR)$(MANDIR)/man5
 

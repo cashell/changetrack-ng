@@ -33,8 +33,10 @@ use ChangeTrack::Report;
 }
 
 {
-    my $r = ChangeTrack::Report->new(start_time => 1000);
-    is($r->start_time, 1000, 'start_time accepts explicit value');
+    my $r = ChangeTrack::Report->new(start_time => 1000, vcs => 'git', message => 'initial snapshot');
+    is($r->start_time, 1000,               'start_time accepts explicit value');
+    is($r->vcs,        'git',              'vcs accessor returns initialized value');
+    is($r->message,    'initial snapshot', 'message accessor returns initialized value');
 }
 
 ########################################################################

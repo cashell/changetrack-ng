@@ -82,6 +82,11 @@ Returns an empty string if nothing changed.
 Remove the in-memory record for I<$path>.  Used when a tracked file
 vanishes from disk.
 
+=item $meta->rollback($path)
+
+Revert the in-memory record for I<$path> to its state when loaded, or delete
+it if it was not present when loaded.  Used when processing fails.
+
 =item $meta->save($path)
 
 Write the current in-memory records back to disk atomically (tempfile
@@ -311,6 +316,17 @@ sub diff_summary {
 sub mark_removed {
     my ($self, $path) = @_;
     delete $self->{records}{$path};
+}
+
+# rollback -- Revert an in-memory record to its loaded snapshot, or delete it
+# if it was not present when loaded. Used when per-file processing fails.
+sub rollback {
+    my ($self, $path) = @_;
+    if (defined $self->{original}{$path}) {
+        $self->{records}{$path} = { %{ $self->{original}{$path} } };
+    } else {
+        delete $self->{records}{$path};
+    }
 }
 
 # save -- Write the in-memory records to $path atomically.

@@ -66,6 +66,14 @@ Return true if at least one change was recorded.
 
 Unix timestamps for the run.
 
+=item $report->vcs
+
+Name of the configured VCS backend.
+
+=item $report->message
+
+Commit/run message or hook description.
+
 =back
 
 =cut
@@ -79,6 +87,8 @@ sub new {
     return bless {
         start_time    => $args{start_time} // time(),
         end_time      => undef,
+        vcs           => $args{vcs},
+        message       => $args{message},
         changes       => [],
         warnings      => [],
         files_tracked => 0,
@@ -164,6 +174,8 @@ sub warnings      { $_[0]->{warnings}      }
 sub files_tracked { $_[0]->{files_tracked} }
 sub start_time    { $_[0]->{start_time}    }
 sub end_time      { $_[0]->{end_time}      }
+sub vcs           { $_[0]->{vcs}           }
+sub message       { $_[0]->{message}       }
 
 # duration_ms -- Return run duration in milliseconds, or undef if not finished.
 sub duration_ms {

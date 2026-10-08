@@ -183,7 +183,7 @@ sub _post_with_retry {
             my $detail = $status == 599
                 ? $resp->{content}
                 : "HTTP $status";
-            warn "[changetrack-ng] webhook POST to $safe_url failed after $max_attempts attempts: $detail\n";
+            die "webhook POST to $safe_url failed after $max_attempts attempts: $detail\n";
         }
     }
 }

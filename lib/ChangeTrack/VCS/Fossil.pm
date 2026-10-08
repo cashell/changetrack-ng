@@ -303,6 +303,7 @@ sub diff {
     return [] unless $changes->{stdout} =~ /\S/;
 
     my $r = $self->_run('fossil', 'diff', '--unified', '--', $rel);
+    croak "fossil diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
 }
