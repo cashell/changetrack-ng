@@ -13,6 +13,7 @@ Items are prioritized by severity and grouped by category.
 - DEBT-8: Pruned dead stubs (`Metadata::import_from_v1_statistics`, `Runner::_glob_match`) and deprecated/ignored `interval` config key with POD documentation.
 - DOC-4: Reconciled developer and architecture documentation (`CLAUDE.md`, `ARCHITECTURE.md`) with codebase reality: configurable `command_timeout` (default 120s), Fossil backend `--chdir` flag usage, removal of v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
 - DEBT-9: Deduplicated non-trackable file handling in `ChangeTrack::Runner::_process_file`. Extracted shared `_handle_non_trackable()` helper for `special`, `unreadable`, and `binary` file types while preserving warning, VCS removal staging, and report recording semantics.
+- DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` and modernize SVN backend. Hoisted `output_path`, `_rel_path`, `checkin`, and default `is_dirty` to `ChangeTrack::VCS::Base`, eliminated duplicate implementations across Git, Mercurial, Fossil, and SVN backends, removed dead eval wrapper from `Fossil::_run`, and modernized SVN backend to use absolute working-copy paths without process-wide `chdir`.
 
 ## Completed (2026-09-18)
 
@@ -136,12 +137,6 @@ Items are prioritized by severity and grouped by category.
 ### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low)
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
-
-
-### DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` (Phase 2B Medium-Risk)
-
-**Issue:** `output_path`, `_rel_path`, and push-remote loop are duplicated across whole-repo backends. `is_dirty` is implemented 5 times but never called by application logic. `SVN.pm` uses unnecessary process-wide `chdir`.
-**Fix:** Hoist shared methods to `ChangeTrack::VCS::Base`, modernize SVN to use working-copy paths without `chdir`, and retire dead `is_dirty` methods.
 
 ### DEBT-11: Consolidate HTTP retry/backoff in `Notify::Base` (Phase 2D Medium-Risk)
 

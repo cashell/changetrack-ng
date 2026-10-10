@@ -28,7 +28,6 @@ use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
-use Cwd qw(getcwd);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -41,45 +40,10 @@ sub _repo_path {
     return $self->{options}{svn_repo} // "$self->{output_dir}-svnrepo";
 }
 
-# output_path -- Map a real path to its mirror location.
-# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
-sub output_path {
-    my ($self, $real_path) = @_;
-    my $rel = $self->_mirror_rel($real_path);
-    return "$self->{output_dir}/$rel";
-}
-
-# _rel_path -- Strip the output_dir prefix to get the working-copy-relative path.
-sub _rel_path {
-    my ($self, $mirror) = @_;
-    (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/?}{};
-    return $rel;
-}
-
-# _run -- Run an svn command from within the output_dir working copy.
-# Uses getcwd/chdir to switch context; restores the original directory
-# even if the command fails.  Necessary because svn commands are
-# path-relative to the working copy root.
+# _run -- Run an svn command with the given arguments.
 sub _run {
     my ($self, @cmd) = @_;
-    my $old = getcwd();
-    croak "cannot determine current directory for svn operation: $!"
-        unless defined $old;
-    chdir($self->{output_dir}) or croak "chdir $self->{output_dir}: $!";
-    my $r;
-    my $err;
-    eval {
-        $r = run_cmd(cmd => \@cmd);
-        1;
-    } or do {
-        $err = $@ || 'unknown svn command failure';
-    };
-    unless (chdir($old)) {
-        # Do not mask an earlier command failure with the restore error.
-        $err //= "chdir back to $old failed: $!";
-    }
-    die $err if defined $err;
-    return $r;
+    return run_cmd(cmd => \@cmd);
 }
 
 # init -- Create a local svnadmin repository and check it out into output_dir.
@@ -106,28 +70,20 @@ sub is_initialized {
 sub add {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
-    my $r = $self->_run('svn', 'add', '--parents', '--force', $rel);
+    my $r = $self->_run('svn', 'add', '--parents', '--force', $mirror);
     croak "svn add failed: $r->{stderr}" unless $r->{success};
-}
-
-# checkin -- Stage the file for the next batch commit (whole-repo model).
-sub checkin {
-    my ($self, $real_path, $msg) = @_;
-    $self->add($real_path);
 }
 
 # remove -- Unregister file from Subversion and remove mirror file.
 sub remove {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
-    my $st     = $self->_run('svn', 'status', $rel);
+    my $st     = $self->_run('svn', 'status', $mirror);
     if ($st->{stdout} =~ /^[ MA]/m) {
-        my $r = $self->_run('svn', 'rm', '--force', $rel);
-        croak "svn rm failed for '$rel': $r->{stderr}" unless $r->{success};
+        my $r = $self->_run('svn', 'rm', '--force', $mirror);
+        croak "svn rm failed for '$mirror': $r->{stderr}" unless $r->{success};
     } elsif (-e $mirror || -l $mirror) {
         unlink($mirror) or croak "unlink '$mirror' failed: $!";
     }
@@ -140,10 +96,10 @@ sub commit {
     $msg //= 'changetrack-ng commit';
 
     # Skip if nothing pending.
-    my $st = $self->_run('svn', 'status');
+    my $st = $self->_run('svn', 'status', $self->{output_dir});
     return unless $st->{stdout} =~ /\S/;
 
-    my $r = $self->_run('svn', 'commit', '-m', $msg);
+    my $r = $self->_run('svn', 'commit', '-m', $msg, $self->{output_dir});
     croak "svn commit failed: $r->{stderr}" unless $r->{success};
     # SVN commit is push  --  no separate push step needed.
 }
@@ -156,33 +112,25 @@ sub commit {
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
     $self->add($real_path);
 
-    my $st = $self->_run('svn', 'status', $rel);
+    my $st = $self->_run('svn', 'status', $mirror);
     return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
 
-    my $r = $self->_run('svn', 'diff', $rel);
+    my $r = $self->_run('svn', 'diff', $mirror);
     croak "svn diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
-}
-
-# is_dirty -- Return true if $real_path has uncommitted changes.
-sub is_dirty {
-    my ($self, $real_path) = @_;
-    return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
 # log_history -- Return svn log lines for the mirror path of $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
     return ['(no history yet)'] unless -e $mirror;
-    my $r = $self->_run('svn', 'log', $rel);
+    my $r = $self->_run('svn', 'log', $mirror);
     return ['(no history yet)'] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
 }
@@ -193,9 +141,8 @@ sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
     # 'svn cat -rN path' outputs the file content at revision N.
-    my $r = $self->_run('svn', 'cat', "-r$rev", $rel);
+    my $r = $self->_run('svn', 'cat', "-r$rev", $mirror);
     croak "svn cat failed: $r->{stderr}" unless $r->{success};
     open(my $fh, '>', $mirror) or croak "open $mirror for write: $!";
     print $fh $r->{stdout};

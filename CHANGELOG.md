@@ -42,6 +42,11 @@ All notable changes will be documented here.
 
 ### Changed
 
+- **VCS backend consolidation and Subversion modernization.**
+  - Hoisted default implementations of `output_path`, `_rel_path`, `checkin`, and `is_dirty` into `ChangeTrack::VCS::Base`.
+  - Removed duplicate method implementations across whole-repo backends (`Git`, `Mercurial`, `Fossil`, `SVN`).
+  - Removed redundant `eval` error handling wrapper around `run_cmd` in `ChangeTrack::VCS::Fossil::_run`.
+  - Modernized `ChangeTrack::VCS::SVN` to use native absolute working-copy paths (`$mirror`, `$output_dir`) across all SVN commands, eliminating the process-wide `getcwd()` and `chdir()` context switching.
 - **Runner non-trackable file handling deduplicated.**
   - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
 
