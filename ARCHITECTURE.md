@@ -75,7 +75,7 @@ Version: 0.7.1
 | `ChangeTrack::Lock` | `flock(2)`-based pidfile with timeout/force modes; non-blocking skip for cron safety |
 | `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
-| `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, **hardcoded 30s timeout**), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
+| `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, configurable command timeout (`command_timeout`, default 120s)), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
 | `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.1'`) |
 | `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `remove`, `log_history`, `revert`, `is_dirty`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; `git -C`; batch commit; optional `push_remote` |
@@ -262,7 +262,7 @@ Severity is mapped from event class via `%SEVERITY` in `Notify::Base` (OTLP seve
 
 All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 - Uses `IPC::Open3` with list-form arguments (no shell interpolation)
-- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks; the read timeout is **hardcoded at 30 seconds** (`Util.pm`, `can_read(30)`) — it is not configurable
+- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks; read timeout is a configurable command timeout (`command_timeout`, default 120s)
 - Returns structured result `{ success, stdout, stderr, exit_code }`
 - No user-controlled data is ever interpolated into shell strings
 

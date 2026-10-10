@@ -359,11 +359,6 @@ sub save {
     };
 }
 
-# import_from_v1_statistics -- Stub for future v1 .statistics format migration.
-sub import_from_v1_statistics {
-    my ($self, $dir) = @_;
-    carp "changetrack-ng: import_from_v1_statistics not yet implemented";
-}
 
 # _username / _groupname -- Resolve uid/gid to name strings; fall back to the numeric id.
 sub _username { $^O eq 'MSWin32' ? $_[0] : ((getpwuid($_[0]))[0] // $_[0]) }

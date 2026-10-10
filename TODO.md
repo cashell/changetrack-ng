@@ -1,10 +1,17 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-09-23
+Last updated: 2026-10-08
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-10-08)
+
+- PERF-3: Lazy DNS evaluation for `HOSTNAME` token expansion in `ChangeTrack::Config::_load_file()`. Defers `_config_hostname()` until a config value matches `\bHOSTNAME\b`.
+- CORR-7: Atomic temporary-file-and-rename for `restore_mirror_path()` in `ChangeTrack::Util`. Uses a sibling temporary file in the destination directory, copies to tempfile, preserves existing file mode and ownership, and atomically renames over destination. Cleans up tempfile on failure.
+- DEBT-8: Pruned dead stubs (`Metadata::import_from_v1_statistics`, `Runner::_glob_match`) and deprecated/ignored `interval` config key with POD documentation.
+- DOC-4: Reconciled developer and architecture documentation (`CLAUDE.md`, `ARCHITECTURE.md`) with codebase reality: configurable `command_timeout` (default 120s), Fossil backend `--chdir` flag usage, removal of v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
 
 ## Completed (2026-09-18)
 
@@ -89,10 +96,6 @@ Items are prioritized by severity and grouped by category.
 **Issue:** `_process_file` updates in-memory stat snapshots prior to checkin/diff. If an error occurs, the failed state is saved to metadata, causing subsequent runs to skip content diffs via fast-path. Whole-repo metadata sidecar was also saved before VCS commit. VCS diff execution errors in Git/Hg/SVN/Fossil were treated as empty diffs rather than errors.
 **Fix:** Roll back in-memory metadata records upon per-file exception. Save metadata sidecar only after successful VCS batch commit. Croak on VCS diff execution errors.
 
-### CORR-7: Atomic temporary-file-and-rename pattern for `revert` (Phase 1 Low-Risk)
-
-**Issue:** `restore_mirror_path()` in `Util.pm` copies directly over live system paths using `File::Copy::copy`, which truncates target files during write. An interrupted restore leaves system files truncated.
-**Fix:** Write restored file to a sibling temporary file and `rename` atomically onto destination.
 
 ---
 
@@ -111,11 +114,6 @@ Items are prioritized by severity and grouped by category.
 ---
 
 ## Performance / Scalability
-
-### PERF-3: Lazy DNS evaluation for `HOSTNAME` token expansion (Phase 1 Low-Risk)
-
-**Issue:** `ChangeTrack::Config` calls `_config_hostname()` (triggering forward and reverse DNS queries) on every key line parsed, even when the value does not contain the `HOSTNAME` token. Misconfigured or offline DNS causes noticeable startup stalls.
-**Fix:** Only invoke `_config_hostname()` when the config value contains `\bHOSTNAME\b`.
 
 ### PERF-4: Single-pass `lstat` and cached classification in `Metadata.pm` (Phase 2C Medium-Risk)
 
@@ -138,10 +136,6 @@ Items are prioritized by severity and grouped by category.
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
-### DEBT-8: Deprecate unused config keys and prune dead stubs (Phase 1 Low-Risk)
-
-**Issue:** The global `interval` config key is parsed and validated but never consumed. `Metadata::import_from_v1_statistics` and `Runner::_glob_match` are dead stubs.
-**Fix:** Mark `interval` deprecated/ignored; remove dead stubs.
 
 ### DEBT-9: Deduplicate non-trackable file handling in `Runner::_process_file` (Phase 2A Medium-Risk)
 
@@ -168,13 +162,6 @@ Items are prioritized by severity and grouped by category.
 **Fix:** Template `@BINDIR@` and `@DEFAULTSDIR@` consistently across Debian rules and RPM spec.
 
 ---
-
-## Documentation
-
-### DOC-4: Reconcile developer/assistant documentation with codebase reality (Phase 1 Low-Risk)
-
-**Issue:** `CLAUDE.md` and `ARCHITECTURE.md` state external command timeout is a "hardcoded 30s timeout" (now configurable `command_timeout`, default 120s), state Config "auto-detects v1" (v1 was removed), and list outdated test counts.
-**Fix:** Update `CLAUDE.md`, `ARCHITECTURE.md`, and references to match actual codebase implementation.
 
 ---
 

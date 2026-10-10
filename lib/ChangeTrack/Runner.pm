@@ -795,13 +795,6 @@ sub _compile_ignore_patterns {
     return \@compiled;
 }
 
-# _glob_match -- Test a single glob string against a plain string.
-# Used in tests; not called in the main run path.
-sub _glob_match {
-    my ($glob, $str) = @_;
-    my $re = _glob_to_re($glob);
-    return $str =~ /^${re}$/;
-}
 
 # _glob_to_re -- Convert a simple glob pattern to a regex fragment.
 # Handles *, ?, and escapes regex metacharacters.  Does not support ** or [].

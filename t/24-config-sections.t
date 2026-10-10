@@ -147,4 +147,58 @@ sub write_main {
     }
 }
 
+########################################################################
+# Lazy HOSTNAME Expansion (PERF-3) & Deprecated Keys (DEBT-8)
+########################################################################
+{
+    require ChangeTrack::Util;
+    my $fqdn_calls = 0;
+    no warnings qw(redefine once);
+    local *ChangeTrack::Util::fqdn = sub {
+        $fqdn_calls++;
+        return 'mock-node.internal.net';
+    };
+
+    # 1. Config without HOSTNAME: fqdn() must NOT be called
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = write_main($dir, "\n[notifier:file]\nenabled = true\npath = /tmp/ct.log\n");
+        my $cfg  = ChangeTrack::Config->load($path);
+        is($fqdn_calls, 0, 'fqdn() is not called when config lacks HOSTNAME');
+    }
+
+    # 2. Config with HOSTNAME in notifier: fqdn() is called and value interpolated
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = write_main($dir, "\n[notifier:email]\nenabled = true\nto = admin\@HOSTNAME\n");
+        my $cfg  = ChangeTrack::Config->load($path);
+        ok($fqdn_calls > 0, 'fqdn() is invoked when config contains HOSTNAME');
+        my $insts = $cfg->notifiers->{email};
+        is($insts->[0]{to}[0], 'admin@mock-node.internal.net', 'HOSTNAME interpolated in notifier');
+    }
+
+    # 3. Config with HOSTNAME in global section: interpolated correctly
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/global_host.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /var/ct-HOSTNAME\n\n[track]\n/etc/hosts\n";
+        close($fh);
+        my $cfg = ChangeTrack::Config->load($path);
+        is($cfg->global('output_dir'), '/var/ct-mock-node.internal.net', 'HOSTNAME interpolated in global section');
+    }
+
+    # 4. Deprecated interval key is parsed without error (DEBT-8)
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/interval.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\ninterval = 1800\n\n[track]\n/etc/hosts\n";
+        close($fh);
+        my $cfg = eval { ChangeTrack::Config->load($path) };
+        ok(defined $cfg, 'Deprecated interval key accepted without parse error');
+        is($cfg->global('interval'), 1800, 'interval value preserved for backward compatibility');
+    }
+}
+
 done_testing();
