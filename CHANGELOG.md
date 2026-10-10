@@ -40,6 +40,11 @@ All notable changes will be documented here.
 - **Lazy DNS resolution in configuration loader.**
   - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
 
+### Changed
+
+- **Runner non-trackable file handling deduplicated.**
+  - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
+
 ### Documentation
 
 - **Developer and architecture documentation reconciliation.**

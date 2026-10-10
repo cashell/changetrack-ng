@@ -438,93 +438,11 @@ sub _process_file {
     my $type = $rec->{type};
 
     # Non-trackable types: special, unreadable, binary, empty
-    if ($type eq 'special') {
-        $self->_trace("$real_path: classified as special, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
-            if ($self->{warn_special_files}) {
-                $self->_warn("skipping special file (FIFO/socket/device): $real_path");
-            }
-            $report->add_warning("Skipping special file: $real_path");
-        }
-        return;
-    }
-
-    if ($type eq 'unreadable') {
-        $self->_trace("$real_path: classified as unreadable, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
-            $report->add_warning("Skipping unreadable: $real_path");
-        }
-        return;
-    }
-
-    if ($type eq 'binary') {
-        $self->_trace("$real_path: classified as binary, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif ($prev_type ne 'binary') {
-            if ($self->{warn_special_files}) {
-                $self->_warn("skipping binary file: $real_path");
-            }
-            $report->add_warning("Skipping binary file: $real_path");
-        }
+    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary') {
+        $self->_handle_non_trackable(
+            $real_path, $type, $prev_type, $prev_vcs_eligible,
+            $rec, $recipients, $vcs, $md, $report
+        );
         return;
     }
 
@@ -628,6 +546,62 @@ sub _process_file {
             $self->_trace("$real_path: unchanged");
         }
     }
+}
+
+# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary).
+# Inputs: $real_path, $type, $prev_type, $prev_vcs_eligible, $rec, $recipients,
+#         $vcs, $md, $report
+# Handles trace logging, VCS removal staging on transitions from trackable types,
+# change report recording, and skip warnings for non-trackable file types.
+sub _handle_non_trackable {
+    my ($self, $real_path, $type, $prev_type, $prev_vcs_eligible,
+        $rec, $recipients, $vcs, $md, $report) = @_;
+
+    $self->_trace("$real_path: classified as $type, metadata only");
+
+    if ($prev_vcs_eligible) {
+        eval { $vcs->remove($real_path) unless $self->{dry_run} };
+        if ($@) {
+            my $err = $@;
+            $err =~ s/\n$//;
+            $self->_warn("VCS remove failed for $real_path: $err");
+            $report->add_warning("VCS remove failed for $real_path: $err");
+        }
+        $report->add_change(
+            path         => $real_path,
+            is_new       => 0,
+            is_removed   => 1,
+            is_sensitive => 0,
+            diff         => [],
+            meta_change  => "transition from $prev_type to $type (removed from VCS)",
+            recipients   => $recipients,
+            stat         => $rec,
+        );
+        $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
+        $self->_info("Removed from VCS (became $type): $real_path");
+    } else {
+        if ($type eq 'special') {
+            if (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
+                if ($self->{warn_special_files}) {
+                    $self->_warn("skipping special file (FIFO/socket/device): $real_path");
+                }
+                $report->add_warning("Skipping special file: $real_path");
+            }
+        } elsif ($type eq 'unreadable') {
+            if (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
+                $report->add_warning("Skipping unreadable: $real_path");
+            }
+        } elsif ($type eq 'binary') {
+            if ($prev_type ne 'binary') {
+                if ($self->{warn_special_files}) {
+                    $self->_warn("skipping binary file: $real_path");
+                }
+                $report->add_warning("Skipping binary file: $real_path");
+            }
+        }
+    }
+
+    return;
 }
 
 ########################################################################
