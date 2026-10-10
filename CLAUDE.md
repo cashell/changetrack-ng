@@ -60,7 +60,7 @@ No build step required — Perl modules are used directly from `lib/`.
 - `Webhook.pm` — HTTP POST JSON; 3-attempt retry; TLS bypass option
 - `OTLP.pm` — OTLP/HTTP+JSON logs; gzip; env-var precedence; heartbeat default ON
 
-**Data flow:** Config → Lock → File list → Per-file (stat + VCS diff) → Report → Metadata save → VCS commit → Notify dispatch
+**Data flow:** Config → Lock → File list → Per-file (stat + VCS diff) → Report → VCS commit → Metadata save → Notify dispatch
 
 ## Critical Implementation Details
 
@@ -272,4 +272,4 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 ## Implementation Status
 
 All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.5.0.
-Tests in `t/` (1,027 tests across 36 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
+Tests in `t/` (1,043 tests across 36 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.

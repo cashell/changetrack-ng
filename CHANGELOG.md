@@ -59,7 +59,7 @@ All notable changes will be documented here.
 ### Documentation
 
 - **Developer and architecture documentation reconciliation.**
-  - Reconciled `CLAUDE.md` and `ARCHITECTURE.md` with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, removal of legacy v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
+  - Reconciled `CLAUDE.md`, `ARCHITECTURE.md`, and manual pages (`man/changetrack-ng.8`, `man/changetrack-ng.conf.5`) with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, Subversion backend absolute working-copy paths, private 0700 storage permissions, removal of legacy v1 config auto-detection reference, and updated test suite count (1,043 tests across 36 files).
 
 ## [0.7.1] - 2026-09-18
 

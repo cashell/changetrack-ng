@@ -1,5 +1,7 @@
 =pod
 
+=encoding utf-8
+
 =head1 NAME
 
 changetrack-ng.conf - configuration file for changetrack-ng
@@ -53,11 +55,11 @@ automatically for additional C<*.conf> files (sorted order):
 
 =over 4
 
-=item F<conf.d/>   — C<[global]> sections only
+=item F<conf.d/> - C<[global]> sections only
 
-=item F<track.d/>  — C<[track]> sections only
+=item F<track.d/> - C<[track]> sections only
 
-=item F<notifier.d/> — C<[notifier:*]> sections only
+=item F<notifier.d/> - C<[notifier:*]> sections only
 
 =back
 
@@ -88,7 +90,8 @@ VCS backend used to store change history.  Default: C<git>.
 
 Directory where VCS history is stored.  For whole-repo backends (git, fossil,
 svn, hg) this is the root of a mirror tree.  For RCS, flat C<,v> files are
-written here.  Default: C</var/lib/changetrack-ng>.
+written here.  Mode 0700 private permissions are enforced at runtime to
+protect captured configuration data.  Default: C</var/lib/changetrack-ng>.
 
 =item B<push_remote> = I<remote ...>
 
@@ -159,8 +162,20 @@ Default: C<1>.
 
 =item B<interval> = I<seconds>
 
-Informational: used by C<make install-systemd> and C<make install-cron>.
-Does not affect runtime behavior.  Default: C<3600> (one hour).
+Accepted for backward compatibility, but deprecated and ignored at runtime.
+Scheduling is handled externally via systemd timer or cron.  Default: C<3600>.
+
+=back
+
+=head2 Command execution
+
+=over 4
+
+=item B<command_timeout> = I<seconds>
+
+Maximum execution time in seconds allowed for external subprocesses (VCS
+commands, sendmail, etc.).  Terminates runaway commands via SIGTERM followed
+by SIGKILL.  C<0> disables the timeout (unbounded).  Default: C<120>.
 
 =back
 
@@ -185,7 +200,7 @@ Each C<[notifier:I<type>:I<name>]> section configures one notification instance.
 I<type> must be C<email>, C<webhook>, C<otlp>, or C<file>.  I<name> is an
 arbitrary label; omitting it (C<[notifier:email]>) is equivalent to
 C<[notifier:email:default]>.  Multiple instances of the same type are supported.
-Duplicate C<type:name> combinations — within a file or across all loaded files —
+Duplicate C<type:name> combinations -- within a file or across all loaded files --
 are a fatal parse error.
 
 Every notifier section must include:
