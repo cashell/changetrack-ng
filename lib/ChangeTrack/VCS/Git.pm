@@ -34,22 +34,6 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 
 sub model { 'whole-repo' }
 
-# output_path -- Map a real absolute path to its mirror location.
-# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
-sub output_path {
-    my ($self, $real_path) = @_;
-    my $rel = $self->_mirror_rel($real_path);
-    return "$self->{output_dir}/$rel";
-}
-
-# _rel_path -- Strip the output_dir prefix to get the repo-relative path.
-# Used when passing paths to git commands that need relative names.
-sub _rel_path {
-    my ($self, $mirror) = @_;
-    (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/}{};
-    return $rel;
-}
-
 # init -- Initialize a new git repository in output_dir and configure a
 # minimal user identity so commits succeed without a global git config.
 sub init {
@@ -79,13 +63,6 @@ sub add {
     sync_mirror_path($real_path, $mirror);
     my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'add', $mirror]);
     croak "git add failed: $r->{stderr}" unless $r->{success};
-}
-
-# checkin -- Stage the file for the next batch commit (whole-repo model).
-# Commits are deferred until commit() is called at end-of-run.
-sub checkin {
-    my ($self, $real_path, $msg) = @_;
-    $self->add($real_path);
 }
 
 # remove -- Unlink mirror file and stage removal from Git.
@@ -152,12 +129,6 @@ sub diff {
     croak "git diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
-}
-
-# is_dirty -- Return true if $real_path has uncommitted changes.
-sub is_dirty {
-    my ($self, $real_path) = @_;
-    return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
 # log_history -- Return git log lines for the mirror path of $real_path.
