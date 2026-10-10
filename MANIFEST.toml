@@ -483,6 +483,12 @@ dist        = ["full"]
 tags        = ["test"]
 tests       = ["type-transitions", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::VCS::Git"]
 
+[test."t/37-review-findings.t"]
+description = "Tests for storage permission enforcement, metadata rollback on error, notifier error bubbling, and packaging templates"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["review-findings", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::Notify::Base"]
+
 ########################################################################
 # test_support
 ########################################################################
