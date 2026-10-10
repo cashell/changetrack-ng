@@ -15,6 +15,7 @@ Items are prioritized by severity and grouped by category.
 - DEBT-9: Deduplicated non-trackable file handling in `ChangeTrack::Runner::_process_file`. Extracted shared `_handle_non_trackable()` helper for `special`, `unreadable`, and `binary` file types while preserving warning, VCS removal staging, and report recording semantics.
 - DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` and modernize SVN backend. Hoisted `output_path`, `_rel_path`, `checkin`, and default `is_dirty` to `ChangeTrack::VCS::Base`, eliminated duplicate implementations across Git, Mercurial, Fossil, and SVN backends, removed dead eval wrapper from `Fossil::_run`, and modernized SVN backend to use absolute working-copy paths without process-wide `chdir`.
 - PERF-4: Single-pass `lstat` and stat buffer propagation in `ChangeTrack::Metadata` and `ChangeTrack::Runner::_process_file`. Passed optional `$stat_ref` arrayref to `can_skip_content_diff()`, `changed_since_load()`, `update_from_stat()`, `diff_summary()`, and `_classify_file()` to eliminate redundant stat syscalls per tracked file.
+- DEBT-11: Consolidate HTTP retry and backoff in `Notify::Base`. Hoisted `_http_post_with_retry` and fallback `_sleep` helper to `ChangeTrack::Notify::Base`, delegating HTTP POST dispatch and 3-attempt exponential backoff from `Webhook.pm` and `OTLP.pm` while preserving notifier-specific payload formatting, gzip compression, header resolution, and mockable `_sleep` hooks.
 
 ## Completed (2026-09-18)
 
@@ -130,11 +131,6 @@ Items are prioritized by severity and grouped by category.
 ### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low)
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
-
-### DEBT-11: Consolidate HTTP retry/backoff in `Notify::Base` (Phase 2D Medium-Risk)
-
-**Issue:** `Webhook.pm` and `OTLP.pm` maintain nearly identical 3-attempt exponential backoff loops with `HTTP::Tiny`.
-**Fix:** Hoist common HTTP request dispatch into `ChangeTrack::Notify::Base`.
 
 ---
 

@@ -150,42 +150,19 @@ sub _post_to_all {
 }
 
 # _post_with_retry -- POST $json to $url with up to 3 attempts and
-# exponential back-off.  Client errors (4xx) are not retried.
+# exponential back-off, delegating to Base::_http_post_with_retry.
 sub _post_with_retry {
     my ($self, $http, $url, $json) = @_;
 
-    my $safe_url     = ChangeTrack::Util::redact_url($url);
-    my $max_attempts = 3;
-    my $delay        = 1;
-
-    for my $attempt (1 .. $max_attempts) {
-        my $resp = $http->post($url, {
-            headers => { 'Content-Type' => 'application/json' },
-            content => $json,
-        });
-
-        my $status = $resp->{status};
-
-        if ($status >= 200 && $status < 300) {
-            return;
-        }
-
-        if ($status >= 400 && $status < 500) {
-            warn "[changetrack-ng] webhook POST to $safe_url returned $status (client error, not retrying)\n";
-            return;
-        }
-
-        # 5xx or 599 (network error): retry with backoff
-        if ($attempt < $max_attempts) {
-            $self->_sleep($delay);
-            $delay *= 2;
-        } else {
-            my $detail = $status == 599
-                ? $resp->{content}
-                : "HTTP $status";
-            die "webhook POST to $safe_url failed after $max_attempts attempts: $detail\n";
-        }
-    }
+    my $safe_url = ChangeTrack::Util::redact_url($url);
+    return $self->_http_post_with_retry(
+        $http,
+        $url,
+        { 'Content-Type' => 'application/json' },
+        $json,
+        'webhook',
+        $safe_url,
+    );
 }
 
 # _sleep -- Pause for $secs seconds.  Extracted for test-mocking.

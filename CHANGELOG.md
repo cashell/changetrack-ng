@@ -52,6 +52,9 @@ All notable changes will be documented here.
   - Modernized `ChangeTrack::VCS::SVN` to use native absolute working-copy paths (`$mirror`, `$output_dir`) across all SVN commands, eliminating the process-wide `getcwd()` and `chdir()` context switching.
 - **Runner non-trackable file handling deduplicated.**
   - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
+- **Consolidate HTTP retry and backoff in notification base class (DEBT-11).**
+  - Hoisted shared HTTP request retry helper `_http_post_with_retry` and fallback `_sleep` into `ChangeTrack::Notify::Base`.
+  - Consolidated 3-attempt exponential backoff logic between `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` while preserving notifier-specific JSON encoding, gzip compression, header resolution, and test-mockable `_sleep` overrides.
 
 ### Documentation
 
