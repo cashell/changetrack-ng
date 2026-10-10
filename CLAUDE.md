@@ -40,7 +40,7 @@ No build step required — Perl modules are used directly from `lib/`.
 | Module | Role |
 |--------|------|
 | `Runner.pm` | Orchestration: config → lock → file list → process → commit → notify |
-| `Config.pm` | INI v2 parser; strict key validation; auto-detects v1; `HOSTNAME` interpolation |
+| `Config.pm` | INI v2 parser; strict key validation; requires v2 INI format; `HOSTNAME` interpolation |
 | `Metadata.pm` | JSONL sidecar (`.changetrack-metadata`); stat snapshots; atomic save |
 | `Report.pm` | Per-run change accumulator; passed to notifiers |
 | `Util.pm` | `hostname()`, `run_cmd()` (IPC::Open3, no shell), `sync_mirror_path()`, `set_debug()` |
@@ -50,7 +50,7 @@ No build step required — Perl modules are used directly from `lib/`.
 **VCS backends (`lib/ChangeTrack/VCS/`):** all extend `Base.pm`.
 - `Git.pm` — Whole-repo mirror model; batch commit; optional `push_remote`
 - `RCS.pm` — Per-file model; colon-encoded flat layout; immediate `ci -l`
-- `Fossil.pm` — Whole-repo; `chdir`-based commands
+- `Fossil.pm` — Whole-repo; uses `--chdir` flag (not Perl `chdir()`)
 - `SVN.pm` — Whole-repo; local file:// repo via `svnadmin create`
 - `Mercurial.pm` — Whole-repo; uses `hg -R` flag (no chdir)
 
@@ -103,7 +103,7 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 
 - Notifier `headers` and `resource_attributes` (OTLP) are scalar strings; the parser in OTLP.pm handles scalar/arrayref polymorphically via `_parse_kv_config_value()` — this is fragile and worth hardening
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
-- `Util::run_cmd()` IO::Select timeout is hardcoded to 30s instead of accepting a parameter for slow VCS ops
+- `Util::run_cmd()` command timeout is configurable via `command_timeout` (default 120s)
 
 ## Key Design Constraints
 
@@ -272,4 +272,4 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 ## Implementation Status
 
 All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.5.0.
-Tests in `t/` (764 total) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
+Tests in `t/` (1,027 tests across 36 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.

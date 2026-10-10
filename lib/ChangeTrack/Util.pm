@@ -86,7 +86,8 @@ C<__CHANGTRACK_NG_SYMLINK_TARGET__=> prefix).
 
 Restore I<$dst> from the mirror file I<$mirror>.  If I<$mirror> is a
 symlink snapshot record, recreates the symlink with the recorded target;
-otherwise copies the file.
+otherwise atomically restores the file via a temporary file and rename,
+preserving existing mode and ownership.
 
 =item set_debug($bool)
 
@@ -118,7 +119,9 @@ C<timeout> argument is given (module global C<$DEFAULT_TIMEOUT>).  A value of
 
 use feature qw(state);
 use Carp qw(croak carp);
+use File::Basename qw(dirname);
 use File::Copy qw(copy);
+use File::Temp qw(tempfile);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 our @ISA     = qw(Exporter);
@@ -388,7 +391,9 @@ sub sync_mirror_path {
 
 # restore_mirror_path -- Restore $dst from the mirror file $mirror.
 # If $mirror is a symlink snapshot record, recreates the symlink;
-# otherwise copies the file content.  Returns 'symlink' or 'file'.
+# otherwise atomically restores the file content via a temporary file
+# and rename, preserving existing mode and ownership.
+# Returns 'symlink' or 'file'.
 sub restore_mirror_path {
     my ($mirror, $dst) = @_;
     croak 'restore_mirror_path: mirror required' unless defined $mirror;
@@ -405,7 +410,48 @@ sub restore_mirror_path {
     if (-l $dst) {
         unlink($dst) or croak "restore_mirror_path: cannot remove stale symlink '$dst': $!";
     }
-    copy($mirror, $dst) or croak "restore_mirror_path: copy '$mirror' -> '$dst' failed: $!";
+
+    my ($orig_mode, $orig_uid, $orig_gid);
+    if (-e $dst) {
+        my @st = stat($dst);
+        if (@st) {
+            $orig_mode = $st[2] & 07777;
+            $orig_uid  = $st[4];
+            $orig_gid  = $st[5];
+        }
+    }
+
+    my $dir = dirname($dst);
+    my ($tmp_fh, $tmp);
+    eval {
+        ($tmp_fh, $tmp) = File::Temp::tempfile(
+            DIR    => $dir,
+            UNLINK => 0,
+        );
+    };
+    if ($@ || !defined $tmp) {
+        croak "restore_mirror_path: tempfile creation in '$dir' failed: " . ($@ || $!);
+    }
+    close($tmp_fh);
+
+    eval {
+        copy($mirror, $tmp) or die "copy '$mirror' -> '$tmp' failed: $!\n";
+        if (defined $orig_mode) {
+            chmod($orig_mode, $tmp) or carp "restore_mirror_path: chmod failed on '$tmp': $!";
+            if (defined $orig_uid && defined $orig_gid && $> == 0) {
+                chown($orig_uid, $orig_gid, $tmp) or carp "restore_mirror_path: chown failed on '$tmp': $!";
+            }
+        } elsif (my @mst = stat($mirror)) {
+            chmod($mst[2] & 07777, $tmp);
+        }
+        rename($tmp, $dst) or die "rename '$tmp' -> '$dst' failed: $!\n";
+    };
+    if ($@) {
+        my $err = $@;
+        unlink($tmp) if defined $tmp && -e $tmp;
+        croak "restore_mirror_path: $err";
+    }
+
     return 'file';
 }
 

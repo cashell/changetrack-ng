@@ -25,11 +25,25 @@ All notable changes will be documented here.
   - `packaging/rpm/changetrack-ng.spec` substitutes `@DEFAULTSDIR@` with `%{_sysconfdir}/sysconfig` in service, cron, and dnf plugin files.
 - **Non-blocking DNF hook execution.**
   - `packaging/hooks/dnf/changetrack_ng.py` executes pre-install hook with `required=False` and outputs warnings to `sys.stderr` on hook exit failures rather than raising `dnf.exceptions.Error`, preventing changetrack failures from blocking package manager transactions.
+- **Atomic temporary-file-and-rename for revert restore operations.**
+  - `ChangeTrack::Util::restore_mirror_path` restores regular files via a temporary file in the destination directory (`File::Temp::tempfile`) and atomic `rename`, preventing truncation of live system files during restore. Preserves existing file mode and ownership prior to rename and unlinks the temporary file on error.
+- **Dead stubs removed and config key deprecation documented.**
+  - Removed unused stubs `ChangeTrack::Metadata::import_from_v1_statistics` and `ChangeTrack::Runner::_glob_match`. Documented deprecation of `interval` global configuration key (scheduling handled by systemd timer or cron).
 - **Notifier error propagation and report context.**
   - `ChangeTrack::Report` supports `vcs` and `message` fields, initialized by `Runner` to ensure notifiers receive VCS type and commit message metadata.
   - `ChangeTrack::Notify::Base::send` bubbles errors from `send_changes` to `Runner`, which catches notifier exceptions and records actionable warnings in the report.
   - `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` now die on terminal failure after 3 failed attempts in `_post_with_retry`.
   - `ChangeTrack::Notify::Email` dies if the sendmail delivery pipe fails to close cleanly.
+
+### Performance
+
+- **Lazy DNS resolution in configuration loader.**
+  - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
+
+### Documentation
+
+- **Developer and architecture documentation reconciliation.**
+  - Reconciled `CLAUDE.md` and `ARCHITECTURE.md` with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, removal of legacy v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
 
 ## [0.7.1] - 2026-09-18
 
