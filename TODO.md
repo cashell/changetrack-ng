@@ -12,6 +12,7 @@ Items are prioritized by severity and grouped by category.
 - CORR-7: Atomic temporary-file-and-rename for `restore_mirror_path()` in `ChangeTrack::Util`. Uses a sibling temporary file in the destination directory, copies to tempfile, preserves existing file mode and ownership, and atomically renames over destination. Cleans up tempfile on failure.
 - DEBT-8: Pruned dead stubs (`Metadata::import_from_v1_statistics`, `Runner::_glob_match`) and deprecated/ignored `interval` config key with POD documentation.
 - DOC-4: Reconciled developer and architecture documentation (`CLAUDE.md`, `ARCHITECTURE.md`) with codebase reality: configurable `command_timeout` (default 120s), Fossil backend `--chdir` flag usage, removal of v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
+- DEBT-9: Deduplicated non-trackable file handling in `ChangeTrack::Runner::_process_file`. Extracted shared `_handle_non_trackable()` helper for `special`, `unreadable`, and `binary` file types while preserving warning, VCS removal staging, and report recording semantics.
 
 ## Completed (2026-09-18)
 
@@ -136,11 +137,6 @@ Items are prioritized by severity and grouped by category.
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
-
-### DEBT-9: Deduplicate non-trackable file handling in `Runner::_process_file` (Phase 2A Medium-Risk)
-
-**Issue:** `special`, `unreadable`, and `binary` file classifications duplicate ~25 lines of VCS removal, change emission, and warning logic.
-**Fix:** Extract into a shared `_handle_non_trackable()` helper while preserving warning strings.
 
 ### DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` (Phase 2B Medium-Risk)
 
