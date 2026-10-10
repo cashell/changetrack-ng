@@ -24,9 +24,11 @@ L<ChangeTrack::VCS::Mercurial>.
 
 =head1 INTERFACE
 
-Subclasses must implement: C<init>, C<is_initialized>, C<output_path>,
-C<add>, C<checkin>, C<commit>, C<diff>, C<remove>, C<log_history>, C<revert>,
-C<is_dirty>, C<model>.
+Subclasses must implement: C<init>, C<is_initialized>, C<add>, C<commit>,
+C<diff>, C<remove>, C<log_history>, C<revert>, C<model>.
+
+Subclasses may override the default implementations of: C<output_path>,
+C<checkin>, C<is_dirty>.
 
 =over 4
 
@@ -116,17 +118,41 @@ sub _mirror_rel {
     return $rel;
 }
 
+# output_path -- Map a real absolute path to its mirror location under output_dir.
+# Default whole-repo implementation: /etc/passwd -> $output_dir/etc/passwd
+sub output_path {
+    my ($self, $real_path) = @_;
+    my $rel = $self->_mirror_rel($real_path);
+    return "$self->{output_dir}/$rel";
+}
+
+# _rel_path -- Strip output_dir prefix to get relative working tree path.
+sub _rel_path {
+    my ($self, $mirror) = @_;
+    (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/?}{};
+    return $rel;
+}
+
+# checkin -- Stage file for next batch commit; default delegates to add().
+sub checkin {
+    my ($self, $real_path, $msg) = @_;
+    $self->add($real_path);
+}
+
+# is_dirty -- Return true if $real_path has uncommitted changes in the mirror.
+sub is_dirty {
+    my ($self, $real_path) = @_;
+    return scalar(@{ $self->diff($real_path) }) > 0;
+}
+
 sub init           { _unimpl(shift, 'init')           }
 sub is_initialized { _unimpl(shift, 'is_initialized') }
-sub output_path    { _unimpl(shift, 'output_path')    }
-sub checkin        { _unimpl(shift, 'checkin')        }
 sub add            { _unimpl(shift, 'add')            }
 sub commit         { _unimpl(shift, 'commit')         }
 sub diff           { _unimpl(shift, 'diff')           }
 sub remove         { _unimpl(shift, 'remove')         }
 sub log_history    { _unimpl(shift, 'log_history')    }
 sub revert         { _unimpl(shift, 'revert')         }
-sub is_dirty       { _unimpl(shift, 'is_dirty')       }
 sub model          { _unimpl(shift, 'model')          }
 
 1;

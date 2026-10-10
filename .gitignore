@@ -1,0 +1,15 @@
+# Build artifacts
+changetrack-ng-*.tar.gz
+changetrack-ng-*.pl
+man/*.gz
+fatlib/
+
+# Test temporaries
+t/tmp/
+*.tmp
+
+# Editor cruft
+*.swp
+*.bak
+*~
+#*#

@@ -6,6 +6,61 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **Enforce private permissions and restrictive umask.**
+  - `bin/changetrack-ng` initializes with `umask(0077)` so all created files, repositories, mirrors, and temp files are created with private permissions.
+  - `ChangeTrack::Runner` inspects the permissions of `output_dir` and sibling repositories (`output_dir.fossil`, `output_dir-svnrepo`), tightening permissions (`chmod $mode & ~0077`) when group or world access is detected, and records a warning in both logger and run report.
+  - `Makefile` and `packaging/rpm/changetrack-ng.spec` configure `/var/lib/changetrack-ng` with `0700` permissions on installation.
+
+### Fixed
+
+- **Prevent permanent loss of changes on VCS and file processing failures.**
+  - `ChangeTrack::Runner` rolls back in-memory metadata records to their loaded state (or deletes newly tracked records) when `_process_file` encounters an error, preventing updated mtime/size from being written to the sidecar.
+  - Metadata sidecar persistence is sequenced to occur after whole-repo VCS commit completes, ensuring failed commits do not advance the metadata snapshot.
+  - VCS backends (`Git`, `Mercurial`, `SVN`, `Fossil`) now croak with stderr details when `diff()` commands fail, preventing failed VCS executions from being treated as "unchanged".
+- **Packaging template placeholder substitutions.**
+  - `packaging/debian/rules` now substitutes `@BINDIR@` and `@DEFAULTSDIR@` in `packaging/hooks/apt-pre`, `packaging/hooks/apt-post`, and `packaging/cron/changetrack-ng`.
+  - `packaging/debian/changetrack-ng.service` is synced with `packaging/systemd/changetrack-ng.service` (`EnvironmentFile`, `WorkingDirectory`, `--system`, and `$CHANGETRACK_EXTRA_ARGS`).
+  - `packaging/rpm/changetrack-ng.spec` substitutes `@DEFAULTSDIR@` with `%{_sysconfdir}/sysconfig` in service, cron, and dnf plugin files.
+- **Non-blocking DNF hook execution.**
+  - `packaging/hooks/dnf/changetrack_ng.py` executes pre-install hook with `required=False` and outputs warnings to `sys.stderr` on hook exit failures rather than raising `dnf.exceptions.Error`, preventing changetrack failures from blocking package manager transactions.
+- **Atomic temporary-file-and-rename for revert restore operations.**
+  - `ChangeTrack::Util::restore_mirror_path` restores regular files via a temporary file in the destination directory (`File::Temp::tempfile`) and atomic `rename`, preventing truncation of live system files during restore. Preserves existing file mode and ownership prior to rename and unlinks the temporary file on error.
+- **Dead stubs removed and config key deprecation documented.**
+  - Removed unused stubs `ChangeTrack::Metadata::import_from_v1_statistics` and `ChangeTrack::Runner::_glob_match`. Documented deprecation of `interval` global configuration key (scheduling handled by systemd timer or cron).
+- **Notifier error propagation and report context.**
+  - `ChangeTrack::Report` supports `vcs` and `message` fields, initialized by `Runner` to ensure notifiers receive VCS type and commit message metadata.
+  - `ChangeTrack::Notify::Base::send` bubbles errors from `send_changes` to `Runner`, which catches notifier exceptions and records actionable warnings in the report.
+  - `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` now die on terminal failure after 3 failed attempts in `_post_with_retry`.
+  - `ChangeTrack::Notify::Email` dies if the sendmail delivery pipe fails to close cleanly.
+
+### Performance
+
+- **Lazy DNS resolution in configuration loader.**
+  - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
+- **Single-pass lstat and stat caching in metadata processing (PERF-4).**
+  - `ChangeTrack::Metadata` methods `can_skip_content_diff`, `changed_since_load`, `update_from_stat`, and `diff_summary` accept an optional `$stat_ref` arrayref parameter (with `_classify_file` handling optional `$stat_ref`), maintaining full backward compatibility by falling back to `lstat($path)` when omitted.
+  - `ChangeTrack::Runner::_process_file` executes a single `lstat` call per tracked file at entry, using the result for vanished-file detection, passing the stat buffer into `Metadata` check and update routines, and forwarding the pre-extracted file mode integer to `_resolve_sensitive` to eliminate redundant filesystem stat operations.
+
+### Changed
+
+- **VCS backend consolidation and Subversion modernization.**
+  - Hoisted default implementations of `output_path`, `_rel_path`, `checkin`, and `is_dirty` into `ChangeTrack::VCS::Base`.
+  - Removed duplicate method implementations across whole-repo backends (`Git`, `Mercurial`, `Fossil`, `SVN`).
+  - Removed redundant `eval` error handling wrapper around `run_cmd` in `ChangeTrack::VCS::Fossil::_run`.
+  - Modernized `ChangeTrack::VCS::SVN` to use native absolute working-copy paths (`$mirror`, `$output_dir`) across all SVN commands, eliminating the process-wide `getcwd()` and `chdir()` context switching.
+- **Runner non-trackable file handling deduplicated.**
+  - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
+- **Consolidate HTTP retry and backoff in notification base class (DEBT-11).**
+  - Hoisted shared HTTP request retry helper `_http_post_with_retry` and fallback `_sleep` into `ChangeTrack::Notify::Base`.
+  - Consolidated 3-attempt exponential backoff logic between `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` while preserving notifier-specific JSON encoding, gzip compression, header resolution, and test-mockable `_sleep` overrides.
+
+### Documentation
+
+- **Developer and architecture documentation reconciliation.**
+  - Reconciled `CLAUDE.md`, `ARCHITECTURE.md`, and manual pages (`man/changetrack-ng.8`, `man/changetrack-ng.conf.5`) with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, Subversion backend absolute working-copy paths, private 0700 storage permissions, removal of legacy v1 config auto-detection reference, and updated test suite count (1,043 tests across 36 files).
+
 ## [0.7.1] - 2026-09-18
 
 ### Fixed

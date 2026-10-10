@@ -157,7 +157,7 @@ sub _send_one {
     print $pipe "\n";
     print $pipe $body;
 
-    close($pipe) or warn "[changetrack-ng] sendmail exited with status $?\n";
+    close($pipe) or die "sendmail exited with status $?\n";
 }
 
 # _find_sendmail -- Return the path to a usable sendmail binary.

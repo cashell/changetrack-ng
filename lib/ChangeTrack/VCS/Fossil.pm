@@ -41,21 +41,6 @@ sub _repo_path {
     return $self->{options}{fossil_repo} // "$self->{output_dir}.fossil";
 }
 
-# output_path -- Map a real path to its mirror location.
-# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
-sub output_path {
-    my ($self, $real_path) = @_;
-    my $rel = $self->_mirror_rel($real_path);
-    return "$self->{output_dir}/$rel";
-}
-
-# _rel_path -- Strip the output_dir prefix to get the repo-relative path.
-sub _rel_path {
-    my ($self, $mirror) = @_;
-    (my $rel = $mirror) =~ s{^\Q$self->{output_dir}\E/?}{};
-    return $rel;
-}
-
 # _run -- Run a Fossil command inside the checkout using fossil's --chdir option.
 # Using --chdir avoids calling Perl's chdir(), which is unreliable under
 # systemd where the process CWD may not be a usable directory.
@@ -64,8 +49,6 @@ sub _rel_path {
 sub _run {
     my ($self, @cmd) = @_;
     my ($prog, @rest) = @cmd;
-    my $r;
-    my $err;
     if ($self->{verbose}) {
         warn "[Fossil] run in $self->{output_dir}: @rest\n";
     }
@@ -76,13 +59,7 @@ sub _run {
     local $ENV{FOSSIL_HOME} = $self->{output_dir}
         unless $ENV{HOME} || $ENV{FOSSIL_HOME};
 
-    eval {
-        $r = run_cmd(cmd => [$prog, '--chdir', $self->{output_dir}, @rest]);
-        1;
-    } or do {
-        $err = $@ || 'unknown fossil command failure';
-    };
-    die $err if defined $err;
+    my $r = run_cmd(cmd => [$prog, '--chdir', $self->{output_dir}, @rest]);
     if ($self->{verbose}) {
         my $stdout = $r->{stdout} // '';
         my $stderr = $r->{stderr} // '';
@@ -221,12 +198,6 @@ sub add {
     croak "fossil add failed for '$real_path': $r->{stderr}" unless $r->{success};
 }
 
-# checkin -- Stage the file for the next batch commit (whole-repo model).
-sub checkin {
-    my ($self, $real_path, $msg) = @_;
-    $self->add($real_path);
-}
-
 # remove -- Unregister file from Fossil and remove mirror file.
 sub remove {
     my ($self, $real_path) = @_;
@@ -303,14 +274,9 @@ sub diff {
     return [] unless $changes->{stdout} =~ /\S/;
 
     my $r = $self->_run('fossil', 'diff', '--unified', '--', $rel);
+    croak "fossil diff failed: $r->{stderr}" unless $r->{success};
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
-}
-
-# is_dirty -- Return true if $real_path has uncommitted changes.
-sub is_dirty {
-    my ($self, $real_path) = @_;
-    return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
 # log_history -- Return fossil finfo -l lines for $real_path.

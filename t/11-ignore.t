@@ -19,17 +19,16 @@ require ChangeTrack::Runner;
 
 # Access package-internal functions directly
 sub should_ignore { ChangeTrack::Runner::_should_ignore(@_) }
-sub glob_match    { ChangeTrack::Runner::_glob_match(@_) }
 
 ########################################################################
-# _Glob_Match
+# Pattern Matching Via _Should_Ignore
 ########################################################################
-ok( glob_match('*.swp',  'foo.swp'),      '*.swp matches foo.swp');
-ok(!glob_match('*.swp',  'foo.swp.bak'),  '*.swp does not match foo.swp.bak');
-ok( glob_match('*~',     'passwd~'),      '*~ matches passwd~');
-ok( glob_match('#*#',    '#foo#'),        '#*# matches #foo#');
-ok(!glob_match('#*#',    'foo'),          '#*# does not match plain foo');
-ok( glob_match('*.dpkg-old', 'foo.dpkg-old'), '*.dpkg-old matches');
+ok( should_ignore('/etc/foo.swp',      'foo.swp',      ['*.swp']),      '*.swp matches foo.swp');
+ok(!should_ignore('/etc/foo.swp.bak',  'foo.swp.bak',  ['*.swp']),      '*.swp does not match foo.swp.bak');
+ok( should_ignore('/etc/passwd~',      'passwd~',      ['*~']),         '*~ matches passwd~');
+ok( should_ignore('/etc/#foo#',        '#foo#',        ['#*#']),        '#*# matches #foo#');
+ok(!should_ignore('/etc/foo',          'foo',          ['#*#']),        '#*# does not match plain foo');
+ok( should_ignore('/etc/foo.dpkg-old', 'foo.dpkg-old', ['*.dpkg-old']), '*.dpkg-old matches');
 
 ########################################################################
 # _Should_Ignore: Basename Patterns

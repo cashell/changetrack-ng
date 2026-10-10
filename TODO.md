@@ -1,10 +1,27 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-09-23
+Last updated: 2026-10-08
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-10-08)
+
+- SEC-6: Enforce private umask (`0077`) at initialization in `bin/changetrack-ng`, runtime inspection and auto-tightening of `$output_dir` and sibling repo stores to `0700`/`0600` with warning reporting in `Runner.pm`, and packaging directory permission `0700` in `Makefile` and RPM spec.
+- CORR-6: Rollback of in-memory metadata records upon per-file exception in `Runner.pm`, sequence metadata sidecar save after VCS batch commit, and croak on VCS diff execution errors across Git, Mercurial, SVN, and Fossil backends.
+- OPS-6: Made DNF package manager pre-transaction hook non-blocking (`required=False` in `packaging/hooks/dnf/changetrack_ng.py`) with stderr warning emission.
+- NOTIFY-1: Propagated notifier delivery errors to `Runner` report warnings and added `vcs` and `message` accessors to `ChangeTrack::Report`.
+- PKG-4: Substituted `@BINDIR@` and `@DEFAULTSDIR@` placeholders across Debian rules (`packaging/debian/rules`) and RPM spec (`packaging/rpm/changetrack-ng.spec`).
+- TEST-9: Added notifier failure isolation and warning recording tests in `t/37-review-findings.t`.
+- PERF-3: Lazy DNS evaluation for `HOSTNAME` token expansion in `ChangeTrack::Config::_load_file()`. Defers `_config_hostname()` until a config value matches `\bHOSTNAME\b`.
+- CORR-7: Atomic temporary-file-and-rename for `restore_mirror_path()` in `ChangeTrack::Util`. Uses a sibling temporary file in the destination directory, copies to tempfile, preserves existing file mode and ownership, and atomically renames over destination. Cleans up tempfile on failure.
+- DEBT-8: Pruned dead stubs (`Metadata::import_from_v1_statistics`, `Runner::_glob_match`) and deprecated/ignored `interval` config key with POD documentation.
+- DOC-4: Reconciled developer and architecture documentation (`CLAUDE.md`, `ARCHITECTURE.md`, `man/changetrack-ng.8`, `man/changetrack-ng.conf.5`) with codebase reality: configurable `command_timeout` (default 120s), Fossil backend `--chdir` flag usage, Subversion backend absolute working-copy paths, private 0700 storage permissions, removal of v1 config auto-detection reference, and updated test suite count (1,043 tests across 36 files).
+- DEBT-9: Deduplicated non-trackable file handling in `ChangeTrack::Runner::_process_file`. Extracted shared `_handle_non_trackable()` helper for `special`, `unreadable`, and `binary` file types while preserving warning, VCS removal staging, and report recording semantics.
+- DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` and modernize SVN backend. Hoisted `output_path`, `_rel_path`, `checkin`, and default `is_dirty` to `ChangeTrack::VCS::Base`, eliminated duplicate implementations across Git, Mercurial, Fossil, and SVN backends, removed dead eval wrapper from `Fossil::_run`, and modernized SVN backend to use absolute working-copy paths without process-wide `chdir`.
+- PERF-4: Single-pass `lstat` and stat buffer propagation in `ChangeTrack::Metadata` and `ChangeTrack::Runner::_process_file`. Passed optional `$stat_ref` arrayref to `can_skip_content_diff()`, `changed_since_load()`, `update_from_stat()`, `diff_summary()`, and `_classify_file()` to eliminate redundant stat syscalls per tracked file.
+- DEBT-11: Consolidate HTTP retry and backoff in `Notify::Base`. Hoisted `_http_post_with_retry` and fallback `_sleep` helper to `ChangeTrack::Notify::Base`, delegating HTTP POST dispatch and 3-attempt exponential backoff from `Webhook.pm` and `OTLP.pm` while preserving notifier-specific payload formatting, gzip compression, header resolution, and mockable `_sleep` hooks.
 
 ## Completed (2026-09-18)
 
@@ -73,59 +90,13 @@ Items are prioritized by severity and grouped by category.
 
 ---
 
-## Security Issues
- 
- (All open security tickets currently resolved.)
- 
- ---
- 
- ## Data Integrity / Correctness
- 
- (All open data integrity / correctness tickets currently resolved.)
- 
- ---
- 
- ## Robustness / Operational
- 
- (All open robustness / operational tickets currently resolved.)
- 
- ---
- 
- ## Testing
- 
- ### TEST-9: No notifier failure isolation test (Low)
- 
- **Issue:** `Notify/Base.pm`'s `send()` wraps dispatch in `eval` to prevent one notifier's failure from blocking others. This guarantee has no direct test — a notifier that `die`s should not prevent subsequent notifiers from running.
- 
- ---
-
 ## Code Quality / Technical Debt
 
 ### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low)
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
-**Impact:** Low — built-in ignore patterns don't use character classes, and user-defined patterns rarely need them.
-
 ---
-
-## Feature Gaps
-
-### FEAT-3: No health-check / self-test subcommand (Low)
-
-**Issue:** Operators have no way to validate their configuration without running a full scan. A `changetrack-ng check` that validates config, tests VCS access, and optionally tests notification delivery would reduce deployment issues.
-
----
-
-## Packaging / Distribution
-
-(All open packaging tickets currently resolved. Reverse manifest linting implemented as `tools/manifest-query --find-extra` / `make manifest-extra`).
-
----
-
-## Documentation
-
-(All documentation tickets currently resolved.)
 
 ---
 

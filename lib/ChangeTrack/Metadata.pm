@@ -54,33 +54,42 @@ with a warning.
 Return the in-memory snapshot hashref for I<$path>, or undef if the
 path has no recorded metadata yet.
 
-=item $meta->update_from_stat($path)
+=item $meta->update_from_stat($path, [$stat_ref])
 
 Re-stat I<$path> with C<lstat()> and update (or create) the in-memory
-record.  The C<type> field is set to one of: C<file>, C<symlink>,
-C<binary>, C<empty>, C<unreadable>, C<special>, C<directory>, C<missing>.
+record.  An optional I<$stat_ref> arrayref (from C<[lstat($path)]>)
+may be passed to avoid a redundant C<lstat()> call.  The C<type> field
+is set to one of: C<file>, C<symlink>, C<binary>, C<empty>, C<unreadable>,
+C<special>, C<directory>, C<missing>.
 
-=item $meta->can_skip_content_diff($path)
+=item $meta->can_skip_content_diff($path, [$stat_ref])
 
 Return true if the file's content cannot have changed since the loaded
 snapshot.  Covers unchanged mtime+size for regular files, unchanged
-symlink targets, and non-content types (binary/special/etc).
+symlink targets, and non-content types (binary/special/etc).  Accepts an
+optional I<$stat_ref> arrayref.
 
-=item $meta->changed_since_load($path)
+=item $meta->changed_since_load($path, [$stat_ref])
 
 Return true if the file's mode, ownership, or symlink target has changed
-compared to the loaded snapshot.
+compared to the loaded snapshot.  Accepts an optional I<$stat_ref> arrayref.
 
-=item $meta->diff_summary($path)
+=item $meta->diff_summary($path, [$stat_ref])
 
 Return a human-readable string describing what metadata changed vs the
 loaded snapshot (e.g. C<"mode 0644 -> 0600, owner root -> nobody">).
-Returns an empty string if nothing changed.
+Returns an empty string if nothing changed.  Accepts an optional I<$stat_ref>
+arrayref.
 
 =item $meta->mark_removed($path)
 
 Remove the in-memory record for I<$path>.  Used when a tracked file
 vanishes from disk.
+
+=item $meta->rollback($path)
+
+Revert the in-memory record for I<$path> to its state when loaded, or delete
+it if it was not present when loaded.  Used when processing fails.
 
 =item $meta->save($path)
 
@@ -143,26 +152,28 @@ sub record_for {
 # _classify_file -- Helper to determine file type from lstat results.
 # Shared across update_from_stat, can_skip_content_diff, changed_since_load,
 # and diff_summary to ensure uniform classification behavior.
+# Accepts an optional $stat_ref; falls back to lstat($path) if omitted.
 sub _classify_file {
     my ($path, $stat_ref) = @_;
-    return 'missing' unless $stat_ref && @$stat_ref;
-    my $m = $stat_ref->[2];
+    my @s = ($stat_ref && @$stat_ref) ? @$stat_ref : lstat($path);
+    return 'missing' unless @s;
+    my $m = $s[2];
     if    (S_ISLNK($m))         { return 'symlink'; }
     elsif (S_ISDIR($m))         { return 'directory'; }
     elsif (!S_ISREG($m))        { return 'special'; }
     elsif (!-r $path)           { return 'unreadable'; }
-    elsif ($stat_ref->[7] == 0) { return 'empty'; }
+    elsif ($s[7] == 0)          { return 'empty'; }
     elsif (-B $path)            { return 'binary'; }
     else                        { return 'file'; }
 }
 
 # update_from_stat -- Re-stat $path and update (or create) the in-memory record.
 # Determines file type from lstat results; sets mtime/size for file-like types;
-# records readlink() target for symlinks.
+# records readlink() target for symlinks. Accepts an optional $stat_ref arrayref.
 sub update_from_stat {
-    my ($self, $path) = @_;
+    my ($self, $path, $stat_ref) = @_;
 
-    my @s = lstat($path);
+    my @s = ($stat_ref && @$stat_ref) ? @$stat_ref : lstat($path);
     unless (@s) {
         $self->{records}{$path} = { path => $path, type => 'missing' };
         return;
@@ -192,15 +203,15 @@ sub update_from_stat {
 # can_skip_content_diff -- Return true if file content cannot have changed
 # since the loaded snapshot.  Covers mtime+size equality for regular files,
 # symlink target equality, and non-content types (binary/special/etc).
-# Avoids unnecessary VCS diff calls for stable files.
+# Avoids unnecessary VCS diff calls for stable files. Accepts optional $stat_ref.
 sub can_skip_content_diff {
-    my ($self, $path) = @_;
+    my ($self, $path, $stat_ref) = @_;
     my $orig = $self->{original}{$path};
     return 0 unless defined $orig;
 
     my $otype = $orig->{type} // '';
 
-    my @s = lstat($path);
+    my @s = ($stat_ref && @$stat_ref) ? @$stat_ref : lstat($path);
     return 0 unless @s;
 
     my $cur_type = _classify_file($path, \@s);
@@ -242,13 +253,13 @@ sub can_skip_content_diff {
 }
 
 # changed_since_load -- Return true if the live file's mode, uid, gid, or
-# (for symlinks) target differs from the loaded snapshot.
+# (for symlinks) target differs from the loaded snapshot. Accepts optional $stat_ref.
 sub changed_since_load {
-    my ($self, $path) = @_;
+    my ($self, $path, $stat_ref) = @_;
     my $orig = $self->{original}{$path};
     return 0 unless defined $orig;       # not in prior metadata -> it's new, not changed
 
-    my @s = lstat($path);
+    my @s = ($stat_ref && @$stat_ref) ? @$stat_ref : lstat($path);
     return 1 unless @s;                  # vanished since last run
 
     my $cur_type = _classify_file($path, \@s);
@@ -268,12 +279,13 @@ sub changed_since_load {
 
 # diff_summary -- Return a human-readable string describing what changed
 # in mode/uid/gid/target/type vs the loaded snapshot.  Returns '' if nothing changed.
+# Accepts optional $stat_ref.
 sub diff_summary {
-    my ($self, $path) = @_;
+    my ($self, $path, $stat_ref) = @_;
     my $orig = $self->{original}{$path};
     return '' unless defined $orig;
 
-    my @s = lstat($path);
+    my @s = ($stat_ref && @$stat_ref) ? @$stat_ref : lstat($path);
     return '(file vanished)' unless @s;
 
     my $cur_type = _classify_file($path, \@s);
@@ -313,6 +325,17 @@ sub mark_removed {
     delete $self->{records}{$path};
 }
 
+# rollback -- Revert an in-memory record to its loaded snapshot, or delete it
+# if it was not present when loaded. Used when per-file processing fails.
+sub rollback {
+    my ($self, $path) = @_;
+    if (defined $self->{original}{$path}) {
+        $self->{records}{$path} = { %{ $self->{original}{$path} } };
+    } else {
+        delete $self->{records}{$path};
+    }
+}
+
 # save -- Write the in-memory records to $path atomically.
 # Uses File::Temp (O_EXCL, mode 0600) in the destination directory plus a
 # rename, so a partial write is never visible and a predictable/symlinked temp
@@ -343,11 +366,6 @@ sub save {
     };
 }
 
-# import_from_v1_statistics -- Stub for future v1 .statistics format migration.
-sub import_from_v1_statistics {
-    my ($self, $dir) = @_;
-    carp "changetrack-ng: import_from_v1_statistics not yet implemented";
-}
 
 # _username / _groupname -- Resolve uid/gid to name strings; fall back to the numeric id.
 sub _username { $^O eq 'MSWin32' ? $_[0] : ((getpwuid($_[0]))[0] // $_[0]) }

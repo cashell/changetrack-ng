@@ -61,6 +61,10 @@ required field, or I/O failure.
 Return the value for a C<[global]> key.  Array-valued keys (C<ignore>,
 C<push_remote>) return an arrayref.  All others return a scalar or undef.
 
+Note: C<interval> is parsed and accepted for backward compatibility, but
+is deprecated and ignored by the runner (scheduling is handled via systemd
+timer or cron).
+
 =item $cfg->tracks
 
 Return an arrayref of hashrefs, one per C<[track]> entry.  Each hashref
@@ -334,8 +338,10 @@ sub _load_file {
                 unless ($KNOWN_GLOBAL_KEYS{$key}) {
                     croak "Config error in $path line $lineno: unknown global key '$key'";
                 }
-                my $host = _config_hostname();
-                $val =~ s/\bHOSTNAME\b/$host/g;
+                if ($val =~ /\bHOSTNAME\b/) {
+                    my $host = _config_hostname();
+                    $val =~ s/\bHOSTNAME\b/$host/g;
+                }
                 $val = _expand_env_vars($val, $path, $lineno);
                 $val = _expand_home_path($val, $path, $lineno) if $PATH_GLOBAL_KEYS{$key};
                 $self->_merge_global($key, $val, $path, $lineno);
@@ -345,8 +351,10 @@ sub _load_file {
                     croak "Config error in $path line $lineno: "
                         . "unknown key '$key' for notifier type '$ntype'";
                 }
-                my $host = _config_hostname();
-                $val =~ s/\bHOSTNAME\b/$host/g;
+                if ($val =~ /\bHOSTNAME\b/) {
+                    my $host = _config_hostname();
+                    $val =~ s/\bHOSTNAME\b/$host/g;
+                }
                 $val = _expand_env_vars($val, $path, $lineno);
                 $val = _expand_home_path($val, $path, $lineno) if $PATH_NOTIFIER_KEYS{$ntype}{$key};
 

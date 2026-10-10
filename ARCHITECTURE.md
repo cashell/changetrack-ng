@@ -75,13 +75,13 @@ Version: 0.7.1
 | `ChangeTrack::Lock` | `flock(2)`-based pidfile with timeout/force modes; non-blocking skip for cron safety |
 | `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
 | `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
-| `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, **hardcoded 30s timeout**), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
+| `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, configurable command timeout (`command_timeout`, default 120s)), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
 | `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.1'`) |
 | `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `remove`, `log_history`, `revert`, `is_dirty`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; `git -C`; batch commit; optional `push_remote` |
 | `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate `ci -l` per file |
 | `ChangeTrack::VCS::Fossil` | Whole-repo; `fossil init`/`open`; uses native `--chdir` flag (no Perl `chdir`); sets `FOSSIL_HOME` when `HOME` unset; optional `push_remote` |
-| `ChangeTrack::VCS::SVN` | Whole-repo; `svnadmin create` + `svn checkout file://`; uses Perl `chdir` (saved/restored via `getcwd`); commit pushes to the local repo |
+| `ChangeTrack::VCS::SVN` | Whole-repo; `svnadmin create` + `svn checkout file://`; uses native absolute working-copy paths (no chdir); commit pushes to the local repo |
 | `ChangeTrack::VCS::Mercurial` | Whole-repo; `hg -R` flag (no chdir); auto-creates `.hg/hgrc`; optional `push_remote` |
 | `ChangeTrack::Notify::Base` | Abstract interface: `send()` dispatcher (eval-wrapped), heartbeat gating, sensitive-diff suppression |
 | `ChangeTrack::Notify::Email` | Pipes RFC 2822 messages to sendmail; per-recipient grouping; heartbeat always off |
@@ -116,10 +116,10 @@ Version: 0.7.1
  │  6. If changed: VCS checkin, update metadata, add to Report                │
  └────────────────────────────────────────────────────────────────────────────┘
                              │
- Metadata.save()        →  Atomic tmpfile + rename
-                             │
  VCS.commit()           →  Whole-repo: batch commit (Git/Fossil/SVN/Hg)
                          →  Per-file: no-op (RCS commits inline)
+                             │
+ Metadata.save()        →  Atomic tmpfile + rename (persisted after VCS commit)
                              │
  Notify dispatch        →  For each enabled notifier:
                               • has_changes → send_changes(report)
@@ -262,14 +262,16 @@ Severity is mapped from event class via `%SEVERITY` in `Notify::Base` (OTLP seve
 
 All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 - Uses `IPC::Open3` with list-form arguments (no shell interpolation)
-- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks; the read timeout is **hardcoded at 30 seconds** (`Util.pm`, `can_read(30)`) — it is not configurable
+- Captures stdout/stderr via `IO::Select` to avoid pipe deadlocks; read timeout is a configurable command timeout (`command_timeout`, default 120s)
 - Returns structured result `{ success, stdout, stderr, exit_code }`
 - No user-controlled data is ever interpolated into shell strings
 
 VCS backend working-directory management differs by backend:
-- **SVN** is the only backend that uses Perl `chdir`: it saves the cwd via `Cwd::getcwd`, runs the command, and restores the cwd (guarded so it is restored even on failure).
-- **Fossil** uses its native `--chdir` flag (no Perl `chdir`); it also sets `FOSSIL_HOME` when `HOME` is unset.
-- **Git** (`git -C`) and **Mercurial** (`hg -R`) use native repository-path flags, never changing the process cwd.
+- All backends operate without changing the process working directory:
+  - **Git** (`git -C`) and **Mercurial** (`hg -R`) use native repository-path flags.
+  - **Fossil** uses its native `--chdir` flag (no Perl `chdir`); it also sets `FOSSIL_HOME` when `HOME` is unset.
+  - **SVN** passes absolute working-copy paths directly to all SVN commands (no `chdir`).
+  - **RCS** operates directly on per-file archive paths in `output_dir`.
 
 ### 7.2 Trust boundaries
 
@@ -292,7 +294,7 @@ VCS backend working-directory management differs by backend:
 - Designed to run as root (to read all tracked files)
 - Lock path adapts: root → `/var/run/`, non-root → `$XDG_CACHE_HOME/`
 - Config file should be 0640 (contains potential webhook secrets / OTLP auth headers); the Runner warns at load time if the config file is group- or world-readable
-- Mirror directory created mode 0700
+- Mirror directory created mode 0700 (enforced and tightened at runtime by Runner)
 
 ### 7.4 Threat surface summary
 

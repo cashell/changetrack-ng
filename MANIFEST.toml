@@ -113,7 +113,7 @@ tags         = ["cli", "entry-point"]
 # library -- core ChangeTrack:: modules
 
 [library."lib/ChangeTrack/Config.pm"]
-description  = "INI v2 config parser; strict key validation; auto-detects v1 format"
+description  = "INI v2 config parser; strict key validation; requires v2 INI format"
 install_path = "$(LIBDIR)/ChangeTrack/Config.pm"
 permissions  = "0644"
 dist         = ["full", "deploy"]
@@ -136,7 +136,7 @@ install_path = "$(LIBDIR)/ChangeTrack/Metadata.pm"
 permissions  = "0644"
 dist         = ["full", "deploy"]
 tags         = ["core", "metadata"]
-tested_by    = ["t/03-metadata.t"]
+tested_by    = ["t/03-metadata.t", "t/37-review-findings.t"]
 
 [library."lib/ChangeTrack/Report.pm"]
 description  = "Per-run change accumulator; collects file diffs and events for notifier dispatch"
@@ -153,7 +153,8 @@ permissions  = "0644"
 dist         = ["full", "deploy"]
 tags         = ["core", "orchestration"]
 tested_by    = ["t/04-runner-rcs.t", "t/10-sensitive.t", "t/11-ignore.t",
-                "t/16-subcommands.t", "t/17-precommit-checks.t", "t/22-verbose-debug.t"]
+                "t/16-subcommands.t", "t/17-precommit-checks.t", "t/22-verbose-debug.t",
+                "t/37-review-findings.t"]
 
 [library."lib/ChangeTrack/Util.pm"]
 description  = "Shared utilities: hostname(), run_cmd() via IPC::Open3, sync_mirror_path(), set_debug()"
@@ -201,7 +202,7 @@ tags         = ["vcs", "rcs"]
 tested_by    = ["t/05-vcs-rcs.t"]
 
 [library_vcs."lib/ChangeTrack/VCS/Fossil.pm"]
-description  = "Fossil VCS backend; whole-repo mirror; chdir-based command execution"
+description  = "Fossil VCS backend; whole-repo mirror; uses native --chdir flag (no process chdir)"
 install_path = "$(LIBDIR)/ChangeTrack/VCS/Fossil.pm"
 permissions  = "0644"
 dist         = ["full", "deploy"]
@@ -209,7 +210,7 @@ tags         = ["vcs", "fossil"]
 tested_by    = ["t/13-vcs-fossil.t"]
 
 [library_vcs."lib/ChangeTrack/VCS/SVN.pm"]
-description  = "Subversion VCS backend; whole-repo mirror; local file:// repo via svnadmin create"
+description  = "Subversion VCS backend; whole-repo mirror; absolute working-copy paths without chdir"
 install_path = "$(LIBDIR)/ChangeTrack/VCS/SVN.pm"
 permissions  = "0644"
 dist         = ["full", "deploy"]
@@ -235,7 +236,7 @@ permissions  = "0644"
 dist         = ["full", "deploy"]
 tags         = ["notify", "base"]
 tested_by    = ["t/07-notify-email.t", "t/08-notify-webhook.t",
-                "t/09-notify-file.t", "t/19-notify-otlp.t"]
+                "t/09-notify-file.t", "t/19-notify-otlp.t", "t/37-review-findings.t"]
 
 [library_notify."lib/ChangeTrack/Notify/Email.pm"]
 description  = "Email notifier; pipes unified diffs to sendmail; heartbeat unconditionally off"
@@ -483,6 +484,12 @@ dist        = ["full"]
 tags        = ["test"]
 tests       = ["type-transitions", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::VCS::Git"]
 
+[test."t/37-review-findings.t"]
+description = "Tests for storage permission enforcement, metadata rollback on error, notifier error bubbling, and packaging templates"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["review-findings", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::Notify::Base"]
+
 ########################################################################
 # test_support
 ########################################################################
@@ -646,6 +653,42 @@ tags        = ["dev-doc"]
 [dev_doc."CLAUDE.md"]
 description = "AI assistant instructions: architecture quick-ref, patterns, constraints, version bump checklist"
 tags        = ["dev-doc", "agent"]
+
+[dev_doc."docs/agy-fixes.md"]
+description = "Implementation guide and fix specifications hand-off document"
+tags        = ["dev-doc"]
+
+[dev_doc."docs/superpowers/plans/2026-05-20-manifest.md"]
+description = "Implementation plan for MANIFEST.toml and tools/manifest-query"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/plans/2026-06-23-file-notifier-otel-reshape.md"]
+description = "Implementation plan for File notifier OpenTelemetry event reshaping"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/plans/2026-06-23-otel-attribute-model.md"]
+description = "Implementation plan for canonical OpenTelemetry attribute model"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/plans/2026-06-23-otel-diff-truncation.md"]
+description = "Implementation plan for OpenTelemetry diff byte truncation"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/plans/2026-06-23-otel-severity-discrimination.md"]
+description = "Implementation plan for OpenTelemetry severity mapping"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/plans/2026-06-23-otel-timestamps.md"]
+description = "Implementation plan for occurred-time vs observed-time timestamps"
+tags        = ["dev-doc", "plan"]
+
+[dev_doc."docs/superpowers/specs/2026-05-20-manifest-design.md"]
+description = "Design specification for MANIFEST.toml file inventory and tooling"
+tags        = ["dev-doc", "spec"]
+
+[dev_doc."docs/superpowers/specs/2026-06-23-otel-logging-conformance-analysis.md"]
+description = "Design specification and conformance analysis for OpenTelemetry logging"
+tags        = ["dev-doc", "spec"]
 
 ########################################################################
 # packaging

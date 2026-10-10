@@ -209,7 +209,11 @@ sub run {
     unless ($lock->acquire) {
         $self->_verbose("Skipping: another instance holds lock");
         $self->_info("Another instance is running; skipping this run.");
-        return ChangeTrack::Report->new(start_time => $start_time);
+        return ChangeTrack::Report->new(
+            start_time => $start_time,
+            vcs        => $vcs_name,
+            message    => ($self->{message} || ''),
+        );
     }
     $self->_verbose("Lock acquired");
 
@@ -302,7 +306,14 @@ sub run {
     my $commit_msg = "changetrack-ng run \@ $ts";
     $commit_msg   .= " [hook: $self->{message}]" if $self->{message};
 
-    my $report = ChangeTrack::Report->new(start_time => $start_time);
+    my $report = ChangeTrack::Report->new(
+        start_time => $start_time,
+        vcs        => $vcs_name,
+        message    => ($self->{message} || $commit_msg),
+    );
+
+    # Enforce private permissions (0700 dirs, 0600 files) on output_dir and siblings
+    $self->_enforce_output_permissions($output_dir, $report);
 
     $self->_verbose("Processing " . scalar(@entries) . " tracked paths");
 
@@ -310,16 +321,11 @@ sub run {
         eval { $self->_process_file($entry, $vcs, $md, $report, $commit_msg) };
         if ($@) {
             (my $err = $@) =~ s/\n$//;
+            my $real_path = $entry->{path};
+            $md->rollback($real_path);
             $self->_warn($err);
             $report->add_warning($err);
         }
-    }
-
-    # Save metadata.  A failed save desyncs the fast-path source of truth, so
-    # abort before committing/notifying rather than proceeding with stale state.
-    unless ($self->{dry_run}) {
-        eval { $md->save($meta_path); 1 }
-            or croak "metadata save failed (aborting before commit): $@";
     }
 
     # Batch commit for whole-repo VCS
@@ -330,6 +336,13 @@ sub run {
         croak "VCS commit failed: $@" if $@;
     } elsif ($self->{verbose} && !$report->has_changes) {
         $self->_verbose("No changes to commit");
+    }
+
+    # Save metadata after VCS commit so that if the commit fails, the on-disk
+    # metadata sidecar is not advanced (preventing permanent loss of changes).
+    unless ($self->{dry_run}) {
+        eval { $md->save($meta_path); 1 }
+            or croak "metadata save failed (aborting after commit): $@";
     }
 
     $report->set_end_time(time());
@@ -388,8 +401,10 @@ sub _process_file {
     my $prev_type         = defined($existing) ? ($existing->{type} // '') : '';
     my $prev_vcs_eligible = ($prev_type eq 'file' || $prev_type eq 'symlink' || $prev_type eq 'empty');
 
+    my @st = lstat($real_path);
+
     # File no longer on disk
-    unless (-e $real_path || -l $real_path) {
+    unless (@st) {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
@@ -411,118 +426,38 @@ sub _process_file {
     # Fast path: if metadata is unchanged, skip without touching VCS.
     # For known files where mtime+size (or symlink target) haven't changed,
     # there is nothing to process regardless of type.
-    if (defined $existing && $md->can_skip_content_diff($real_path)
-        && !$md->changed_since_load($real_path)) {
+    if (defined $existing && $md->can_skip_content_diff($real_path, \@st)
+        && !$md->changed_since_load($real_path, \@st)) {
         # Refresh the record (preserves the type as-is).
-        $md->update_from_stat($real_path);
+        $md->update_from_stat($real_path, \@st);
         $self->_trace("$real_path: skipped (mtime+size unchanged)");
         return;
     }
 
     # Classify the file (stat it once, determine type)
-    $md->update_from_stat($real_path);
+    $md->update_from_stat($real_path, \@st);
     my $rec  = $md->record_for($real_path);
     my $type = $rec->{type};
 
     # Non-trackable types: special, unreadable, binary, empty
-    if ($type eq 'special') {
-        $self->_trace("$real_path: classified as special, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
-            if ($self->{warn_special_files}) {
-                $self->_warn("skipping special file (FIFO/socket/device): $real_path");
-            }
-            $report->add_warning("Skipping special file: $real_path");
-        }
+    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary') {
+        $self->_handle_non_trackable(
+            $real_path, $type, $prev_type, $prev_vcs_eligible,
+            $rec, $recipients, $vcs, $md, $report
+        );
         return;
     }
 
-    if ($type eq 'unreadable') {
-        $self->_trace("$real_path: classified as unreadable, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
-            $report->add_warning("Skipping unreadable: $real_path");
-        }
-        return;
-    }
-
-    if ($type eq 'binary') {
-        $self->_trace("$real_path: classified as binary, metadata only");
-        if ($prev_vcs_eligible) {
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
-            $report->add_change(
-                path         => $real_path,
-                is_new       => 0,
-                is_removed   => 1,
-                is_sensitive => 0,
-                diff         => [],
-                meta_change  => "transition from $prev_type to $type (removed from VCS)",
-                recipients   => $recipients,
-                stat         => $rec,
-            );
-            $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
-            $self->_info("Removed from VCS (became $type): $real_path");
-        } elsif ($prev_type ne 'binary') {
-            if ($self->{warn_special_files}) {
-                $self->_warn("skipping binary file: $real_path");
-            }
-            $report->add_warning("Skipping binary file: $real_path");
-        }
-        return;
-    }
+    my $mode_oct = defined($rec->{mode}) ? oct($rec->{mode}) : ($st[2] & 07777);
 
     if ($type eq 'empty') {
         # Empty files have no content to diff.  Report only meta changes.
-        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path)) {
-            my $meta_summary = $md->diff_summary($real_path);
+        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st)) {
+            my $meta_summary = $md->diff_summary($real_path, \@st);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             $vcs->checkin($real_path, $msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+                $mode_oct);
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -536,7 +471,7 @@ sub _process_file {
         } elsif (!defined $existing || !$prev_vcs_eligible) {
             $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+                $mode_oct);
             my $trans_meta = (defined $existing && !$prev_vcs_eligible)
                 ? "transition from $prev_type to $type"
                 : '';
@@ -559,15 +494,14 @@ sub _process_file {
 
     # Warn about hardlinked regular files
     if ($type eq 'file') {
-        my @st = stat($real_path);
-        if (@st && $st[3] > 1) {
+        if ($st[3] > 1) {
             $self->_warn("$real_path has $st[3] hard links  --  changes via other names will not be tracked");
         }
     }
 
     # Trackable types: file, symlink
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-        defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+        $mode_oct);
 
     if (!defined $existing || !$prev_vcs_eligible) {
         # New file / symlink or transitioned from non-trackable
@@ -588,12 +522,12 @@ sub _process_file {
         $self->_info("New: $real_path");
     } else {
         # Existing file / symlink  --  check for changes
-        my $meta_changed = $md->changed_since_load($real_path);
-        my $meta_summary = $meta_changed ? $md->diff_summary($real_path) : '';
+        my $meta_changed = $md->changed_since_load($real_path, \@st);
+        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st) : '';
 
         # Symlinks: content is the target, already captured by changed_since_load.
         # Regular files: diff only if mtime+size moved.
-        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path);
+        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st);
         my $diff_lines = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
 
@@ -615,6 +549,62 @@ sub _process_file {
             $self->_trace("$real_path: unchanged");
         }
     }
+}
+
+# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary).
+# Inputs: $real_path, $type, $prev_type, $prev_vcs_eligible, $rec, $recipients,
+#         $vcs, $md, $report
+# Handles trace logging, VCS removal staging on transitions from trackable types,
+# change report recording, and skip warnings for non-trackable file types.
+sub _handle_non_trackable {
+    my ($self, $real_path, $type, $prev_type, $prev_vcs_eligible,
+        $rec, $recipients, $vcs, $md, $report) = @_;
+
+    $self->_trace("$real_path: classified as $type, metadata only");
+
+    if ($prev_vcs_eligible) {
+        eval { $vcs->remove($real_path) unless $self->{dry_run} };
+        if ($@) {
+            my $err = $@;
+            $err =~ s/\n$//;
+            $self->_warn("VCS remove failed for $real_path: $err");
+            $report->add_warning("VCS remove failed for $real_path: $err");
+        }
+        $report->add_change(
+            path         => $real_path,
+            is_new       => 0,
+            is_removed   => 1,
+            is_sensitive => 0,
+            diff         => [],
+            meta_change  => "transition from $prev_type to $type (removed from VCS)",
+            recipients   => $recipients,
+            stat         => $rec,
+        );
+        $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
+        $self->_info("Removed from VCS (became $type): $real_path");
+    } else {
+        if ($type eq 'special') {
+            if (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
+                if ($self->{warn_special_files}) {
+                    $self->_warn("skipping special file (FIFO/socket/device): $real_path");
+                }
+                $report->add_warning("Skipping special file: $real_path");
+            }
+        } elsif ($type eq 'unreadable') {
+            if (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
+                $report->add_warning("Skipping unreadable: $real_path");
+            }
+        } elsif ($type eq 'binary') {
+            if ($prev_type ne 'binary') {
+                if ($self->{warn_special_files}) {
+                    $self->_warn("skipping binary file: $real_path");
+                }
+                $report->add_warning("Skipping binary file: $real_path");
+            }
+        }
+    }
+
+    return;
 }
 
 ########################################################################
@@ -782,13 +772,6 @@ sub _compile_ignore_patterns {
     return \@compiled;
 }
 
-# _glob_match -- Test a single glob string against a plain string.
-# Used in tests; not called in the main run path.
-sub _glob_match {
-    my ($glob, $str) = @_;
-    my $re = _glob_to_re($glob);
-    return $str =~ /^${re}$/;
-}
 
 # _glob_to_re -- Convert a simple glob pattern to a regex fragment.
 # Handles *, ?, and escapes regex metacharacters.  Does not support ** or [].
@@ -1170,6 +1153,34 @@ sub _warn_insecure_config_permissions {
                 $f,
                 $mode,
             ));
+        }
+    }
+}
+
+# _enforce_output_permissions -- Verify and tighten permissions on output_dir and
+# sibling VCS repositories ($output_dir.fossil, $output_dir-svnrepo).
+# Warns and records a warning in $report if permissions are group- or world-accessible.
+sub _enforce_output_permissions {
+    my ($self, $output_dir, $report) = @_;
+    return unless defined $output_dir;
+
+    my @check_paths = ($output_dir, "$output_dir.fossil", "$output_dir-svnrepo");
+    for my $path (@check_paths) {
+        next unless -e $path;
+        my @st = stat($path);
+        next unless @st;
+        my $mode = $st[2];
+        if (($mode & 0077) != 0) {
+            my $new_mode = ($mode & ~0077) & 07777;
+            chmod($new_mode, $path);
+            my $msg = sprintf(
+                "Tightened insecure permissions on %s from %04o to %04o",
+                $path,
+                $mode & 07777,
+                $new_mode,
+            );
+            $self->_warn($msg);
+            $report->add_warning($msg) if $report;
         }
     }
 }

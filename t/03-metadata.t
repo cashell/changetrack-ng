@@ -254,4 +254,27 @@ use_ok('ChangeTrack::Metadata');
     is($md->record_for('/etc/passwd'), undef, 'mark_removed: record gone after removal');
 }
 
+########################################################################
+# Rollback
+########################################################################
+{
+    my $md = bless {
+        records  => {
+            '/etc/existing' => { path => '/etc/existing', type => 'file', size => 100 },
+        },
+        original => {
+            '/etc/existing' => { path => '/etc/existing', type => 'file', size => 50 },
+        },
+    }, 'ChangeTrack::Metadata';
+
+    # Existing file rolled back to original
+    $md->rollback('/etc/existing');
+    is($md->record_for('/etc/existing')->{size}, 50, 'rollback: existing record restored to original');
+
+    # New file (not in original) deleted on rollback
+    $md->{records}{'/etc/new'} = { path => '/etc/new', type => 'file', size => 200 };
+    $md->rollback('/etc/new');
+    is($md->record_for('/etc/new'), undef, 'rollback: new record deleted when not in original');
+}
+
 done_testing();

@@ -34,14 +34,6 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 
 sub model { 'whole-repo' }
 
-# output_path -- Map a real path to its mirror location.
-# /etc/passwd -> $output_dir/etc/passwd  (mirror tree)
-sub output_path {
-    my ($self, $real_path) = @_;
-    my $rel = $self->_mirror_rel($real_path);
-    return "$self->{output_dir}/$rel";
-}
-
 # _hg -- Run a Mercurial command using -R <output_dir> so no chdir is needed.
 sub _hg {
     my ($self, @cmd) = @_;
@@ -82,12 +74,6 @@ sub add {
         my $r = $self->_hg('add', $mirror);
         croak "hg add failed: $r->{stderr}" unless $r->{success};
     }
-}
-
-# checkin -- Stage the file for the next batch commit (whole-repo model).
-sub checkin {
-    my ($self, $real_path, $msg) = @_;
-    $self->add($real_path);
 }
 
 # remove -- Unregister file from Mercurial and remove mirror file.
@@ -141,15 +127,10 @@ sub diff {
     return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
 
     my $r = $self->_hg('diff', $mirror);
+    croak "hg diff failed: $r->{stderr}" unless $r->{success};
     return ['(new file)'] if $r->{stdout} =~ /^diff\s+-r\s+0{12}\b/m;
     return [] unless $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
-}
-
-# is_dirty -- Return true if $real_path has uncommitted changes.
-sub is_dirty {
-    my ($self, $real_path) = @_;
-    return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
 # log_history -- Return hg log lines for the mirror path of $real_path.
