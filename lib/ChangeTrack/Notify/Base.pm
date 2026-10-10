@@ -36,6 +36,17 @@ and are rethrown so the runner can record them as warnings.
 Send a heartbeat notification (no changes detected).  Only called when the
 notifier's heartbeat option is enabled.
 
+=head1 SUBCLASS HELPERS
+
+=over 4
+
+=item $notifier->_http_post_with_retry($http, $url, $headers, $body, $label, $safe_url)
+
+Shared HTTP POST dispatcher with 3-attempt exponential back-off retry loop.
+Returns the response hashref on 2xx and 4xx status (emitting a warning on 4xx).
+Retries on 5xx and 599 network errors with back-off delay doubling each attempt.
+Dies on terminal failure after 3 attempts.
+
 =back
 
 =cut
@@ -146,5 +157,53 @@ sub _severity_cfg {
     return ($num, $text) if $num;             # valid configured value
     return $self->_severity_for($default_name);
 }
+
+########################################################################
+# HTTP Dispatch With Retry
+########################################################################
+
+# _http_post_with_retry -- Shared HTTP POST helper with 3-attempt exponential
+# back-off retry loop.  Returns $resp on 2xx or 4xx (after logging warning).
+# Retries on 5xx or 599 (network/connection error).  Dies on final failure.
+sub _http_post_with_retry {
+    my ($self, $http, $url, $headers, $body, $label, $safe_url) = @_;
+    $label    //= $self->name;
+    $safe_url //= $url;
+
+    my $max_attempts = 3;
+    my $delay        = 1;
+
+    for my $attempt (1 .. $max_attempts) {
+        my $resp = $http->post($url, {
+            headers => $headers,
+            content => $body,
+        });
+
+        my $status = $resp->{status};
+
+        if ($status >= 200 && $status < 300) {
+            return $resp;
+        }
+
+        if ($status >= 400 && $status < 500) {
+            warn "[changetrack-ng] $label: POST to $safe_url returned $status (client error, not retrying)\n";
+            return $resp;
+        }
+
+        # 5xx or 599 (network error): retry with backoff
+        if ($attempt < $max_attempts) {
+            $self->_sleep($delay);
+            $delay *= 2;
+        } else {
+            my $detail = $status == 599
+                ? $resp->{content}
+                : "HTTP $status";
+            die "$label: POST to $safe_url failed after $max_attempts attempts: $detail\n";
+        }
+    }
+}
+
+# _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
+sub _sleep { sleep($_[1]) }
 
 1;

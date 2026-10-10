@@ -318,7 +318,7 @@ sub _resolve_headers {
 
 # _post_with_retry -- POST the OTLP payload to $ep with up to 3 attempts.
 # Applies gzip compression when otlp_compression=gzip is set.
-# Client errors (4xx) are not retried; network/5xx errors use exponential back-off.
+# HTTP dispatch with retry is delegated to Base::_http_post_with_retry.
 sub _post_with_retry {
     my ($self, $ep, $payload) = @_;
 
@@ -351,34 +351,8 @@ sub _post_with_retry {
     }
     my $http = HTTP::Tiny->new(%http_opts);
 
-    my $max_attempts = 3;
-    my $delay        = 1;
-
-    for my $attempt (1 .. $max_attempts) {
-        my $resp = $http->request('POST', $ep, {
-            headers => \%headers,
-            content => $body,
-        });
-
-        my $status = $resp->{status};
-
-        if ($status >= 200 && $status < 300) {
-            return;
-        }
-
-        if ($status >= 400 && $status < 500) {
-            warn "[changetrack-ng] otlp: POST to $ep returned $status (client error, not retrying)\n";
-            return;
-        }
-
-        if ($attempt < $max_attempts) {
-            $self->_sleep($delay);
-            $delay *= 2;
-        } else {
-            my $detail = $status == 599 ? $resp->{content} : "HTTP $status";
-            die "otlp: POST to $ep failed after $max_attempts attempts: $detail\n";
-        }
-    }
+    my $safe_url = ChangeTrack::Util::redact_url($ep);
+    return $self->_http_post_with_retry($http, $ep, \%headers, $body, 'otlp', $safe_url);
 }
 
 # _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
