@@ -14,6 +14,7 @@ Items are prioritized by severity and grouped by category.
 - DOC-4: Reconciled developer and architecture documentation (`CLAUDE.md`, `ARCHITECTURE.md`) with codebase reality: configurable `command_timeout` (default 120s), Fossil backend `--chdir` flag usage, removal of v1 config auto-detection reference, and updated test suite count (1,027 tests across 36 files).
 - DEBT-9: Deduplicated non-trackable file handling in `ChangeTrack::Runner::_process_file`. Extracted shared `_handle_non_trackable()` helper for `special`, `unreadable`, and `binary` file types while preserving warning, VCS removal staging, and report recording semantics.
 - DEBT-10: Consolidate shared VCS backend methods in `VCS::Base` and modernize SVN backend. Hoisted `output_path`, `_rel_path`, `checkin`, and default `is_dirty` to `ChangeTrack::VCS::Base`, eliminated duplicate implementations across Git, Mercurial, Fossil, and SVN backends, removed dead eval wrapper from `Fossil::_run`, and modernized SVN backend to use absolute working-copy paths without process-wide `chdir`.
+- PERF-4: Single-pass `lstat` and stat buffer propagation in `ChangeTrack::Metadata` and `ChangeTrack::Runner::_process_file`. Passed optional `$stat_ref` arrayref to `can_skip_content_diff()`, `changed_since_load()`, `update_from_stat()`, `diff_summary()`, and `_classify_file()` to eliminate redundant stat syscalls per tracked file.
 
 ## Completed (2026-09-18)
 
@@ -113,14 +114,6 @@ Items are prioritized by severity and grouped by category.
 **Issue:** Notifier dispatch swallowed transport errors without bubbling to `Runner::run()`, preventing warnings from appearing in reports. Webhook notifier read `$report->{message}` and `$report->{vcs}`, which were never initialized.
 **Fix:** Propagate transport failures so `Runner` records them in `$report->add_warning()`. Pass `vcs` and `message` to `ChangeTrack::Report->new()`.
 
----
-
-## Performance / Scalability
-
-### PERF-4: Single-pass `lstat` and cached classification in `Metadata.pm` (Phase 2C Medium-Risk)
-
-**Issue:** `can_skip_content_diff()`, `changed_since_load()`, and `update_from_stat()` each issue separate `lstat()` calls and invoke `_classify_file()` (which runs `-B` block reads) for every tracked file on every run.
-**Fix:** Perform a single `lstat` per file per run, pass stat buffer into comparison helpers, and defer `-B` binary tests until mtime/size actually change.
 
 ---
 

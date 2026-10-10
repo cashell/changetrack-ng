@@ -39,6 +39,9 @@ All notable changes will be documented here.
 
 - **Lazy DNS resolution in configuration loader.**
   - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
+- **Single-pass lstat and stat caching in metadata processing (PERF-4).**
+  - `ChangeTrack::Metadata` methods `can_skip_content_diff`, `changed_since_load`, `update_from_stat`, and `diff_summary` accept an optional `$stat_ref` arrayref parameter (with `_classify_file` handling optional `$stat_ref`), maintaining full backward compatibility by falling back to `lstat($path)` when omitted.
+  - `ChangeTrack::Runner::_process_file` executes a single `lstat` call per tracked file at entry, using the result for vanished-file detection, passing the stat buffer into `Metadata` check and update routines, and forwarding the pre-extracted file mode integer to `_resolve_sensitive` to eliminate redundant filesystem stat operations.
 
 ### Changed
 

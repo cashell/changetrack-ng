@@ -401,8 +401,10 @@ sub _process_file {
     my $prev_type         = defined($existing) ? ($existing->{type} // '') : '';
     my $prev_vcs_eligible = ($prev_type eq 'file' || $prev_type eq 'symlink' || $prev_type eq 'empty');
 
+    my @st = lstat($real_path);
+
     # File no longer on disk
-    unless (-e $real_path || -l $real_path) {
+    unless (@st) {
         if (defined $existing) {
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
@@ -424,16 +426,16 @@ sub _process_file {
     # Fast path: if metadata is unchanged, skip without touching VCS.
     # For known files where mtime+size (or symlink target) haven't changed,
     # there is nothing to process regardless of type.
-    if (defined $existing && $md->can_skip_content_diff($real_path)
-        && !$md->changed_since_load($real_path)) {
+    if (defined $existing && $md->can_skip_content_diff($real_path, \@st)
+        && !$md->changed_since_load($real_path, \@st)) {
         # Refresh the record (preserves the type as-is).
-        $md->update_from_stat($real_path);
+        $md->update_from_stat($real_path, \@st);
         $self->_trace("$real_path: skipped (mtime+size unchanged)");
         return;
     }
 
     # Classify the file (stat it once, determine type)
-    $md->update_from_stat($real_path);
+    $md->update_from_stat($real_path, \@st);
     my $rec  = $md->record_for($real_path);
     my $type = $rec->{type};
 
@@ -446,14 +448,16 @@ sub _process_file {
         return;
     }
 
+    my $mode_oct = defined($rec->{mode}) ? oct($rec->{mode}) : ($st[2] & 07777);
+
     if ($type eq 'empty') {
         # Empty files have no content to diff.  Report only meta changes.
-        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path)) {
-            my $meta_summary = $md->diff_summary($real_path);
+        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st)) {
+            my $meta_summary = $md->diff_summary($real_path, \@st);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             $vcs->checkin($real_path, $msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+                $mode_oct);
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -467,7 +471,7 @@ sub _process_file {
         } elsif (!defined $existing || !$prev_vcs_eligible) {
             $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-                defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+                $mode_oct);
             my $trans_meta = (defined $existing && !$prev_vcs_eligible)
                 ? "transition from $prev_type to $type"
                 : '';
@@ -490,15 +494,14 @@ sub _process_file {
 
     # Warn about hardlinked regular files
     if ($type eq 'file') {
-        my @st = stat($real_path);
-        if (@st && $st[3] > 1) {
+        if ($st[3] > 1) {
             $self->_warn("$real_path has $st[3] hard links  --  changes via other names will not be tracked");
         }
     }
 
     # Trackable types: file, symlink
     my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
-        defined($rec->{mode}) ? oct($rec->{mode}) : undef);
+        $mode_oct);
 
     if (!defined $existing || !$prev_vcs_eligible) {
         # New file / symlink or transitioned from non-trackable
@@ -519,12 +522,12 @@ sub _process_file {
         $self->_info("New: $real_path");
     } else {
         # Existing file / symlink  --  check for changes
-        my $meta_changed = $md->changed_since_load($real_path);
-        my $meta_summary = $meta_changed ? $md->diff_summary($real_path) : '';
+        my $meta_changed = $md->changed_since_load($real_path, \@st);
+        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st) : '';
 
         # Symlinks: content is the target, already captured by changed_since_load.
         # Regular files: diff only if mtime+size moved.
-        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path);
+        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st);
         my $diff_lines = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
 
