@@ -17,8 +17,8 @@
 #   notes        - non-obvious context or caveats
 
 [meta]
-version     = "0.7.2"
-updated     = "2026-10-11"
+version     = "0.7.3"
+updated     = "2026-10-12"
 homepage    = "https://github.com/cashell/changetrack-ng"
 license     = "GPL-3.0-or-later"
 min_perl    = "5.20"
@@ -627,14 +627,17 @@ tags        = ["doc", "user"]
 
 [doc."CONTRIBUTING.md"]
 description = "Contributor guide: coding conventions, testing, PR workflow"
+dist        = ["full"]
 tags        = ["doc", "user"]
 
 [doc."ARCHITECTURE.md"]
 description = "System design, data flow, module relationships, and security model"
+dist        = ["full"]
 tags        = ["doc", "user"]
 
 [doc."PRODUCT.md"]
 description = "Product overview: feature set, subcommands, configuration, scheduling"
+dist        = ["full"]
 tags        = ["doc", "user"]
 
 ########################################################################
@@ -854,6 +857,12 @@ description = "Perl script verifying subcommand documentation alignment across s
 dist        = ["full"]
 tags        = ["build", "lint"]
 notes       = "Invoked during make test to prevent subcommand documentation drift"
+
+[build."tools/build-packages"]
+description = "Perl script for automated out-of-tree package building (tarballs, fatpack, deb, rpm)"
+dist        = ["full"]
+tags        = ["build", "packaging"]
+notes       = "Invoked by make deb, make rpm, make packages, or standalone CLI"
 
 ########################################################################
 # legal

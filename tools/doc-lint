@@ -25,7 +25,7 @@ my $claude_file = File::Spec->catfile($repo_dir, 'CLAUDE.md');
 my $readme_file = File::Spec->catfile($repo_dir, 'README.md');
 
 # Validate existence of expected files
-for my $file ($bin_file, $man_file, $claude_file, $readme_file) {
+for my $file ($bin_file, $man_file, $readme_file) {
     if (!-f $file) {
         die "Error: Required file not found: $file\n";
     }
@@ -41,7 +41,8 @@ check_source('bin/changetrack-ng header comment', parse_bin_header($bin_file), $
 check_source('bin/changetrack-ng usage help',     parse_bin_usage($bin_file),  $canonical);
 check_source('bin/changetrack-ng inline POD',     parse_bin_pod($bin_file),    $canonical);
 check_source('man/changetrack-ng.8 manual page',  parse_man_page($man_file),   $canonical);
-check_source('CLAUDE.md architectural reference', parse_claude_md($claude_file), $canonical);
+check_source('CLAUDE.md architectural reference', parse_claude_md($claude_file), $canonical)
+    if -f $claude_file;
 check_source('README.md subcommands table',       parse_readme_md($readme_file), $canonical);
 
 if ($failed) {

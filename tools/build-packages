@@ -1,0 +1,407 @@
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+########################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+########################################################################
+# tools/build-packages - Automated out-of-tree package and release builder.
+#
+# Builds release tarballs, standalone FatPack script, Debian packages (3.0 quilt),
+# and RPM packages (noarch + src.rpm) in an isolated build directory, staging all
+# final artifacts and SHA256 checksums in a designated release directory.
+########################################################################
+
+use strict;
+use warnings;
+use Getopt::Long qw(:config no_ignore_case bundling);
+use File::Spec;
+use File::Path qw(make_path remove_tree);
+use File::Copy qw(copy move);
+use File::Basename qw(dirname basename);
+use Cwd qw(abs_path getcwd);
+
+my $script_dir = dirname(abs_path($0));
+my $repo_dir   = abs_path(File::Spec->catdir($script_dir, '..'));
+
+my $opt_all;
+my $opt_tarballs;
+my $opt_fatpack;
+my $opt_deb;
+my $opt_rpm;
+my $opt_checksums;
+my $opt_clean;
+my $opt_build_dir   = $ENV{BUILD_DIR}   || File::Spec->catdir($ENV{HOME}, 'dev', 'build', 'changetrack-ng');
+my $opt_release_dir = $ENV{RELEASE_DIR} || File::Spec->catdir($ENV{HOME}, 'dev', 'releases', 'changetrack-ng');
+my $opt_version;
+my $opt_help;
+
+GetOptions(
+    'all'           => \$opt_all,
+    'tarballs|dist' => \$opt_tarballs,
+    'fatpack'       => \$opt_fatpack,
+    'deb'           => \$opt_deb,
+    'rpm'           => \$opt_rpm,
+    'checksums'     => \$opt_checksums,
+    'clean'         => \$opt_clean,
+    'build-dir=s'   => \$opt_build_dir,
+    'release-dir=s' => \$opt_release_dir,
+    'version=s'     => \$opt_version,
+    'help|h'        => \$opt_help,
+) or usage(1);
+
+usage(0) if $opt_help;
+
+# Default to --all if no specific action selected and not --clean
+if (!$opt_clean && !$opt_tarballs && !$opt_fatpack && !$opt_deb && !$opt_rpm && !$opt_checksums) {
+    $opt_all = 1;
+}
+
+if ($opt_all) {
+    $opt_tarballs  = 1;
+    $opt_fatpack   = 1;
+    $opt_deb       = 1;
+    $opt_rpm       = 1;
+    $opt_checksums = 1;
+}
+
+# Determine project version
+my $version = $opt_version || get_project_version($repo_dir);
+die "[build-packages] Error: Could not determine project version\n" unless $version;
+
+print "==> changetrack-ng package builder (v$version)\n";
+print "    Source tree : $repo_dir\n";
+print "    Build tree  : $opt_build_dir\n";
+print "    Release dir : $opt_release_dir\n\n";
+
+if ($opt_clean) {
+    clean_trees($opt_build_dir, $repo_dir);
+    exit 0 unless ($opt_tarballs || $opt_fatpack || $opt_deb || $opt_rpm);
+}
+
+ensure_dir($opt_build_dir);
+ensure_dir($opt_release_dir);
+
+my @staged_files;
+
+if ($opt_tarballs) {
+    push @staged_files, build_tarballs($repo_dir, $version, $opt_release_dir);
+}
+
+if ($opt_fatpack) {
+    push @staged_files, build_fatpack($repo_dir, $version, $opt_release_dir);
+}
+
+if ($opt_deb) {
+    push @staged_files, build_debian($repo_dir, $version, $opt_build_dir, $opt_release_dir);
+}
+
+if ($opt_rpm) {
+    push @staged_files, build_rpm($repo_dir, $version, $opt_build_dir, $opt_release_dir);
+}
+
+if ($opt_checksums) {
+    generate_checksums($opt_release_dir);
+}
+
+print "\n==> All requested packaging tasks completed successfully.\n";
+print "    Artifacts staged in $opt_release_dir\n";
+
+exit 0;
+
+########################################################################
+# Helper Subroutines
+########################################################################
+
+sub usage {
+    my ($exit_code) = @_;
+    print <<"USAGE";
+Usage: $0 [OPTIONS]
+
+Options:
+  --all                 Build all release artifacts (tarballs, fatpack, deb, rpm, checksums)
+  --tarballs, --dist    Build source, deploy, and minimal release tarballs
+  --fatpack             Build standalone fatpacked Perl script
+  --deb                 Build Debian/Ubuntu package (.deb, .dsc, .debian.tar.xz)
+  --rpm                 Build RPM packages (.noarch.rpm, .src.rpm)
+  --checksums           Generate SHA256SUMS file in release directory
+  --clean               Clean out-of-tree build directories and workspace dist files
+  --build-dir DIR       Working directory for builds (default: ~/dev/build/changetrack-ng)
+  --release-dir DIR     Destination for release files (default: ~/dev/releases/changetrack-ng)
+  --version VER         Override version string
+  -h, --help            Show this help text
+USAGE
+    exit($exit_code);
+}
+
+sub get_project_version {
+    my ($dir) = @_;
+    my $ver_file = File::Spec->catfile($dir, 'lib', 'ChangeTrack', 'Version.pm');
+    if (-f $ver_file && open my $fh, '<', $ver_file) {
+        while (my $line = <$fh>) {
+            if ($line =~ /\$VERSION\s*=\s*['"]([^'"]+)['"]/) {
+                close $fh;
+                return $1;
+            }
+        }
+        close $fh;
+    }
+    return undef;
+}
+
+sub ensure_dir {
+    my ($dir) = @_;
+    make_path($dir) unless -d $dir;
+}
+
+sub run_cmd {
+    my (@cmd) = @_;
+    my $str = join(' ', @cmd);
+    print "    --> $str\n";
+    system(@cmd) == 0 or die "[build-packages] Command failed ($str): $?\n";
+}
+
+sub clean_trees {
+    my ($build_dir, $repo_root) = @_;
+    print "==> Cleaning build tree and repository dist artifacts...\n";
+    if (-d $build_dir) {
+        remove_tree($build_dir, { safe => 1, keep_root => 1 });
+        print "    Cleaned $build_dir\n";
+    }
+    system("make", "-C", $repo_root, "clean") == 0
+        or warn "[build-packages] Warning: make clean in repository returned non-zero\n";
+}
+
+my $tarballs_built = 0;
+
+sub build_tarballs {
+    my ($repo_root, $ver, $rel_dir) = @_;
+    print "==> Building release tarballs...\n";
+
+    run_cmd("make", "-C", $repo_root, "dist", "dist-deploy", "dist-minimal");
+
+    my @files = (
+        "changetrack-ng-$ver.tar.gz",
+        "changetrack-ng-$ver-deploy.tar.gz",
+        "changetrack-ng-$ver-minimal.tar.gz",
+    );
+
+    my @staged;
+    for my $f (@files) {
+        my $src = File::Spec->catfile($repo_root, $f);
+        my $dst = File::Spec->catfile($rel_dir, $f);
+        if (-f $src) {
+            copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+            push @staged, $dst;
+            print "    Staged: $f\n";
+        } else {
+            die "[build-packages] Expected tarball not found: $src\n";
+        }
+    }
+    $tarballs_built = 1;
+    return @staged;
+}
+
+sub build_fatpack {
+    my ($repo_root, $ver, $rel_dir) = @_;
+    print "==> Building standalone fatpack script...\n";
+
+    run_cmd("make", "-C", $repo_root, "fatpack");
+
+    my $fname = "changetrack-ng-$ver.pl";
+    my $src   = File::Spec->catfile($repo_root, $fname);
+    my $dst   = File::Spec->catfile($rel_dir, $fname);
+
+    if (-f $src) {
+        copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+        chmod 0755, $dst;
+        print "    Staged: $fname\n";
+        return ($dst);
+    } else {
+        die "[build-packages] Expected fatpack output not found: $src\n";
+    }
+}
+
+sub build_debian {
+    my ($repo_root, $ver, $build_root, $rel_dir) = @_;
+    print "==> Building Debian packages (3.0 quilt)...\n";
+
+    my $src_tar = File::Spec->catfile($rel_dir, "changetrack-ng-$ver.tar.gz");
+    if (!$tarballs_built || !-f $src_tar) {
+        print "    Building upstream source tarball first...\n";
+        build_tarballs($repo_root, $ver, $rel_dir);
+    }
+
+    my $deb_work = File::Spec->catdir($build_root, 'debbuild');
+    remove_tree($deb_work) if -d $deb_work;
+    ensure_dir($deb_work);
+
+    # Debian quilt format expects changetrack-ng_<ver>.orig.tar.gz
+    my $orig_tar = File::Spec->catfile($deb_work, "changetrack-ng_$ver.orig.tar.gz");
+    copy($src_tar, $orig_tar) or die "[build-packages] Failed to copy $src_tar to $orig_tar: $!\n";
+
+    # Unpack tarball into work directory
+    run_cmd("tar", "-xzf", $orig_tar, "-C", $deb_work);
+
+    my $pkg_dir = File::Spec->catdir($deb_work, "changetrack-ng-$ver");
+    die "[build-packages] Unpacked debian directory $pkg_dir not found\n" unless -d $pkg_dir;
+
+    # Expose debian/ directory in unpacked source
+    my $deb_dir = File::Spec->catdir($pkg_dir, 'debian');
+    if (!-e $deb_dir) {
+        my $pkg_deb = File::Spec->catdir($pkg_dir, 'packaging', 'debian');
+        if (-d $pkg_deb) {
+            run_cmd("cp", "-a", $pkg_deb, $deb_dir);
+        } else {
+            die "[build-packages] No packaging/debian found in unpacked source\n";
+        }
+    }
+
+    # Run dpkg-buildpackage in the unpacked directory
+    my $old_cwd = getcwd();
+    chdir($pkg_dir) or die "[build-packages] Cannot chdir to $pkg_dir: $!\n";
+
+    # Build binary + source package without GPG signing
+    my $rc = system("dpkg-buildpackage", "-us", "-uc");
+    chdir($old_cwd);
+
+    if ($rc != 0) {
+        die "[build-packages] dpkg-buildpackage failed with code $rc\n";
+    }
+
+    # Collect artifacts from $deb_work
+    opendir(my $dh, $deb_work) or die "[build-packages] Cannot open $deb_work: $!\n";
+    my @staged;
+    while (my $entry = readdir($dh)) {
+        next if $entry =~ /^\./;
+        if ($entry =~ /\.(deb|dsc|debian\.tar\.[gx]z|buildinfo|changes)$/) {
+            my $src = File::Spec->catfile($deb_work, $entry);
+            my $dst = File::Spec->catfile($rel_dir, $entry);
+            copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+            push @staged, $dst;
+            print "    Staged: $entry\n";
+        }
+    }
+    closedir($dh);
+
+    # Clean up temporary debbuild directory
+    remove_tree($deb_work);
+
+    return @staged;
+}
+
+sub build_rpm {
+    my ($repo_root, $ver, $build_root, $rel_dir) = @_;
+    print "==> Building RPM packages...\n";
+
+    my $src_tar = File::Spec->catfile($rel_dir, "changetrack-ng-$ver.tar.gz");
+    if (!$tarballs_built || !-f $src_tar) {
+        print "    Building upstream source tarball first...\n";
+        build_tarballs($repo_root, $ver, $rel_dir);
+    }
+
+    my $rpm_work = File::Spec->catdir($build_root, 'rpmbuild');
+    remove_tree(File::Spec->catdir($rpm_work, 'BUILD')) if -d File::Spec->catdir($rpm_work, 'BUILD');
+    remove_tree(File::Spec->catdir($rpm_work, 'BUILDROOT')) if -d File::Spec->catdir($rpm_work, 'BUILDROOT');
+    ensure_dir($rpm_work);
+    for my $subdir (qw(BUILD BUILDROOT RPMS SOURCES SPECS SRPMS)) {
+        ensure_dir(File::Spec->catdir($rpm_work, $subdir));
+    }
+
+    # Copy source tarball to SOURCES
+    my $tar_dest = File::Spec->catfile($rpm_work, 'SOURCES', "changetrack-ng-$ver.tar.gz");
+    copy($src_tar, $tar_dest) or die "[build-packages] Failed to copy tarball to $tar_dest: $!\n";
+
+    # Spec file path
+    my $spec_src = File::Spec->catfile($repo_root, 'packaging', 'rpm', 'changetrack-ng.spec');
+    my $spec_dst = File::Spec->catfile($rpm_work, 'SPECS', 'changetrack-ng.spec');
+    copy($spec_src, $spec_dst) or die "[build-packages] Failed to copy spec to $spec_dst: $!\n";
+
+    # Check for RPM build platform (detect RHEL / Fedora)
+    my $is_redhat = (-f '/etc/redhat-release' || -f '/etc/fedora-release') ? 1 : 0;
+
+    my @rpm_cmd = (
+        'rpmbuild', '-ba',
+        '--define', "_topdir $rpm_work",
+    );
+
+    # If building on a non-RedHat/Fedora system (e.g. Debian/Ubuntu),
+    # inject macro fallbacks and --nodeps since system RPM database won't reflect dpkg packages.
+    if (!$is_redhat) {
+        push @rpm_cmd, (
+            '--nodeps',
+            '--define', '_unitdir /usr/lib/systemd/system',
+            '--define', 'systemd_post() %{nil}',
+            '--define', 'systemd_preun() %{nil}',
+            '--define', 'systemd_postun() %{nil}',
+            '--define', 'systemd_postun_with_restart() %{nil}',
+        );
+    }
+
+    push @rpm_cmd, $spec_dst;
+
+    run_cmd(@rpm_cmd);
+
+    # Collect RPMS
+    my @staged;
+    my $rpms_dir = File::Spec->catdir($rpm_work, 'RPMS');
+    if (-d $rpms_dir) {
+        opendir(my $dh, $rpms_dir);
+        while (my $arch = readdir($dh)) {
+            next if $arch =~ /^\./;
+            my $arch_dir = File::Spec->catdir($rpms_dir, $arch);
+            if (-d $arch_dir) {
+                opendir(my $adh, $arch_dir);
+                while (my $pkg = readdir($adh)) {
+                    if ($pkg =~ /\.rpm$/) {
+                        my $src = File::Spec->catfile($arch_dir, $pkg);
+                        my $dst = File::Spec->catfile($rel_dir, $pkg);
+                        copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+                        push @staged, $dst;
+                        print "    Staged: $pkg\n";
+                    }
+                }
+                closedir($adh);
+            }
+        }
+        closedir($dh);
+    }
+
+    # Collect SRPMS
+    my $srpms_dir = File::Spec->catdir($rpm_work, 'SRPMS');
+    if (-d $srpms_dir) {
+        opendir(my $dh, $srpms_dir);
+        while (my $pkg = readdir($dh)) {
+            if ($pkg =~ /\.src\.rpm$/) {
+                my $src = File::Spec->catfile($srpms_dir, $pkg);
+                my $dst = File::Spec->catfile($rel_dir, $pkg);
+                copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+                push @staged, $dst;
+                print "    Staged: $pkg\n";
+            }
+        }
+        closedir($dh);
+    }
+
+    return @staged;
+}
+
+sub generate_checksums {
+    my ($rel_dir) = @_;
+    print "==> Generating SHA256 checksums...\n";
+
+    opendir(my $dh, $rel_dir) or die "[build-packages] Cannot open $rel_dir: $!\n";
+    my @files = sort grep { -f File::Spec->catfile($rel_dir, $_) && $_ ne 'SHA256SUMS' } readdir($dh);
+    closedir($dh);
+
+    my $sums_file = File::Spec->catfile($rel_dir, 'SHA256SUMS');
+    my $old_cwd   = getcwd();
+    chdir($rel_dir) or die "[build-packages] Cannot chdir to $rel_dir: $!\n";
+
+    if (@files) {
+        my $cmd = "sha256sum " . join(" ", map { quotemeta($_) } @files) . " > " . quotemeta($sums_file);
+        system($cmd) == 0 or die "[build-packages] sha256sum generation failed: $!\n";
+        print "    Generated: SHA256SUMS\n";
+    }
+    chdir($old_cwd);
+}

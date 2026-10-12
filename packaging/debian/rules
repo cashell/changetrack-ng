@@ -18,7 +18,12 @@ override_dh_auto_test:
 override_dh_auto_install:
 	$(MAKE) install install-man \
 	    DESTDIR=$(CURDIR)/debian/changetrack-ng \
-	    PREFIX=/usr
+	    PREFIX=/usr \
+	    DEFAULTSDIR=/etc/default
+	# default environment file
+	install -d $(CURDIR)/debian/changetrack-ng/etc/default
+	install -m 644 packaging/etc/changetrack-ng.default \
+	    $(CURDIR)/debian/changetrack-ng/etc/default/changetrack-ng
 	# apt hooks
 	install -d $(CURDIR)/debian/changetrack-ng/etc/apt/apt.conf.d
 	sed -e "s|@BINDIR@|/usr/bin|g" -e "s|@DEFAULTSDIR@|/etc/default|g" packaging/hooks/apt-pre \

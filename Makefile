@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.7.2
+VERSION    := 0.7.3
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
@@ -16,11 +16,13 @@ HOOKSDIR    ?= $(LIBDIR)/hooks
 CRONDIR     ?= /etc/cron.hourly
 DEFAULTSDIR ?= $(if $(shell command -v dnf 2>/dev/null),/etc/sysconfig,/etc/default)
 DESTDIR     ?=
+BUILD_DIR   ?= $(HOME)/dev/build/$(NAME)
+RELEASE_DIR ?= $(HOME)/dev/releases/$(NAME)
 
 
 PERL       ?= perl
 
-.PHONY: all test config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra
+.PHONY: all test config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra deb rpm packages release-artifacts clean-build
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -46,6 +48,10 @@ all:
 	@echo "  make install-user-cron    Print crontab entry for user"
 	@echo "  make debian-build-setup   Expose packaging/debian as debian/ (for dpkg-buildpackage)"
 	@echo "  make debian-build-cleanup Remove debian/ symlink"
+	@echo "  make deb             Build Debian package (.deb, .dsc, .debian.tar.xz) out-of-tree"
+	@echo "  make rpm             Build RPM packages (.noarch.rpm, .src.rpm) out-of-tree"
+	@echo "  make packages        Build all release packages and checksums into RELEASE_DIR"
+	@echo "  make clean-build     Clean out-of-tree build tree"
 	@echo "  make clean           Remove generated files (tarballs, fatpack, man .gz)"
 	@echo "  make manifest-lint   Validate MANIFEST.toml (checks all listed files exist)"
 	@echo "  make manifest-extra  Find files on disk not listed in MANIFEST.toml"
@@ -87,7 +93,7 @@ install-man: man
 	install -m 644 man/changetrack-ng.8.gz    $(DESTDIR)$(MANDIR)/man8/changetrack-ng.8.gz
 	install -m 644 man/changetrack-ng.conf.5.gz $(DESTDIR)$(MANDIR)/man5/changetrack-ng.conf.5.gz
 
-install: _install_dirs _install_bin _install_lib _install_conf _install_examples
+install: _install_dirs _install_bin _install_lib _install_conf _install_examples _install_defaults
 
 _install_conf_user:
 	install -d $(HOME)/.config/$(NAME)
@@ -223,6 +229,20 @@ debian-build-cleanup:
 	else \
 		echo "debian/ symlink not found (nothing to remove)"; \
 	fi
+
+deb:
+	@$(PERL) tools/build-packages --deb --build-dir $(BUILD_DIR) --release-dir $(RELEASE_DIR)
+
+rpm:
+	@$(PERL) tools/build-packages --rpm --build-dir $(BUILD_DIR) --release-dir $(RELEASE_DIR)
+
+packages:
+	@$(PERL) tools/build-packages --all --build-dir $(BUILD_DIR) --release-dir $(RELEASE_DIR)
+
+release-artifacts: packages
+
+clean-build:
+	@$(PERL) tools/build-packages --clean --build-dir $(BUILD_DIR)
 
 install-hooks: _install_defaults
 	@if command -v apt-get >/dev/null 2>&1; then \

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.7.2
+Version:        0.7.3
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -48,8 +48,7 @@ hooks (apt, pacman, dnf).
 
 
 %install
-%make_install PREFIX=/usr
-%make_install install-man PREFIX=/usr
+make install install-man DESTDIR=%{buildroot} PREFIX=/usr DEFAULTSDIR=%{_sysconfdir}/sysconfig
 
 # Install scheduler integration files for packaged deployments.
 install -d %{buildroot}%{_unitdir}
@@ -98,6 +97,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 %dir %{_sysconfdir}/%{name}/track.d
 %dir %{_sysconfdir}/%{name}/notifier.d
 %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
+%config(noreplace) %{_sysconfdir}/sysconfig/%{name}
 
 %dir %attr(0700,root,root) %{_localstatedir}/lib/%{name}
 
@@ -112,6 +112,11 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Mon Oct 12 2026 Christopher Cashell <topher@zyp.org> - 0.7.3-1
+- Install /etc/sysconfig/changetrack-ng defaults file and track in %files
+- Add out-of-tree package building tooling and Makefile integration
+- Ensure release tarball test resilience when dev docs are absent
+
 * Sun Oct 11 2026 Christopher Cashell <topher@zyp.org> - 0.7.2-1
 - Enforce umask(0077) and mode 0700 private permissions on storage directories
 - Prevent loss of changes on VCS/diff errors with rollback and re-sequenced commit

@@ -6,6 +6,27 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-12
+
+### Added
+
+- **Automated package building tooling:**
+  - Added `tools/build-packages` to orchestrate isolated out-of-tree builds for release tarballs, standalone FatPack script, Debian packages (`3.0 quilt`), and RPM packages (`.noarch.rpm` and `.src.rpm`).
+  - Added `make deb`, `make rpm`, `make packages` (alias `make release-artifacts`), and `make clean-build` targets to root `Makefile`.
+
+### Fixed
+
+- **Defaults environment file installation in packages and Makefile:**
+  - `Makefile`'s `install` target now installs `_install_defaults` (`/etc/default/changetrack-ng` on Debian/Ubuntu or `/etc/sysconfig/changetrack-ng` on RHEL/Fedora).
+  - `packaging/debian/rules` explicitly installs `/etc/default/changetrack-ng` and marks it as a conffile.
+  - `packaging/rpm/changetrack-ng.spec` passes `DEFAULTSDIR=%{_sysconfdir}/sysconfig` and registers `/etc/sysconfig/changetrack-ng` as `%config(noreplace)`.
+- **Debian source format compliance:**
+  - Switched Debian source format from `3.0 (native)` to standard `3.0 (quilt)` in `packaging/debian/source/format` for Debian and Ubuntu distribution readiness.
+- **Release tarball test resilience:**
+  - Made `CLAUDE.md` presence check conditional in `tools/doc-lint` so that `make test` executed inside unpacked release tarballs passes cleanly without requiring repository-internal developer docs.
+- **RPM spec documentation manifest completeness:**
+  - Added `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `PRODUCT.md` to `MANIFEST.toml` full distribution target so `%doc` declarations in `changetrack-ng.spec` succeed during `rpmbuild`.
+
 ## [0.7.2] - 2026-10-11
 
 ### Security
