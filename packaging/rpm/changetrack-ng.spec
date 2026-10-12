@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.7.1
+Version:        0.7.2
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,16 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Sun Oct 11 2026 Christopher Cashell <topher@zyp.org> - 0.7.2-1
+- Enforce umask(0077) and mode 0700 private permissions on storage directories
+- Prevent loss of changes on VCS/diff errors with rollback and re-sequenced commit
+- Non-blocking DNF hook execution and notifier delivery error propagation
+- Atomic temporary-file-and-rename for revert restore operations
+- Single-pass lstat and stat buffer caching in metadata processing
+- Consolidate HTTP retry/backoff in Notify::Base and shared methods in VCS::Base
+- Modernize Subversion backend to use absolute paths without chdir
+- Reconcile manual pages, documentation, and manifest inventory
+
 * Fri Sep 18 2026 Christopher Cashell <topher@zyp.org> - 0.7.1-1
 - Directory deletion detection and VCS removal: reconcile vanished files against
   metadata sidecar; stage removal across Git, SVN, Mercurial, Fossil, and RCS

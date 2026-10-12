@@ -17,8 +17,8 @@
 #   notes        - non-obvious context or caveats
 
 [meta]
-version     = "0.7.1"
-updated     = "2026-09-18"
+version     = "0.7.2"
+updated     = "2026-10-11"
 homepage    = "https://github.com/cashell/changetrack-ng"
 license     = "GPL-3.0-or-later"
 min_perl    = "5.20"

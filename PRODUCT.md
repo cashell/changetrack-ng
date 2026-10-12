@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.7.1
+Version: 0.7.2
 
 ---
 

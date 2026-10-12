@@ -6,6 +6,8 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-11
+
 ### Security
 
 - **Enforce private permissions and restrictive umask.**

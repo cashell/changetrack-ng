@@ -1,3 +1,20 @@
+changetrack-ng (0.7.2) unstable; urgency=medium
+
+  * Enforce umask(0077) and mode 0700 private storage permissions.
+  * Prevent loss of changes on VCS/diff errors with rollback and re-sequenced commit.
+  * Substitute @BINDIR@ and @DEFAULTSDIR@ placeholders in packaging templates.
+  * Non-blocking DNF hook execution with stderr error reporting.
+  * Notifier delivery error propagation to run report warnings.
+  * Lazy DNS evaluation for HOSTNAME expansion in config loader.
+  * Atomic temporary-file-and-rename for revert restore operations.
+  * Deduplicate Runner non-trackable file handling and consolidate VCS Base methods.
+  * Modernize Subversion backend to use absolute paths without chdir.
+  * Single-pass lstat and stat buffer caching in metadata processing.
+  * Consolidate HTTP retry/backoff in Notify::Base.
+  * Reconcile manual pages, documentation, and manifest inventory.
+
+ -- Christopher Cashell <topher@zyp.org>  Sun, 11 Oct 2026 00:00:00 +0000
+
 changetrack-ng (0.7.1) unstable; urgency=medium
 
   * Reconcile deleted files in tracked directories against metadata sidecar
