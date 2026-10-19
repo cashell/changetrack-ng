@@ -1,0 +1,330 @@
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+########################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+########################################################################
+# tools/test-dirty - Fast-feedback test runner that maps uncommitted
+#   and dirty working copy files to targeted unit tests.
+#
+use strict;
+use warnings;
+use Getopt::Long qw(:config no_auto_abbrev bundling);
+use File::Spec;
+use File::Basename qw(dirname basename);
+use Cwd qw(abs_path);
+
+# Resolve paths relative to the script directory
+my $script_dir = dirname(abs_path($0));
+my $repo_dir   = abs_path(File::Spec->catdir($script_dir, '..'));
+
+my %opt;
+GetOptions(
+    \%opt,
+    'dry-run|n' => \$opt{dry_run},
+    'all|a'     => \$opt{all},
+    'verbose|v' => \$opt{verbose},
+    'help|h'    => \$opt{help},
+) or die "Usage: $0 [--dry-run|-n] [--all|-a] [--verbose|-v] [files...]\n";
+
+if ($opt{help}) {
+    print <<'EOF';
+Usage: tools/test-dirty [OPTIONS] [FILES...]
+
+Fast-feedback test selector: maps dirty or modified working copy files
+to corresponding unit tests and runs them via prove.
+
+Options:
+  -n, --dry-run   Print matching test files without running prove
+  -a, --all       Run the full test suite
+  -v, --verbose   Show file-to-test mapping decisions on STDERR
+  -h, --help      Display this help message
+
+If specific files are passed as arguments, test-dirty maps those files
+instead of inspecting git status.
+EOF
+    exit 0;
+}
+
+# Determine candidate files
+my @candidate_files;
+if (@ARGV) {
+    @candidate_files = @ARGV;
+} elsif ($opt{all}) {
+    # Handled below
+} else {
+    @candidate_files = get_git_dirty_files($repo_dir);
+}
+
+my @tests;
+
+if ($opt{all}) {
+    @tests = get_all_tests($repo_dir);
+} elsif (!@candidate_files) {
+    if ($opt{verbose}) {
+        warn "[VERBOSE] Working copy is clean; selecting smoke tests.\n";
+    }
+    # Clean working copy fast smoke suite
+    my @smoke = qw(t/00-load.t t/03-metadata.t t/21-report.t);
+    @tests = grep { -f File::Spec->catfile($repo_dir, $_) } @smoke;
+} else {
+    my ($matched_tests, $docs_changed) = map_files_to_tests(\@candidate_files, $repo_dir);
+    @tests = @$matched_tests;
+
+    if ($opt{verbose}) {
+        for my $file (@candidate_files) {
+            warn "[VERBOSE] Evaluated file: $file\n";
+        }
+        for my $test (@tests) {
+            warn "[VERBOSE] Selected test: $test\n";
+        }
+    }
+
+    # If only documentation/configuration changed with no matching unit tests
+    if (!@tests && %$docs_changed) {
+        if ($opt{dry_run}) {
+            print "# Documentation/configuration only modified: doc-lint / manifest-lint\n";
+            exit 0;
+        }
+        print "Only documentation/configuration changed; running linters...\n";
+        system('make', '-C', $repo_dir, 'doc-lint', 'manifest-lint');
+        exit($? >> 8);
+    }
+}
+
+if (!@tests) {
+    print "No matching tests found.\n";
+    exit 0;
+}
+
+if ($opt{dry_run}) {
+    for my $t (@tests) {
+        print "$t\n";
+    }
+    exit 0;
+}
+
+# Execute prove
+my @cmd = ('prove', '-l', @tests);
+if ($opt{verbose}) {
+    warn "[VERBOSE] Executing: @cmd\n";
+}
+system(@cmd);
+my $exit_code = $? >> 8;
+exit $exit_code;
+
+########################################################################
+# Subroutines
+########################################################################
+
+# get_git_dirty_files -- Read uncommitted or modified files from git status
+sub get_git_dirty_files {
+    my ($dir) = @_;
+    my @files;
+
+    open my $fh, '-|', 'git', '-C', $dir, 'status', '--porcelain', '-uall'
+        or die "Cannot run git status: $!\n";
+    while (my $line = <$fh>) {
+        chomp $line;
+        if ($line =~ /^.{2}\s+(?:.*?->\s+)?(.*)$/) {
+            my $path = $1;
+            $path =~ s/^"//;
+            $path =~ s/"$//;
+            push @files, $path if length $path;
+        }
+    }
+    close $fh;
+    return @files;
+}
+
+# get_all_tests -- Find all unit test files in t/
+sub get_all_tests {
+    my ($dir) = @_;
+    my $t_dir = File::Spec->catdir($dir, 't');
+    opendir my $dh, $t_dir or die "Cannot open $t_dir: $!\n";
+    my @all = sort grep { /\.t$/ && -f File::Spec->catfile($t_dir, $_) } readdir($dh);
+    closedir $dh;
+    return map { "t/$_" } @all;
+}
+
+# map_files_to_tests -- Map list of repository paths to test files
+sub map_files_to_tests {
+    my ($files_ref, $repo) = @_;
+    my %tests;
+    my %docs_or_config;
+
+    for my $file (@$files_ref) {
+        $file =~ s{^\./}{};
+
+        # Direct test modification
+        if ($file =~ m{^t/(.+\.t)$}) {
+            $tests{"t/$1"} = 1;
+            next;
+        }
+
+        # Core modules in lib/ChangeTrack/
+        if ($file eq 'lib/ChangeTrack/Config.pm') {
+            $tests{$_} = 1 for qw(
+                t/23-config-resolution.t
+                t/24-config-sections.t
+                t/25-config-drop-in-dirs.t
+                t/26-config-include-directives.t
+                t/27-config-cross-file-errors.t
+                t/34-config-inline-comments.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Runner.pm') {
+            $tests{$_} = 1 for qw(
+                t/04-runner-rcs.t
+                t/10-sensitive.t
+                t/11-ignore.t
+                t/22-verbose-debug.t
+                t/32-detection-fidelity.t
+                t/35-vcs-removal.t
+                t/36-type-transitions.t
+                t/37-review-findings.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Metadata.pm') {
+            $tests{$_} = 1 for qw(
+                t/03-metadata.t
+                t/37-review-findings.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Report.pm') {
+            $tests{$_} = 1 for qw(
+                t/21-report.t
+                t/29-redaction.t
+                t/37-review-findings.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Lock.pm') {
+            $tests{'t/12-locking.t'} = 1;
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Util.pm') {
+            $tests{$_} = 1 for qw(
+                t/20-util-symlink-mirror.t
+                t/30-run-cmd.t
+                t/31-path-safety.t
+                t/33-cleanup.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Version.pm') {
+            $tests{'t/00-load.t'} = 1;
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/Git.pm') {
+            $tests{$_} = 1 for qw(
+                t/06-vcs-git.t
+                t/35-vcs-removal.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/RCS.pm') {
+            $tests{$_} = 1 for qw(
+                t/04-runner-rcs.t
+                t/05-vcs-rcs.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/Fossil.pm') {
+            $tests{'t/13-vcs-fossil.t'} = 1;
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/SVN.pm') {
+            $tests{'t/14-vcs-svn.t'} = 1;
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/Mercurial.pm') {
+            $tests{'t/15-vcs-hg.t'} = 1;
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/VCS/Base.pm') {
+            $tests{$_} = 1 for qw(
+                t/05-vcs-rcs.t
+                t/06-vcs-git.t
+                t/13-vcs-fossil.t
+                t/14-vcs-svn.t
+                t/15-vcs-hg.t
+                t/35-vcs-removal.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Notify/Email.pm') {
+            $tests{$_} = 1 for qw(
+                t/07-notify-email.t
+                t/18-integration-notifiers.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Notify/File.pm') {
+            $tests{$_} = 1 for qw(
+                t/09-notify-file.t
+                t/18-integration-notifiers.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Notify/Webhook.pm') {
+            $tests{$_} = 1 for qw(
+                t/08-notify-webhook.t
+                t/18-integration-notifiers.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Notify/OTLP.pm') {
+            $tests{$_} = 1 for qw(
+                t/19-notify-otlp.t
+                t/18-integration-notifiers.t
+            );
+            next;
+        }
+        if ($file eq 'lib/ChangeTrack/Notify/Base.pm') {
+            $tests{$_} = 1 for qw(
+                t/07-notify-email.t
+                t/08-notify-webhook.t
+                t/09-notify-file.t
+                t/18-integration-notifiers.t
+                t/19-notify-otlp.t
+            );
+            next;
+        }
+        if ($file eq 'bin/changetrack-ng') {
+            $tests{$_} = 1 for qw(
+                t/16-subcommands.t
+                t/17-precommit-checks.t
+                t/22-verbose-debug.t
+            );
+            next;
+        }
+        if ($file eq 'tools/test-dirty') {
+            $tests{'t/38-test-dirty.t'} = 1;
+            next;
+        }
+        if ($file eq 'tools/bump-version') {
+            $tests{'t/39-bump-version.t'} = 1;
+            next;
+        }
+        if ($file eq 'tools/manifest-query') {
+            $tests{'t/28-manifest-query.t'} = 1;
+            next;
+        }
+        if ($file eq 'Makefile') {
+            $tests{'t/17-precommit-checks.t'} = 1;
+            next;
+        }
+        if ($file =~ m{\.(?:md|conf|toml|pod|txt)$}) {
+            $docs_or_config{$file} = 1;
+            next;
+        }
+    }
+
+    my @existing = sort grep { -f File::Spec->catfile($repo, $_) } keys %tests;
+    return (\@existing, \%docs_or_config);
+}

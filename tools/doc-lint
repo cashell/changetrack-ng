@@ -6,7 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 ########################################################################
 # tools/doc-lint - Cross-references CLI subcommands with documentation in
-#   bin/changetrack-ng, man/changetrack-ng.8, CLAUDE.md, and README.md.
+#   bin/changetrack-ng, man/changetrack-ng.8, AGENTS.md, and README.md.
 #
 
 use strict;
@@ -21,11 +21,15 @@ my $repo_dir   = abs_path(File::Spec->catdir($script_dir, '..'));
 
 my $bin_file    = File::Spec->catfile($repo_dir, 'bin', 'changetrack-ng');
 my $man_file    = File::Spec->catfile($repo_dir, 'man', 'changetrack-ng.8');
-my $claude_file = File::Spec->catfile($repo_dir, 'CLAUDE.md');
+my $agent_file = File::Spec->catfile($repo_dir, 'AGENTS.md');
+if (!-f $agent_file) {
+    my $legacy_file = File::Spec->catfile($repo_dir, 'CLAUDE.md');
+    $agent_file = $legacy_file if -f $legacy_file;
+}
 my $readme_file = File::Spec->catfile($repo_dir, 'README.md');
 
 # Validate existence of expected files
-for my $file ($bin_file, $man_file, $readme_file) {
+for my $file ($bin_file, $man_file, $agent_file, $readme_file) {
     if (!-f $file) {
         die "Error: Required file not found: $file\n";
     }
@@ -41,8 +45,7 @@ check_source('bin/changetrack-ng header comment', parse_bin_header($bin_file), $
 check_source('bin/changetrack-ng usage help',     parse_bin_usage($bin_file),  $canonical);
 check_source('bin/changetrack-ng inline POD',     parse_bin_pod($bin_file),    $canonical);
 check_source('man/changetrack-ng.8 manual page',  parse_man_page($man_file),   $canonical);
-check_source('CLAUDE.md architectural reference', parse_claude_md($claude_file), $canonical)
-    if -f $claude_file;
+check_source('AGENTS.md architectural reference', parse_agent_md($agent_file), $canonical);
 check_source('README.md subcommands table',       parse_readme_md($readme_file), $canonical);
 
 if ($failed) {
@@ -175,8 +178,8 @@ sub parse_man_page {
     return \@cmds;
 }
 
-# parse_claude_md -- Extract subcommands from CLAUDE.md
-sub parse_claude_md {
+# parse_agent_md -- Extract subcommands from AGENTS.md (or legacy CLAUDE.md)
+sub parse_agent_md {
     my ($file) = @_;
     open my $fh, '<', $file or die "Cannot open $file: $!\n";
     my @cmds;
@@ -191,6 +194,11 @@ sub parse_claude_md {
     close $fh;
     @cmds = sort @cmds;
     return \@cmds;
+}
+
+# parse_claude_md -- Backwards compatibility alias for parse_agent_md
+sub parse_claude_md {
+    goto &parse_agent_md;
 }
 
 # parse_readme_md -- Extract subcommands from README.md Subcommands table

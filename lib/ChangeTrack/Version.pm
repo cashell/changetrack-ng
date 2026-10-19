@@ -24,7 +24,7 @@ from this file via:
     our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
 When bumping the version, update this file, C<Makefile>, C<CHANGELOG.md>,
-C<packaging/>, and C<PRODUCT.md> in sync.  See C<CLAUDE.md> for the full
+C<packaging/>, and C<PRODUCT.md> in sync.  See C<AGENTS.md> for the full
 list of files to keep in sync.
 
 =cut

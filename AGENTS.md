@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to AI coding assistants (Claude, Copilot, etc.) when working with code in this repository.
+This file provides guidance to AI coding assistants (Claude, Copilot, Gemini, etc.) when working with code in this repository.
 
 ## What This Is
 
@@ -9,8 +9,11 @@ This file provides guidance to AI coding assistants (Claude, Copilot, etc.) when
 ## Commands
 
 ```bash
+make dev-check             # Fast 2-second pre-flight check (syntax, config, docs, manifest)
+make test-dirty            # Run only tests matching modified/uncommitted files
 make test                  # Run full test suite via `prove -l t/` (also runs config-lint)
 prove -l t/06-vcs-git.t    # Run a single test file
+make bump-version VERSION=x.y.z  # Atomically bump version across all 8 targets
 make config-lint           # Verify installed default config == canonical -default example (File::Compare)
 make install               # Install to /usr/local (override with PREFIX=...)
 make install-hooks         # Install package manager hooks (auto-detects apt/dnf/pacman)
@@ -67,6 +70,16 @@ No build step required — Perl modules are used directly from `lib/`.
 ### Command execution safety
 All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with list-form arguments (never shell interpolation). This is a deliberate security boundary — preserve it. When `$ChangeTrack::Util::DEBUG` is set (via `set_debug(1)`), `run_cmd()` emits `[DEBUG] exec:` lines to STDERR showing every command invoked.
 
+### Pluggable VCS backend invariants
+- **Whole-repo mirror model vs per-file colon-encoding:**
+  - `Git`, `Fossil`, `SVN`, and `Mercurial` mirror the target filesystem hierarchy inside the storage directory (`output_dir`) and commit full file trees or batched additions.
+  - `RCS` uses a flat directory layout where absolute paths are converted to colon-separated filenames (e.g., `/etc/hosts` becomes `:etc:hosts,v`). Commits are executed immediately per-file (`ci -l`).
+- **Backend invocation rules:**
+  - `Fossil`: MUST use `--chdir <dir>` flag for every command (avoid calling Perl's process-global `chdir()`).
+  - `Mercurial`: MUST use `hg -R <dir>` on all command invocations (avoiding `chdir()`).
+  - `Subversion`: Creates local repos via `svnadmin create` and references working copies via `file://<repo_path>` syntax.
+  - `Git`: Executes commands using `--git-dir` and `--work-tree` or inside repository paths safely.
+
 ### Diagnostic output tiers
 Three levels, each implying the ones below it:
 
@@ -84,20 +97,18 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 - `[notifier:*]` keys are per-instance scalars stored in `$cfg->notifiers->{<type>}` as an arrayref of instance hashrefs
 - When adding a new global key, decide scalar vs array-valued and update `%ARRAY_GLOBAL_KEYS` accordingly
 
-### Sensitive file detection
-- Auto-detect: `(mode & 0004) == 0` means sensitive (no world-read)
-- `sensitive_auto` controls whether auto-detection is active (default: on)
-- `sensitive_notify` controls whether diffs appear in notifications (`suppress`|`allow`)
-- These two settings are orthogonal: auto affects _detection_, notify affects _output_
+### Sensitive file detection and diff suppression
+- **Auto-detection (`sensitive_auto`):** When enabled (default: on), files with mode `(mode & 0004) == 0` (no world-read, e.g. `/etc/shadow`, private keys) are classified as sensitive.
+- **Diff suppression (`sensitive_notify`):** Controls whether diffs for sensitive files appear in notification payloads (`suppress` [default] | `allow`).
+- **Orthogonality:** `sensitive_auto` governs *detection/classification* in `Runner.pm`; `sensitive_notify` governs *presentation/redaction* in `Report.pm` and notifiers.
 
-### Symlink handling
-- Metadata: `lstat()` + `readlink()` → records link target in JSON
-- VCS mirror: `sync_mirror_path()` writes a text file with `__CHANGTRACK_NG_SYMLINK_TARGET__=<target>`
-- Restore: `restore_mirror_path()` reads this prefix and recreates symlink
-- This is consistent but non-obvious; document any changes
+### Symlink handling mechanics
+- **Metadata:** Recorded in `.changetrack-metadata` JSONL sidecar via `lstat()` + `readlink()`, capturing target path, uid/gid, and mode.
+- **VCS mirror:** `Util::sync_mirror_path()` writes a regular file with the exact marker prefix `__CHANGTRACK_NG_SYMLINK_TARGET__=<target_path>` rather than a raw symlink (avoiding VCS symlink discrepancies).
+- **Restoration:** `Util::restore_mirror_path()` parses the marker prefix and recreates the symbolic link with `symlink()`.
 
 ### Metadata atomicity
-`Metadata::save()` uses tmpfile + rename pattern. This is correct and intentional.
+`Metadata::save()` uses a sibling temporary file (`.changetrack-metadata.tmp.PID`) plus atomic `rename()`. This is correct and intentional.
 
 ## Known Gaps to Fix (see TODO.md)
 
@@ -242,17 +253,18 @@ All user-visible changes, interface additions, and behavior changes must be docu
 **Single-source version:** `lib/ChangeTrack/Version.pm` is the Perl-side authority (`our $VERSION = '...'`).
 All other `lib/` modules use `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`.
 
-On every version bump, update **all** of the following in sync:
+On every version bump, update **all 8** of the following in sync (automated via `make bump-version VERSION=x.y.z` / `tools/bump-version`):
 
-| File | What to update |
-|---|---|
-| `lib/ChangeTrack/Version.pm` | `our $VERSION = '...'` |
-| `Makefile` | `VERSION := ...` |
-| `CHANGELOG.md` | Move `[Unreleased]` items into a new `[x.y.z] - YYYY-MM-DD` section |
-| `packaging/rpm/changetrack-ng.spec` | `Version:` field and a new `%changelog` entry |
-| `packaging/debian/changelog` | New entry in `dpkg-style` format (version, distro, urgency, details, maintainer line) |
-| `PRODUCT.md` | `Version:` header in the frontmatter |
-| `MANIFEST.toml` | `[meta] version` and `updated` fields |
+| Target | File | What to update |
+|---|---|---|
+| 1 | `lib/ChangeTrack/Version.pm` | `our $VERSION = '...'` (Perl-side authority) |
+| 2 | `Makefile` | `VERSION := ...` (build-system authority) |
+| 3 | `CHANGELOG.md` | Move `[Unreleased]` items into a new `[x.y.z] - YYYY-MM-DD` section |
+| 4 | `packaging/debian/changelog` | New entry in `dpkg-style` format (version, distro, urgency, details, maintainer) |
+| 5 | `packaging/rpm/changetrack-ng.spec` | `Version:` field, reset `Release: 1%{?dist}`, prepend `%changelog` |
+| 6 | `PRODUCT.md` | `Version:` header in frontmatter |
+| 7 | `MANIFEST.toml` | `[meta] version` and `updated` fields |
+| 8 | `README.md` | Inline release/tarball version references |
 
 ## Copyright and Licensing
 

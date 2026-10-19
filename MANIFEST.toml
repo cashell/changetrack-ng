@@ -490,6 +490,18 @@ dist        = ["full"]
 tags        = ["test"]
 tests       = ["review-findings", "ChangeTrack::Runner", "ChangeTrack::Metadata", "ChangeTrack::Notify::Base"]
 
+[test."t/38-test-dirty.t"]
+description = "Tests for tools/test-dirty fast-feedback test selector"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["tools/test-dirty"]
+
+[test."t/39-bump-version.t"]
+description = "Tests for tools/bump-version atomic version authority orchestrator"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["tools/bump-version"]
+
 ########################################################################
 # test_support
 ########################################################################
@@ -647,13 +659,13 @@ tags        = ["doc", "user"]
 [dev_doc."PLAN.md"]
 description = "Roadmap and implementation phases (large; read only when phase details are needed)"
 tags        = ["dev-doc"]
-notes       = "52KB+; CLAUDE.md instructs agents not to read this by default"
+notes       = "52KB+; AGENTS.md instructs agents not to read this by default"
 
 [dev_doc."TODO.md"]
 description = "Known gaps, deferred work, and per-module improvement notes"
 tags        = ["dev-doc"]
 
-[dev_doc."CLAUDE.md"]
+[dev_doc."AGENTS.md"]
 description = "AI assistant instructions: architecture quick-ref, patterns, constraints, version bump checklist"
 tags        = ["dev-doc", "agent"]
 
@@ -863,6 +875,18 @@ description = "Perl script for automated out-of-tree package building (tarballs,
 dist        = ["full"]
 tags        = ["build", "packaging"]
 notes       = "Invoked by make deb, make rpm, make packages, or standalone CLI"
+
+[build."tools/test-dirty"]
+description = "Perl script mapping uncommitted and dirty working copy files to targeted unit tests"
+dist        = ["full"]
+tags        = ["build", "test"]
+notes       = "Invoked via make test-dirty for sub-2-second test feedback"
+
+[build."tools/bump-version"]
+description = "Perl script for atomic version synchronization across all 8 version authority files"
+dist        = ["full"]
+tags        = ["build", "release"]
+notes       = "Invoked via make bump-version VERSION=x.y.z"
 
 ########################################################################
 # legal
