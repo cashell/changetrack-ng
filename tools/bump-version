@@ -1,0 +1,396 @@
+#!/usr/bin/perl
+# vim: ts=4 sw=4 et sm ai smd sc bg=dark
+# perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
+########################################################################
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+########################################################################
+# tools/bump-version - Atomic orchestrator for synchronizing version
+#   strings across all 8 project version authority files.
+#
+use strict;
+use warnings;
+use Getopt::Long qw(:config no_auto_abbrev bundling);
+use File::Spec;
+use File::Basename qw(dirname basename);
+use POSIX qw(strftime);
+use Cwd qw(abs_path);
+
+# Resolve paths relative to the script directory
+my $script_dir = dirname(abs_path($0));
+my $repo_dir   = abs_path(File::Spec->catdir($script_dir, '..'));
+
+my %opt = (
+    revision => 1,
+);
+
+GetOptions(
+    \%opt,
+    'dry-run|n'    => \$opt{dry_run},
+    'show'         => \$opt{show},
+    'revision|r=s' => \$opt{revision},
+    'date=s'       => \$opt{date},
+    'force|f'      => \$opt{force},
+    'help|h'       => \$opt{help},
+) or die "Usage: $0 [--dry-run|-n] [--show] [--revision <rev>] [--date YYYY-MM-DD] [--force] <new-version>\n";
+
+if ($opt{help}) {
+    print <<'EOF';
+Usage: tools/bump-version [OPTIONS] <new-version>
+
+Atomically synchronizes release version strings across all 8 repository targets.
+
+Target Files:
+  1. lib/ChangeTrack/Version.pm        (Perl module authority: our $VERSION)
+  2. Makefile                          (Build authority: VERSION :=)
+  3. CHANGELOG.md                      (Converts [Unreleased] to new version section)
+  4. packaging/debian/changelog        (Prepends dpkg-format changelog stanza)
+  5. packaging/rpm/changetrack-ng.spec (Updates Version/Release & %changelog)
+  6. PRODUCT.md                        (Updates frontmatter Version:)
+  7. MANIFEST.toml                     (Updates [meta] version and updated fields)
+  8. README.md                         (Updates inline release/tarball references)
+
+Options:
+  -n, --dry-run          Display planned modifications without writing files
+      --show             Display current version across all authority files
+  -r, --revision <rev>   Package build revision (default: 1)
+      --date <date>      Release date in YYYY-MM-DD format (default: today)
+  -f, --force            Bypass SemVer monotonicity check
+  -h, --help             Display this help message
+EOF
+    exit 0;
+}
+
+my $targets = get_target_paths($repo_dir);
+
+if ($opt{show}) {
+    show_current_versions($targets);
+    exit 0;
+}
+
+my $new_version = shift @ARGV;
+if (!$new_version) {
+    die "Error: Missing new version argument.\nUsage: $0 [options] <new-version>\n";
+}
+
+if ($new_version !~ /^\d+\.\d+\.\d+$/) {
+    die "Error: Invalid version format '$new_version'. Must be SemVer triplet (e.g. 0.8.0)\n";
+}
+
+# Determine dates
+my ($year, $month, $day);
+if ($opt{date}) {
+    if ($opt{date} !~ /^(\d{4})-(\d{2})-(\d{2})$/) {
+        die "Error: Invalid date format '$opt{date}'. Expected YYYY-MM-DD.\n";
+    }
+    ($year, $month, $day) = ($1, $2, $3);
+} else {
+    my @t = gmtime();
+    $year  = $t[5] + 1900;
+    $month = sprintf("%02d", $t[4] + 1);
+    $day   = sprintf("%02d", $t[3]);
+    $opt{date} = "$year-$month-$day";
+}
+
+my $time_epoch = POSIX::mktime(0, 0, 0, $day, $month - 1, $year - 1900);
+my $rfc2822_date = strftime("%a, %d %b %Y 00:00:00 +0000", gmtime($time_epoch));
+my $rpm_date     = strftime("%a %b %d %Y", gmtime($time_epoch));
+
+# Extract current version from Version.pm
+my $current_version = extract_current_version($targets->{version_pm});
+
+if (!$opt{force}) {
+    if (!is_version_greater($new_version, $current_version)) {
+        die "Error: New version '$new_version' must be greater than current version '$current_version'. (Use --force to override)\n";
+    }
+}
+
+# Prepare transformed contents for all 8 files
+my %updated_contents;
+
+# 1. lib/ChangeTrack/Version.pm
+$updated_contents{version_pm} = transform_version_pm($targets->{version_pm}, $new_version);
+
+# 2. Makefile
+$updated_contents{makefile} = transform_makefile($targets->{makefile}, $new_version);
+
+# 3. CHANGELOG.md
+$updated_contents{changelog} = transform_changelog($targets->{changelog}, $new_version, $opt{date});
+
+# 4. packaging/debian/changelog
+$updated_contents{deb_changelog} = transform_deb_changelog(
+    $targets->{deb_changelog},
+    $new_version,
+    $opt{revision},
+    $rfc2822_date
+);
+
+# 5. packaging/rpm/changetrack-ng.spec
+$updated_contents{rpm_spec} = transform_rpm_spec(
+    $targets->{rpm_spec},
+    $new_version,
+    $opt{revision},
+    $rpm_date
+);
+
+# 6. PRODUCT.md
+$updated_contents{product_md} = transform_product_md($targets->{product_md}, $new_version);
+
+# 7. MANIFEST.toml
+$updated_contents{manifest} = transform_manifest_toml($targets->{manifest}, $new_version, $opt{date});
+
+# 8. README.md
+$updated_contents{readme} = transform_readme($targets->{readme}, $current_version, $new_version);
+
+# Dry-run or atomic commit
+if ($opt{dry_run}) {
+    print "DRY RUN: Planned version synchronization ($current_version -> $new_version):\n\n";
+    for my $key (qw(version_pm makefile changelog deb_changelog rpm_spec product_md manifest readme)) {
+        my $path = $targets->{$key};
+        print "=== Target: $path ===\n";
+        show_diff_summary($path, $updated_contents{$key});
+        print "\n";
+    }
+    exit 0;
+}
+
+# Atomic write using tempfiles and rename
+my @tempfiles;
+eval {
+    for my $key (keys %updated_contents) {
+        my $dest = $targets->{$key};
+        next if !-f $dest;
+        my $tmp = "$dest.tmp.$$";
+        open my $out, '>', $tmp or die "Cannot write to temporary file $tmp: $!\n";
+        print $out $updated_contents{$key};
+        close $out or die "Cannot close temporary file $tmp: $!\n";
+        push @tempfiles, { tmp => $tmp, dest => $dest };
+    }
+
+    # Atomically rename each file
+    for my $item (@tempfiles) {
+        rename($item->{tmp}, $item->{dest})
+            or die "Cannot replace $item->{dest} with $item->{tmp}: $!\n";
+    }
+};
+
+if ($@) {
+    my $err = $@;
+    # Clean up tempfiles on failure
+    for my $item (@tempfiles) {
+        unlink $item->{tmp} if -f $item->{tmp};
+    }
+    die "Version bump aborted and rolled back due to error: $err\n";
+}
+
+print "Successfully updated version from $current_version to $new_version across all targets.\n";
+exit 0;
+
+########################################################################
+# Transformation Functions
+########################################################################
+
+# get_target_paths -- Define dictionary of version target filepaths
+sub get_target_paths {
+    my ($base) = @_;
+    return {
+        version_pm    => File::Spec->catfile($base, 'lib', 'ChangeTrack', 'Version.pm'),
+        makefile      => File::Spec->catfile($base, 'Makefile'),
+        changelog     => File::Spec->catfile($base, 'CHANGELOG.md'),
+        deb_changelog => File::Spec->catfile($base, 'packaging', 'debian', 'changelog'),
+        rpm_spec      => File::Spec->catfile($base, 'packaging', 'rpm', 'changetrack-ng.spec'),
+        product_md    => File::Spec->catfile($base, 'PRODUCT.md'),
+        manifest      => File::Spec->catfile($base, 'MANIFEST.toml'),
+        readme        => File::Spec->catfile($base, 'README.md'),
+    };
+}
+
+# extract_current_version -- Read $VERSION authority from Version.pm
+sub extract_current_version {
+    my ($file) = @_;
+    open my $fh, '<', $file or die "Cannot open $file: $!\n";
+    my $ver;
+    while (<$fh>) {
+        if (/our\s+\$VERSION\s*=\s*'([^']+)'/) {
+            $ver = $1;
+            last;
+        }
+    }
+    close $fh;
+    die "Could not determine current version from $file\n" if !defined $ver;
+    return $ver;
+}
+
+# is_version_greater -- Check SemVer triplet ordering (v1 > v2)
+sub is_version_greater {
+    my ($v1, $v2) = @_;
+    my @p1 = split /\./, $v1;
+    my @p2 = split /\./, $v2;
+    for (my $i = 0; $i < 3; $i++) {
+        $p1[$i] //= 0;
+        $p2[$i] //= 0;
+        return 1 if $p1[$i] > $p2[$i];
+        return 0 if $p1[$i] < $p2[$i];
+    }
+    return 0;
+}
+
+# read_file_content -- Read entire file into a string
+sub read_file_content {
+    my ($path) = @_;
+    open my $fh, '<', $path or die "Cannot open $path: $!\n";
+    local $/;
+    my $content = <$fh>;
+    close $fh;
+    return $content;
+}
+
+# transform_version_pm -- Update our $VERSION = '...' in Version.pm
+sub transform_version_pm {
+    my ($path, $ver) = @_;
+    my $text = read_file_content($path);
+    $text =~ s/(our\s+\$VERSION\s*=\s*')[^']+(';)/${1}${ver}${2}/
+        or die "Failed to update version in $path\n";
+    return $text;
+}
+
+# transform_makefile -- Update VERSION := in Makefile
+sub transform_makefile {
+    my ($path, $ver) = @_;
+    my $text = read_file_content($path);
+    $text =~ s/(^VERSION\s*:=\s*)\S+/${1}${ver}/m
+        or die "Failed to update VERSION in $path\n";
+    return $text;
+}
+
+# transform_changelog -- Convert ## [Unreleased] to ## [x.y.z] - date and add new empty [Unreleased]
+sub transform_changelog {
+    my ($path, $ver, $date) = @_;
+    my $text = read_file_content($path);
+    my $new_section = "## [Unreleased]\n\n## [$ver] - $date";
+    $text =~ s/##\s+\[Unreleased\]\s*\n/$new_section\n/
+        or die "Failed to locate ## [Unreleased] section in $path\n";
+    return $text;
+}
+
+# transform_deb_changelog -- Prepend new Debian changelog stanza
+sub transform_deb_changelog {
+    my ($path, $ver, $rev, $rfc_date) = @_;
+    my $text = read_file_content($path);
+    my $stanza = <<EOF;
+changetrack-ng ($ver-$rev) unstable; urgency=medium
+
+  * New upstream release $ver.
+
+ -- Christopher Cashell <topher\@zyp.org>  $rfc_date
+
+EOF
+    return $stanza . $text;
+}
+
+# transform_rpm_spec -- Update Version, Release, and prepend %changelog entry
+sub transform_rpm_spec {
+    my ($path, $ver, $rev, $rpm_date) = @_;
+    my $text = read_file_content($path);
+    $text =~ s/(^Version:\s*)\S+/${1}${ver}/m
+        or die "Failed to update Version: in $path\n";
+    $text =~ s/(^Release:\s*)\S+/${1}${rev}%{?dist}/m
+        or die "Failed to update Release: in $path\n";
+
+    my $entry = <<EOF;
+%changelog
+* $rpm_date Christopher Cashell <topher\@zyp.org> - $ver-$rev
+- New upstream release $ver
+
+EOF
+    $text =~ s/^%changelog\s*\n/$entry/m
+        or die "Failed to locate %changelog in $path\n";
+    return $text;
+}
+
+# transform_product_md -- Update frontmatter Version: in PRODUCT.md
+sub transform_product_md {
+    my ($path, $ver) = @_;
+    my $text = read_file_content($path);
+    $text =~ s/(^Version:\s*)\S+/${1}${ver}/m
+        or die "Failed to update Version: in $path\n";
+    return $text;
+}
+
+# transform_manifest_toml -- Update version and updated in [meta] table
+sub transform_manifest_toml {
+    my ($path, $ver, $date) = @_;
+    my $text = read_file_content($path);
+    $text =~ s/(^version\s*=\s*")[^"]+(")/${1}${ver}${2}/m
+        or die "Failed to update version in [meta] in $path\n";
+    $text =~ s/(^updated\s*=\s*")[^"]+(")/${1}${date}${2}/m
+        or die "Failed to update updated in [meta] in $path\n";
+    return $text;
+}
+
+# transform_readme -- Update any inline version strings in README.md
+sub transform_readme {
+    my ($path, $old_ver, $new_ver) = @_;
+    return '' if !-f $path;
+    my $text = read_file_content($path);
+    $text =~ s/changetrack-ng-$old_ver/changetrack-ng-$new_ver/g;
+    return $text;
+}
+
+# show_diff_summary -- Output simplified diff for --dry-run
+sub show_diff_summary {
+    my ($orig_path, $new_content) = @_;
+    if (!-f $orig_path) {
+        print "  File not found on disk: $orig_path\n";
+        return;
+    }
+    my $orig_content = read_file_content($orig_path);
+    my @orig_lines = split /\n/, $orig_content;
+    my @new_lines  = split /\n/, $new_content;
+
+    my $diff_count = 0;
+    for (my $i = 0; $i < @orig_lines || $i < @new_lines; $i++) {
+        my $o = $orig_lines[$i] // '';
+        my $n = $new_lines[$i] // '';
+        if ($o ne $n) {
+            print "  Line " . ($i + 1) . ":\n";
+            print "    - $o\n" if length $o;
+            print "    + $n\n" if length $n;
+            $diff_count++;
+            last if $diff_count >= 5;
+        }
+    }
+    if ($diff_count == 0) {
+        print "  (No changes detected)\n";
+    }
+}
+
+# show_current_versions -- Print current version across targets
+sub show_current_versions {
+    my ($targets) = @_;
+    print sprintf("%-38s %s\n", "Target", "Current Version");
+    print '-' x 60 . "\n";
+    for my $key (qw(version_pm makefile changelog deb_changelog rpm_spec product_md manifest)) {
+        my $path = $targets->{$key};
+        my $ver  = 'unknown';
+        if (-f $path) {
+            my $content = read_file_content($path);
+            if ($key eq 'version_pm' && $content =~ /our\s+\$VERSION\s*=\s*'([^']+)'/) {
+                $ver = $1;
+            } elsif ($key eq 'makefile' && $content =~ /^VERSION\s*:=\s*(\S+)/m) {
+                $ver = $1;
+            } elsif ($key eq 'changelog' && $content =~ /##\s+\[([^\]]+)\]\s+-\s+(\d{4}-\d{2}-\d{2})/) {
+                $ver = "$1 (latest: $2)";
+            } elsif ($key eq 'deb_changelog' && $content =~ /changetrack-ng\s+\(([^)]+)\)/) {
+                $ver = $1;
+            } elsif ($key eq 'rpm_spec' && $content =~ /^Version:\s*(\S+)/m) {
+                $ver = $1;
+            } elsif ($key eq 'product_md' && $content =~ /^Version:\s*(\S+)/m) {
+                $ver = $1;
+            } elsif ($key eq 'manifest' && $content =~ /^version\s*=\s*"([^"]+)"/m) {
+                $ver = $1;
+            }
+        }
+        print sprintf("%-38s %s\n", basename($path), $ver);
+    }
+}

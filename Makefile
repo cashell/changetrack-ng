@@ -22,13 +22,16 @@ RELEASE_DIR ?= $(HOME)/dev/releases/$(NAME)
 
 PERL       ?= perl
 
-.PHONY: all test config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra deb rpm packages release-artifacts clean-build
+.PHONY: all test test-dirty bump-version dev-check syntax-check config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra deb rpm packages release-artifacts clean-build
 
 all:
 	@echo "$(NAME) $(VERSION)"
 	@echo ""
 	@echo "Targets:"
+	@echo "  make dev-check       Run fast 2-second pre-flight checks (syntax, config, docs, manifest)"
+	@echo "  make test-dirty      Run unit tests matching uncommitted or dirty files"
 	@echo "  make test            Run the test suite (includes config-lint and doc-lint)"
+	@echo "  make bump-version    Atomically bump version across 8 targets (VERSION=x.y.z)"
 	@echo "  make config-lint     Verify the installed default config matches the canonical -default example"
 	@echo "  make doc-lint        Check for subcommand documentation drift across source and manuals"
 	@echo "  make install         Install (PREFIX=$(PREFIX))"
@@ -58,6 +61,26 @@ all:
 
 test: config-lint doc-lint
 	prove -l t/
+
+test-dirty:
+	@$(PERL) tools/test-dirty
+
+bump-version:
+	@test -n "$(VERSION)" || { echo "Usage: make bump-version VERSION=x.y.z"; exit 1; }
+	@$(PERL) tools/bump-version $(VERSION)
+
+# syntax-check -- Verify that all Perl scripts and modules compile cleanly.
+syntax-check:
+	@$(PERL) -c bin/changetrack-ng >/dev/null 2>&1 || { $(PERL) -c bin/changetrack-ng; exit 1; }
+	@for f in lib/ChangeTrack/*.pm lib/ChangeTrack/VCS/*.pm lib/ChangeTrack/Notify/*.pm tools/*; do \
+		test -f "$$f" || continue; \
+		$(PERL) -Ilib -c "$$f" >/dev/null 2>&1 || { echo "Syntax error in $$f:"; $(PERL) -Ilib -c "$$f"; exit 1; }; \
+	done
+	@echo "syntax-check: OK (all Perl source files compile cleanly)"
+
+# dev-check -- Fast consolidated pre-flight validation for developer iterations.
+dev-check: syntax-check config-lint doc-lint manifest-lint manifest-extra
+	@echo "dev-check: OK (all pre-flight developer checks passed successfully)"
 
 doc-lint:
 	@$(PERL) tools/doc-lint
