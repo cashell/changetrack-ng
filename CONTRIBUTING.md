@@ -72,7 +72,7 @@ ChangeTrack::Runner - Main orchestration engine
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 #######################################################################
-# 01-config-v2.t - Tests for v2 INI config parsing (ChangeTrack::Config).
+# 06-vcs-git.t - Tests for Git VCS backend (ChangeTrack::VCS::Git).
 #
 use strict;
 use warnings;

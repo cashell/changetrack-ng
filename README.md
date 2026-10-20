@@ -29,7 +29,7 @@ compatibility debt.
 
 - **Five VCS backends:** Choose RCS for per-file versioning or Git, Fossil, SVN, and Mercurial for global tree mirrors.
 - **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log. 
-- **Sensitive File Protection:** Automatic mode-based detection. Files with no group/world read bit (`0600` / `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
+- **Sensitive File Protection:** Automatic mode-based detection. Files without world-read permission (`(mode & 0004) == 0`, e.g. `0600` or `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
 - **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
 - **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).
 - **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage—all execution is polling-based or hook-driven.
@@ -317,7 +317,7 @@ First-class user targets:
 
 ```sh
 make test          # Run full test suite (requires prove)
-prove -l t/01-config.t   # Run a single test file
+prove -l t/06-vcs-git.t  # Run a single test file
 make manifest-lint # Validate MANIFEST.toml (checks all listed files exist)
 ```
 

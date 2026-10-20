@@ -131,7 +131,7 @@ C<udev/hwdb.bin> C<lvm/cache> C<lvm/archive>
 =item B<sensitive_auto> = C<0> | C<1>
 
 Auto-detect sensitive files by mode.  A file is treated as sensitive if it
-has no group or world read bit (mode & 0044 == 0), e.g. mode C<0600>.
+has no world read bit (mode & 0004 == 0), e.g. mode C<0600> or C<0640>.
 Default: C<1>.
 
 =item B<sensitive_notify> = C<suppress> | C<allow>
@@ -210,17 +210,6 @@ Every notifier section must include:
 Disabled instances (C<enabled = false>) are discarded at parse time and produce
 no runtime object.
 
-=head2 Common key
-
-=over 4
-
-=item B<sensitive_notify> = C<suppress> | C<allow>
-
-Per-notifier override of the global C<sensitive_notify> setting.  When set,
-takes precedence over the global value for this notifier instance only.
-
-=back
-
 =head2 Email notifier (type: email)
 
 Pipes a plain-text diff report to C<sendmail>.
@@ -270,6 +259,12 @@ HTTP request timeout.  Default: C<10>.
 
 Disable TLS certificate verification.  Use only in controlled environments.
 Default: C<0>.
+
+=item B<max_diff_bytes> = I<integer>
+
+Cap the byte length of the diff text in the POST payload.  C<0> means
+unlimited (no truncation, the default).  Sensitive-suppressed diffs are
+omitted entirely.
 
 =back
 
@@ -456,6 +451,11 @@ Overrides the C<endpoint> key in any C<[notifier:otlp:*]> section when set.
 
 Overrides both C<OTEL_EXPORTER_OTLP_ENDPOINT> and the C<endpoint> config key
 for the logs signal specifically (highest precedence).
+
+=item C<OTEL_EXPORTER_OTLP_HEADERS>
+
+Overrides the C<headers> key in any C<[notifier:otlp:*]> section when set.
+Recommended for bearer tokens and authentication credentials.
 
 =back
 
