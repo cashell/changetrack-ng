@@ -67,6 +67,16 @@ built-in defaults plus any patterns in the config C<ignore> key.
 
 Config file path.  Default: C</etc/changetrack-ng/changetrack-ng.conf>.
 
+=item B<--system>
+
+Load system config (F</etc/changetrack-ng/changetrack-ng.conf>).  Default when no
+path or scope flag is given.  Mutually exclusive with B<--user>.
+
+=item B<--user>
+
+Load user config (F<$HOME/.config/changetrack-ng/changetrack-ng.conf>).  Mutually
+exclusive with B<--system>.  Requires C<HOME> environment variable to be set.
+
 =item B<-m>, B<--message> I<msg>
 
 Annotation string appended to the VCS commit message.  Used by package
@@ -122,7 +132,7 @@ Print a usage summary and exit.
 
 =item B<0>
 
-Success, or lock held (silent skip).
+Success, or lock held / lock timeout exceeded (silent skip).
 
 =item B<1>
 
@@ -136,9 +146,20 @@ Runtime error (VCS failure, unhandled exception).
 
 Usage error (bad arguments, config parse failure, unknown subcommand).
 
-=item B<75>
+=back
 
-Lock timeout exceeded.
+=head1 ENVIRONMENT
+
+=over 4
+
+=item C<CHANGETRACK_CONFIG>
+
+Path to configuration file.  Overrides C<--system> and C<--user>, but is
+overridden by explicit B<-c> / B<--config>.
+
+=item C<HOME>
+
+User home directory, used to resolve user config when B<--user> is specified.
 
 =back
 

@@ -36,6 +36,8 @@ and are rethrown so the runner can record them as warnings.
 Send a heartbeat notification (no changes detected).  Only called when the
 notifier's heartbeat option is enabled.
 
+=back
+
 =head1 SUBCLASS HELPERS
 
 =over 4

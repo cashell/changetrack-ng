@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 ########################################################################
-# tools/doc-lint - Cross-references CLI subcommands with documentation in
-#   bin/changetrack-ng, man/changetrack-ng.8, AGENTS.md, and README.md.
+# tools/doc-lint - Documentation validation: verifies CLI subcommands sync,
+#   POD syntax across modules and man pages, and relative markdown links.
 #
 
 use strict;
@@ -14,6 +14,8 @@ use warnings;
 use File::Spec;
 use File::Basename qw(dirname);
 use Cwd qw(abs_path);
+use Pod::Checker qw(podchecker);
+use File::Find qw(find);
 
 # Resolve paths relative to the script directory
 my $script_dir = dirname(abs_path($0));
@@ -40,7 +42,7 @@ my $canonical = parse_dispatch_table($bin_file);
 
 my $failed = 0;
 
-# Run checks across all documented sources
+# 1. Run checks across all documented subcommand sources
 check_source('bin/changetrack-ng header comment', parse_bin_header($bin_file), $canonical);
 check_source('bin/changetrack-ng usage help',     parse_bin_usage($bin_file),  $canonical);
 check_source('bin/changetrack-ng inline POD',     parse_bin_pod($bin_file),    $canonical);
@@ -48,12 +50,18 @@ check_source('man/changetrack-ng.8 manual page',  parse_man_page($man_file),   $
 check_source('AGENTS.md architectural reference', parse_agent_md($agent_file), $canonical);
 check_source('README.md subcommands table',       parse_readme_md($readme_file), $canonical);
 
+# 2. Check POD syntax across all modules, scripts, and manual pages
+check_pod_syntax($repo_dir);
+
+# 3. Check relative links across all documentation markdown files
+check_markdown_links($repo_dir);
+
 if ($failed) {
-    warn "\ndoc-lint: ERROR -- subcommand documentation drift detected!\n";
+    warn "\ndoc-lint: ERROR -- documentation validation failed!\n";
     exit 1;
 }
 
-print "doc-lint: OK (all sources in sync with dispatch table)\n";
+print "doc-lint: OK (subcommands sync, POD syntax, and markdown links verified)\n";
 exit 0;
 
 ########################################################################
@@ -258,5 +266,94 @@ sub check_source {
         warn "  Expected (canonical): " . join(', ', @canonical) . "\n";
         warn "  Found:                " . (scalar @found ? join(', ', @found) : '(none)') . "\n";
         $failed = 1;
+    }
+}
+
+# check_pod_syntax -- Run Pod::Checker across bin, man pages, and all lib modules
+sub check_pod_syntax {
+    my ($base_dir) = @_;
+    my @files = (
+        File::Spec->catfile($base_dir, 'bin', 'changetrack-ng'),
+        File::Spec->catfile($base_dir, 'man', 'changetrack-ng.8'),
+        File::Spec->catfile($base_dir, 'man', 'changetrack-ng.conf.5'),
+    );
+
+    my $lib_dir = File::Spec->catdir($base_dir, 'lib');
+    if (-d $lib_dir) {
+        find({
+            wanted => sub {
+                push @files, $File::Find::name if /\.pm$/ && -f $File::Find::name;
+            },
+            no_chdir => 1,
+        }, $lib_dir);
+    }
+
+    my $pod_errors = 0;
+    open my $devnull, '>', File::Spec->devnull or die "Cannot open devnull: $!\n";
+
+    for my $f (sort @files) {
+        next unless -f $f;
+        my $res = podchecker($f, $devnull);
+        if ($res > 0) {
+            warn "POD syntax error in '$f' ($res error(s))\n";
+            $pod_errors += $res;
+        }
+    }
+    close $devnull;
+
+    if ($pod_errors) {
+        $failed = 1;
+        warn "doc-lint: ERROR -- $pod_errors POD syntax error(s) detected!\n";
+    }
+}
+
+# check_markdown_links -- Verify that relative links in markdown docs point to existing files
+sub check_markdown_links {
+    my ($base_dir) = @_;
+    my @md_files;
+
+    for my $f (glob(File::Spec->catfile($base_dir, '*.md'))) {
+        push @md_files, $f if -f $f;
+    }
+
+    my $docs_dir = File::Spec->catdir($base_dir, 'docs');
+    if (-d $docs_dir) {
+        find({
+            wanted => sub {
+                push @md_files, $File::Find::name if /\.md$/ && -f $File::Find::name;
+            },
+            no_chdir => 1,
+        }, $docs_dir);
+    }
+
+    my $broken_links = 0;
+    for my $md (sort @md_files) {
+        open my $fh, '<', $md or do {
+            warn "Cannot open '$md': $!\n";
+            $broken_links++;
+            next;
+        };
+        my $dir = dirname($md);
+        my $lineno = 0;
+        while (my $line = <$fh>) {
+            $lineno++;
+            while ($line =~ /\[([^\]]+)\]\(([^)]+)\)/g) {
+                my ($text, $target) = ($1, $2);
+                next if $target =~ /^(?:https?:|mailto:|#)/;
+                $target =~ s/#.*$//;
+                next if $target eq '';
+                my $resolved = File::Spec->rel2abs($target, $dir);
+                unless (-e $resolved) {
+                    warn "Broken link in '$md' line $lineno: [$text]($target) -> target not found\n";
+                    $broken_links++;
+                }
+            }
+        }
+        close $fh;
+    }
+
+    if ($broken_links) {
+        $failed = 1;
+        warn "doc-lint: ERROR -- $broken_links broken relative markdown link(s) detected!\n";
     }
 }

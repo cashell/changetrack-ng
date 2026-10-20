@@ -29,12 +29,27 @@ compatibility debt.
 
 - **Five VCS backends:** Choose RCS for per-file versioning or Git, Fossil, SVN, and Mercurial for global tree mirrors.
 - **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log. 
-- **Sensitive File Protection:** Automatic mode-based detection. Files with no group/world read bit (`0600` / `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
+- **Sensitive File Protection:** Automatic mode-based detection. Files without world-read permission (`(mode & 0004) == 0`, e.g. `0600` or `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
 - **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
 - **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).
 - **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage—all execution is polling-based or hook-driven.
 - **Configurable Tracking:** Track arbitrary files and directories, with per-file/per-directory overrides for notification recipients, sensitive-file flags, and ignore patterns.
 - **System and User Modes:** Run as root to track system paths, or as an unprivileged user to track home directories.  Each mode has its own config and VCS repo.
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Quickstart](docs/QUICKSTART.md) | 5-minute practical onboarding walkthrough |
+| [Installation & Troubleshooting](INSTALL.md) | Package installation, systemd/cron setup, user mode, and diagnostics |
+| [Product Overview](PRODUCT.md) | High-level capabilities, VCS model comparisons, and operator workflows |
+| [Architecture & Design](ARCHITECTURE.md) | Internal module boundaries, data flow, mirror tree contract, and security model |
+| [Operations Cookbook](docs/COOKBOOK.md) | Production recipes for web servers, SIEMs, OTLP observability, and audit trails |
+| [Security Policy](SECURITY.md) | Vulnerability disclosure policy, safe defaults, and security invariants |
+| [Contributing](CONTRIBUTING.md) | Developer guidelines, code style, testing conventions, and manifest workflow |
+| [Changelog](CHANGELOG.md) | Release history, version notes, and upgrade details |
+| [Manual: changetrack-ng(8)](man/changetrack-ng.8) | CLI manual page covering subcommands, options, and exit codes |
+| [Manual: changetrack-ng.conf(5)](man/changetrack-ng.conf.5) | Configuration file reference covering all sections, keys, and environment variables |
 
 ## How it Works
 
@@ -46,6 +61,8 @@ compatibility debt.
 5. **Notification Dispatch:** Change reports and unified diffs are passed down the pipeline to every enabled notification channel (observing sensitive file diff scrubbing restrictions natively).
 
 ## Quick Start
+
+For a hands-on 5-minute walkthrough, see [QUICKSTART.md](docs/QUICKSTART.md). For detailed installation options, package manager packages (.deb/.rpm), and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ```sh
 # Install
@@ -98,6 +115,9 @@ DIRECTORY /etc
 Config uses a single INI format with `[global]`, `[track]`, and
 `[notifier:<type>:<name>]` sections.  The installed default at
 `/etc/changetrack-ng/changetrack-ng.conf` is fully commented.
+Ready-to-use template configurations (`changetrack-ng.conf-full`, `-minimal`,
+`-user`) and drop-in examples are installed under `/usr/share/doc/changetrack-ng/examples/`
+and available in `packaging/etc/examples/` (see [INSTALL.md](INSTALL.md#config)).
 Comments start with `#` or `;` — either as a full line or inline after a
 value (when preceded by whitespace, e.g. `timeout = 10  # seconds`).
 
@@ -181,7 +201,7 @@ For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
 
 ## Global Options
 
-These flags apply to all subcommands:
+These flags apply to all subcommands. For full CLI reference, see [man/changetrack-ng.8](man/changetrack-ng.8):
 
 | Flag | Short | Description |
 |---|---|---|
@@ -261,15 +281,7 @@ machine-readable audit trail exists locally alongside the VCS repo.
 
 ### Shared OTLP and File Notifier Config Keys
 
-The following keys are supported by both the `otlp` and `file` notifiers:
-
-| Key | Default | Description |
-|---|---|---|
-| `emit_recipients` | `0` | When `1`, each change record includes a `config_change.notified` attribute listing the configured recipients for that file. Off by default to keep recipient lists out of the telemetry stream. |
-| `max_diff_bytes` | `0` (unlimited) | Caps the size of the `config_change.diff` attribute in the emitted record. When a diff exceeds the cap, the diff is truncated and `config_change.diff_truncated = true` is added. The full diff is always retained in the VCS. Sensitive-file suppressed-diff placeholders are never truncated. |
-| `severity_change` | `INFO` | Severity name for file-change, file-create, and file-remove records. Accepts `DEBUG`, `INFO`, `WARN`, or `ERROR` (case-insensitive). Invalid or blank values fall back to `INFO`. |
-| `severity_heartbeat` | `DEBUG` | Severity name for heartbeat ("nothing changed") records. Same accepted values as `severity_change`. |
-| `severity_warning` | `WARN` | Severity name for scan-warning records. Same accepted values as `severity_change`. |
+Both the `otlp` and `file` notifiers share a canonical OpenTelemetry event model supporting severity discrimination (`severity_change`, `severity_heartbeat`, `severity_warning`), diff truncation (`max_diff_bytes`), and recipient auditing (`emit_recipients`).
 
 Example using non-default severities and diff truncation:
 
@@ -289,40 +301,36 @@ emit_recipients   = 1
 max_diff_bytes    = 32768
 ```
 
-## Install Paths
+For full attribute specifications and schema definitions, see [man/changetrack-ng.conf.5](man/changetrack-ng.conf.5) and [ARCHITECTURE.md](ARCHITECTURE.md#64-structured-event-model-file-and-otlp).
 
-| Variable | Default | Notes |
-|---|---|---|
-| `PREFIX` | `/usr/local` | Set to `/usr` for system-wide install |
-| `BINDIR` | `$(PREFIX)/bin` | Binary location |
-| `LIBDIR` | `$(PREFIX)/lib/changetrack-ng` | Perl modules |
-| `SYSCONFDIR` | `$(PREFIX)/etc` (or `/etc` for `/usr`) | Config dir |
-| `DATADIR` | `/var/lib/changetrack-ng` | VCS output dir |
-| `MANDIR` | `$(PREFIX)/share/man` | Man pages |
-| `DEFAULTSDIR` | `/etc/default` (Debian) or `/etc/sysconfig` (RHEL, auto-detected) | Defaults file directory |
+## Installation and Scheduling
 
-Override any variable on the `make` command line:
+`changetrack-ng` supports system-wide installations, packaging builds (Debian `.deb`, RPM), and standalone unprivileged user-home setups:
 
 ```sh
-sudo make install PREFIX=/usr
+# System install
+sudo make install           # installs to /usr/local by default (override with PREFIX=/usr)
+sudo make install-systemd   # hourly persistent systemd timer
+sudo make install-hooks     # package manager integration (apt, dnf, pacman)
+
+# Unprivileged user install (no sudo required)
+make install-user
+make install-user-systemd
 ```
 
-First-class user targets:
-
-- `make install-user`
-- `make install-user-systemd`
-- `make install-user-cron`
+For custom install path variables (`PREFIX`, `DESTDIR`, `BINDIR`), distribution package building (`make deb`, `make rpm`), cron scheduling, and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ## Development
 
 ```sh
 make test          # Run full test suite (requires prove)
-prove -l t/01-config.t   # Run a single test file
+prove -l t/06-vcs-git.t  # Run a single test file
 make manifest-lint # Validate MANIFEST.toml (checks all listed files exist)
 ```
 
 Tests live in `t/` and cover all implemented modules.  All tests use only
-core Perl modules; no network access required.
+core Perl modules; no network access required.  For developer guidelines,
+coding style, and testing conventions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## File Inventory
 
@@ -349,4 +357,4 @@ itself.
 
 ## License
 
-GNU General Public License v3 or later.  See `LICENSE`.
+GNU General Public License v3 or later.  See [LICENSE](LICENSE).

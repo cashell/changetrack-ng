@@ -2,6 +2,8 @@
 
 **Source:** <https://github.com/cashell/changetrack-ng>
 
+For a project overview, see [README.md](README.md). For architecture and data flow, see [ARCHITECTURE.md](ARCHITECTURE.md). For development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Requirements
 
 - Perl 5.20 or later
@@ -97,7 +99,11 @@ Ready-to-use example configs and drop-in templates are installed under
 | `notifier.d/email.conf` | Example email notifier drop-in |
 | `notifier.d/otlp.conf` | Example OTLP notifier drop-in |
 
-For a fresh system install, start from the minimal example:
+`sudo make install` automatically installs the balanced default configuration
+(`packaging/etc/examples/changetrack-ng.conf-default`) to `/etc/changetrack-ng/changetrack-ng.conf`
+if no configuration file already exists.
+
+To replace it with the minimal starter configuration instead:
 
 ```sh
 # PREFIX=/usr:

@@ -30,7 +30,7 @@ No build step required — Perl modules are used directly from `lib/`.
 - Start with this file and only the files directly related to the user request.
 - Consult `ARCHITECTURE.md` for system design, data flow, and security model.
 - Consult `MANIFEST.toml` as the authoritative file index: every repo file is listed with its category, install path, dist targets, and tags — useful for navigation without grepping the filesystem.
-- Do **not** read `PLAN.md` by default. It is large (52KB) and should be consulted only when roadmap/phase details are explicitly needed.
+- Do **not** read `docs/archive/PLAN.md` by default. It is a historical archive (52KB) and should be consulted only when roadmap/phase history is explicitly needed.
 - Prefer targeted symbol/file searches over reading large files end-to-end.
 - Keep responses concise: report only what changed, why, and how it was validated.
 
@@ -276,7 +276,7 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 
 ## Implementation Boundaries
 
-- Do not pull in phase roadmap work from `PLAN.md` unless the user request explicitly asks for it.
+- Do not pull in phase roadmap work from `docs/archive/PLAN.md` unless the user request explicitly asks for it.
 - Keep the "zero non-core dependencies" constraint intact for new code.
 - Do not add subroutine signatures (stable only in 5.36+).
 - Forbidden patterns: bareword filehandles, 2-arg open, indirect method syntax, prototypes on subs.
