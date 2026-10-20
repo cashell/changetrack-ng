@@ -38,18 +38,18 @@ compatibility debt.
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [Quickstart](docs/QUICKSTART.md) | 5-minute practical onboarding walkthrough |
-| [Installation & Troubleshooting](INSTALL.md) | Package installation, systemd/cron setup, user mode, and diagnostics |
-| [Product Overview](PRODUCT.md) | High-level capabilities, VCS model comparisons, and operator workflows |
-| [Architecture & Design](ARCHITECTURE.md) | Internal module boundaries, data flow, mirror tree contract, and security model |
-| [Operations Cookbook](docs/COOKBOOK.md) | Production recipes for web servers, SIEMs, OTLP observability, and audit trails |
-| [Security Policy](SECURITY.md) | Vulnerability disclosure policy, safe defaults, and security invariants |
-| [Contributing](CONTRIBUTING.md) | Developer guidelines, code style, testing conventions, and manifest workflow |
-| [Changelog](CHANGELOG.md) | Release history, version notes, and upgrade details |
-| [Manual: changetrack-ng(8)](man/changetrack-ng.8) | CLI manual page covering subcommands, options, and exit codes |
-| [Manual: changetrack-ng.conf(5)](man/changetrack-ng.conf.5) | Configuration file reference covering all sections, keys, and environment variables |
+| Document | File | Description |
+|---|---|---|
+| [Quickstart](docs/QUICKSTART.md) | `docs/QUICKSTART.md` | 5-minute practical onboarding walkthrough |
+| [Installation & Troubleshooting](INSTALL.md) | `INSTALL.md` | Package installation, systemd/cron setup, user mode, and diagnostics |
+| [Product Overview](PRODUCT.md) | `PRODUCT.md` | High-level capabilities, VCS model comparisons, and operator workflows |
+| [Architecture & Design](ARCHITECTURE.md) | `ARCHITECTURE.md` | Internal module boundaries, data flow, mirror tree contract, and security model |
+| [Operations Cookbook](docs/COOKBOOK.md) | `docs/COOKBOOK.md` | Production recipes for web servers, SIEMs, OTLP observability, and audit trails |
+| [Security Policy](SECURITY.md) | `SECURITY.md` | Vulnerability disclosure policy, safe defaults, and security invariants |
+| [Contributing](CONTRIBUTING.md) | `CONTRIBUTING.md` | Developer guidelines, code style, testing conventions, and manifest workflow |
+| [Changelog](CHANGELOG.md) | `CHANGELOG.md` | Release history, version notes, and upgrade details |
+| [Manual: changetrack-ng(8)](man/changetrack-ng.8) | `man/changetrack-ng.8` | CLI manual page covering subcommands, options, and exit codes |
+| [Manual: changetrack-ng.conf(5)](man/changetrack-ng.conf.5) | `man/changetrack-ng.conf.5` | Configuration file reference covering all sections, keys, and environment variables |
 
 ## How it Works
 
