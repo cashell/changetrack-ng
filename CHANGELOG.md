@@ -6,6 +6,37 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation additions:**
+  - Added [SECURITY.md](SECURITY.md) covering supported release branches, responsible vulnerability disclosure process (`topher@zyp.org`), and architectural threat boundaries.
+  - Added [docs/COOKBOOK.md](docs/COOKBOOK.md) providing production recipes for host integrity, Nginx/reverse proxy team routing, OpenTelemetry (OTLP) enterprise monitoring, multi-destination audit logging, user dotfile tracking, and central remote Git backups.
+  - Added [docs/QUICKSTART.md](docs/QUICKSTART.md) with a 5-minute practical onboarding walkthrough.
+  - Added a comprehensive Documentation Index table and reciprocal cross-links across `README.md`, `PRODUCT.md`, `INSTALL.md`, `ARCHITECTURE.md`, and `CONTRIBUTING.md`.
+- **Automated documentation verification tooling:**
+  - Enhanced `tools/doc-lint` to validate POD syntax across all modules and manual pages via `Pod::Checker`, and verify that all relative markdown links resolve to existing files.
+
+### Changed
+
+- **Documentation de-duplication and separation of concerns:**
+  - Streamlined `README.md` by delegating detailed OTLP/File attribute tables to `man/changetrack-ng.conf.5` and `ARCHITECTURE.md`, and delegating full Makefile variable override tables to `INSTALL.md`.
+  - Streamlined `PRODUCT.md` by delegating raw filesystem layout paths to `INSTALL.md` and exit code definitions to `man/changetrack-ng.8` and `ARCHITECTURE.md`.
+- **Legacy documentation archival:**
+  - Archived pre-v0.3.0 implementation plan `PLAN.md` to `docs/archive/PLAN.md` with historical archive notice.
+  - Archived `docs/agy-fixes.md` to `docs/archive/reviews/2026-09-agy-fixes.md`.
+  - Consolidated completed feature design specifications and execution plans from `docs/superpowers/` into `docs/archive/plans/` and `docs/archive/specs/`.
+
+### Fixed
+
+- **Documentation technical accuracy and defects:**
+  - Corrected `man/changetrack-ng.conf.5` sensitive file auto-detection formula from `(mode & 0044 == 0)` to `(mode & 0004 == 0)` (no world-read bit) to accurately reflect `Runner.pm`.
+  - Removed invalid per-notifier `sensitive_notify` override from `man/changetrack-ng.conf.5` which was rejected as an unknown key by `Config.pm`.
+  - Documented missing `max_diff_bytes` option under `HTTP Webhook notifier` in `man/changetrack-ng.conf.5`.
+  - Documented `OTEL_EXPORTER_OTLP_HEADERS` in `=head1 ENVIRONMENT` in `man/changetrack-ng.conf.5`.
+  - Removed nonexistent exit code `75` from `man/changetrack-ng.8` and documented `--system` and `--user` options.
+  - Fixed POD syntax error in `lib/ChangeTrack/Notify/Base.pm` (missing `=back` before `=head1 SUBCLASS HELPERS`).
+  - Fixed single-test command examples in `README.md` and `CONTRIBUTING.md` referencing non-existent `t/01-config*.t` files to use `t/06-vcs-git.t`.
+
 ## [0.7.3] - 2026-10-12
 
 ### Added
