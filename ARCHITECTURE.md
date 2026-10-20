@@ -5,6 +5,8 @@
 Date: 2026-10-12
 Version: 0.7.3
 
+For quick start and CLI reference, see [README.md](README.md). For operational capabilities, see [PRODUCT.md](PRODUCT.md). For deployment and install guides, see [INSTALL.md](INSTALL.md). For developer conventions, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ---
 
 ## 1. Overview

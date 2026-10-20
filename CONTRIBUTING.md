@@ -1,5 +1,7 @@
 # Contributing to changetrack-ng
 
+For system design and component architecture, see [ARCHITECTURE.md](ARCHITECTURE.md). For installation and packaging workflows, see [INSTALL.md](INSTALL.md).
+
 ---
 
 ## Development Setup
