@@ -656,11 +656,6 @@ tags        = ["doc", "user"]
 # dev_doc
 ########################################################################
 
-[dev_doc."PLAN.md"]
-description = "Roadmap and implementation phases (large; read only when phase details are needed)"
-tags        = ["dev-doc"]
-notes       = "52KB+; AGENTS.md instructs agents not to read this by default"
-
 [dev_doc."TODO.md"]
 description = "Known gaps, deferred work, and per-module improvement notes"
 tags        = ["dev-doc"]
@@ -669,41 +664,46 @@ tags        = ["dev-doc"]
 description = "AI assistant instructions: architecture quick-ref, patterns, constraints, version bump checklist"
 tags        = ["dev-doc", "agent"]
 
-[dev_doc."docs/agy-fixes.md"]
-description = "Implementation guide and fix specifications hand-off document"
-tags        = ["dev-doc"]
+[dev_doc."docs/archive/PLAN.md"]
+description = "Historical initial roadmap and implementation plan (pre-v0.3.0, completed in v0.5.0)"
+tags        = ["dev-doc", "archive"]
+notes       = "52KB+; historical archive; AGENTS.md instructs agents not to read this by default"
 
-[dev_doc."docs/superpowers/plans/2026-05-20-manifest.md"]
-description = "Implementation plan for MANIFEST.toml and tools/manifest-query"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/reviews/2026-09-agy-fixes.md"]
+description = "Historical implementation guide and fix specifications hand-off document (closed 2026-09-18)"
+tags        = ["dev-doc", "archive"]
 
-[dev_doc."docs/superpowers/plans/2026-06-23-file-notifier-otel-reshape.md"]
-description = "Implementation plan for File notifier OpenTelemetry event reshaping"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/plans/2026-05-20-manifest.md"]
+description = "Historical implementation plan for MANIFEST.toml and tools/manifest-query"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/plans/2026-06-23-otel-attribute-model.md"]
-description = "Implementation plan for canonical OpenTelemetry attribute model"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/plans/2026-06-23-file-notifier-otel-reshape.md"]
+description = "Historical implementation plan for File notifier OpenTelemetry event reshaping"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/plans/2026-06-23-otel-diff-truncation.md"]
-description = "Implementation plan for OpenTelemetry diff byte truncation"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/plans/2026-06-23-otel-attribute-model.md"]
+description = "Historical implementation plan for canonical OpenTelemetry attribute model"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/plans/2026-06-23-otel-severity-discrimination.md"]
-description = "Implementation plan for OpenTelemetry severity mapping"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/plans/2026-06-23-otel-diff-truncation.md"]
+description = "Historical implementation plan for OpenTelemetry diff byte truncation"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/plans/2026-06-23-otel-timestamps.md"]
-description = "Implementation plan for occurred-time vs observed-time timestamps"
-tags        = ["dev-doc", "plan"]
+[dev_doc."docs/archive/plans/2026-06-23-otel-severity-discrimination.md"]
+description = "Historical implementation plan for OpenTelemetry severity mapping"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/specs/2026-05-20-manifest-design.md"]
-description = "Design specification for MANIFEST.toml file inventory and tooling"
-tags        = ["dev-doc", "spec"]
+[dev_doc."docs/archive/plans/2026-06-23-otel-timestamps.md"]
+description = "Historical implementation plan for occurred-time vs observed-time timestamps"
+tags        = ["dev-doc", "plan", "archive"]
 
-[dev_doc."docs/superpowers/specs/2026-06-23-otel-logging-conformance-analysis.md"]
-description = "Design specification and conformance analysis for OpenTelemetry logging"
-tags        = ["dev-doc", "spec"]
+[dev_doc."docs/archive/specs/2026-05-20-manifest-design.md"]
+description = "Historical design specification for MANIFEST.toml file inventory and tooling"
+tags        = ["dev-doc", "spec", "archive"]
+
+[dev_doc."docs/archive/specs/2026-06-23-otel-logging-conformance-analysis.md"]
+description = "Historical design specification and conformance analysis for OpenTelemetry logging"
+tags        = ["dev-doc", "spec", "archive"]
 
 ########################################################################
 # packaging

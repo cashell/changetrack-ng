@@ -5,6 +5,12 @@ SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
 
 # changetrack-ng — Implementation Guide & Fix Specifications (Hand-Off)
 
+> [!NOTE]
+> **HISTORICAL ARCHIVE:** This specification was prepared as a task hand-off for
+> addressing code review findings (CORR-3, CORR-4, CORR-5, SEC-5, OPS-5). All items were
+> implemented, verified in test suites (`t/35-vcs-removal.t`, `t/36-type-transitions.t`),
+> and closed in `TODO.md` on 2026-09-18.
+
 This document provides a comprehensive, actionable specification for addressing genuine issues identified during code review. It is structured for an Antigravity (or developer) instance running on Linux to implement, test, and verify using the native toolchain.
 
 ---
