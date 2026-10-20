@@ -652,6 +652,21 @@ description = "Product overview: feature set, subcommands, configuration, schedu
 dist        = ["full"]
 tags        = ["doc", "user"]
 
+[doc."SECURITY.md"]
+description = "Security policy, vulnerability reporting instructions, and architectural threat model"
+dist        = ["full"]
+tags        = ["doc", "security"]
+
+[doc."docs/QUICKSTART.md"]
+description = "Five-minute practical onboarding walkthrough"
+dist        = ["full", "deploy", "minimal"]
+tags        = ["doc", "user", "guide"]
+
+[doc."docs/COOKBOOK.md"]
+description = "Production configuration recipes for common deployment patterns"
+dist        = ["full"]
+tags        = ["doc", "user", "guide"]
+
 ########################################################################
 # dev_doc
 ########################################################################
