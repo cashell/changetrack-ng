@@ -147,4 +147,81 @@ SKIP: {
     unlink $src;
 }
 
+########################################################################
+# Makefile: install-user-systemd Recipe Checks
+########################################################################
+{
+    my $makefile = File::Spec->catfile($RealBin, '..', 'Makefile');
+    open my $fh, '<', $makefile or die "Cannot open $makefile: $!";
+    my $in_target = 0;
+    my $recipe = '';
+    while (my $line = <$fh>) {
+        if ($line =~ /^install-user-systemd:/) {
+            $in_target = 1;
+            next;
+        }
+        if ($in_target) {
+            last if $line =~ /^[a-zA-Z0-9_\-]+:/;
+            $recipe .= $line;
+        }
+    }
+    close $fh;
+
+    ok($recipe =~ m{/\@DEFAULTSDIR\@/d}, 'install-user-systemd recipe strips @DEFAULTSDIR@');
+    ok($recipe =~ m{s\|--system\|--user\|g}, 'install-user-systemd recipe transforms --system to --user');
+    ok($recipe =~ m{s\|\@BINDIR\@\|\$\(HOME\)/\.local/bin\|g}, 'install-user-systemd recipe sets user BINDIR');
+}
+
+########################################################################
+# VCS Base: _with_temp_mirror_sync Helper
+########################################################################
+{
+    require ChangeTrack::VCS::Base;
+    can_ok('ChangeTrack::VCS::Base', '_with_temp_mirror_sync');
+
+    my $dummy = bless { output_dir => $tmpdir }, 'ChangeTrack::VCS::Base';
+    my $real   = File::Spec->catfile($tmpdir, 'real.txt');
+    my $mirror = File::Spec->catfile($tmpdir, 'mirror.txt');
+
+    # Write real file
+    open my $rfh, '>', $real or die "Cannot write $real: $!";
+    print $rfh "real content\n";
+    close $rfh;
+
+    # Case 1: Mirror does not exist initially
+    unlink $mirror if -e $mirror;
+    my $called = 0;
+    $dummy->_with_temp_mirror_sync($real, $mirror, sub {
+        $called = 1;
+        ok(-f $mirror, 'mirror file exists during callback (initially absent)');
+    });
+    ok($called, 'callback was executed');
+    ok(!-e $mirror, 'mirror file removed after callback when initially absent');
+
+    # Case 2: Mirror exists initially
+    open my $mfh, '>', $mirror or die "Cannot write $mirror: $!";
+    print $mfh "original mirror\n";
+    close $mfh;
+    my @orig_st = stat($mirror);
+
+    my $inside_ok = 0;
+    $dummy->_with_temp_mirror_sync($real, $mirror, sub {
+        open my $check_fh, '<', $mirror or return;
+        my $content = do { local $/; <$check_fh> };
+        close $check_fh;
+        $inside_ok = ($content eq "real content\n");
+    });
+    ok($inside_ok, 'mirror had synced real content during callback');
+
+    open my $check_fh, '<', $mirror or die "Cannot read $mirror: $!";
+    my $restored_content = do { local $/; <$check_fh> };
+    close $check_fh;
+    is($restored_content, "original mirror\n", 'mirror content restored after callback');
+    my @restored_st = stat($mirror);
+    is($restored_st[9], $orig_st[9], 'mirror mtime restored after callback');
+
+    # Cleanup
+    unlink $real, $mirror;
+}
+
 done_testing();

@@ -60,9 +60,6 @@ sub heartbeat_enabled {
 
 sub name { 'file' }
 
-# config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(path heartbeat full_diff emit_recipients max_diff_bytes severity_change severity_heartbeat severity_warning) }
-
 # validate_config -- Return an error string when path is not set.
 sub validate_config {
     my ($self) = @_;
@@ -128,66 +125,34 @@ sub _build_records {
     }
 
     for my $c (@{ $report->changes }) {
-        my ($type, $event_name, $body);
-        if ($c->{is_removed}) {
-            $type = 'removed';
-            $event_name = 'changetrack.file.removed';
-            $body = "config file removed: $c->{path}";
-        } elsif ($c->{is_new}) {
-            $type = 'created';
-            $event_name = 'changetrack.file.created';
-            $body = "new config file: $c->{path}";
-        } else {
-            $type = 'modified';
-            $event_name = 'changetrack.file.changed';
-            $body = "config file changed: $c->{path}";
-        }
+        my $ev = $self->_build_change_event($c, $report->{start_time} // time());
 
-        my $mtime = ($c->{file_meta} // {})->{mtime};
-        my $occurred_ts = defined $mtime
-            ? strftime('%Y-%m-%dT%H:%M:%SZ', gmtime($mtime))
-            : $observed_ts;
-
+        my $occurred_ts = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime($ev->{occurred_unix}));
         my %attrs = (
-            'file.path'               => $c->{path},
-            'file.name'               => basename($c->{path}),
-            'file.directory'          => dirname($c->{path}),
-            'config_change.type'      => $type,
-            'config_change.sensitive' => ($c->{is_sensitive} ? JSON::PP::true() : JSON::PP::false()),
+            %{ $ev->{attributes} },
             %common,
         );
 
-        my $fm = $c->{file_meta} // {};
-        $attrs{'file.mode'}       = $fm->{mode}     if defined $fm->{mode};
-        $attrs{'file.owner.name'} = $fm->{owner}    if defined $fm->{owner};
-        $attrs{'file.group.name'} = $fm->{group}    if defined $fm->{group};
-        $attrs{'file.size'}       = $fm->{size} + 0 if defined $fm->{size};
+        $attrs{'config_change.sensitive'} = $ev->{attributes}{'config_change.sensitive'}
+            ? JSON::PP::true() : JSON::PP::false();
 
-        $attrs{'config_change.meta_summary'} = $c->{meta_change} if $c->{meta_change};
-
-        if ($self->{emit_recipients} && @{ $c->{recipients} // [] }) {
-            $attrs{'config_change.notified'} = [ @{ $c->{recipients} } ];
+        if ($ev->{attributes}{'config_change.diff_truncated'}) {
+            $attrs{'config_change.diff_truncated'} = JSON::PP::true();
         }
 
-        if ($self->{full_diff}) {
-            my $raw = join("\n", $self->_diff_text_for($c));
-            if ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-                # Sensitive-suppressed: emit placeholder as-is; never truncate.
-                $attrs{'config_change.diff'} = $raw;
-            } else {
-                my ($diff_text, $truncated) = $self->_truncate_diff($raw);
-                $attrs{'config_change.diff'} = $diff_text;
-                $attrs{'config_change.diff_truncated'} = JSON::PP::true() if $truncated;
-            }
+        unless ($self->{full_diff}) {
+            delete $attrs{'changetrack.file.diff'};
+            delete $attrs{'config_change.diff'};
+            delete $attrs{'config_change.diff_truncated'};
         }
 
         push @records, {
             timestamp          => $occurred_ts,
             observed_timestamp => $observed_ts,
-            event_name         => $event_name,
+            event_name         => $ev->{event_name},
             severity_text      => $chg_text,
             severity_number    => $chg_num,
-            body               => $body,
+            body               => $ev->{body},
             resource           => $self->_resource,
             attributes         => \%attrs,
         };

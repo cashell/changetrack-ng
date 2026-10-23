@@ -343,4 +343,64 @@ close($fh);
     is($changed->[0]{path}, $file_a, 'status fast-path: correct file identified as changed');
 }
 
+########################################################################
+# Status: Metadata-Only Change (chmod)
+########################################################################
+{
+    my $sub_out = tempdir(CLEANUP => 1);
+    my $meta_file = "$tracked_dir/meta_test.conf";
+    open(my $mfh, '>', $meta_file) or die $!;
+    print $mfh "key = value\n";
+    close($mfh);
+    chmod(0644, $meta_file);
+
+    my ($cfh, $meta_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\n$meta_file\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $meta_cfg, quiet => 1)->run;
+
+    # Change mode only (no content change)
+    chmod(0755, $meta_file);
+
+    my $runner  = ChangeTrack::Runner->new(config => $meta_cfg, quiet => 1);
+    my $changed = $runner->status;
+    is(scalar @$changed, 1, 'status: reports metadata-only change');
+    is($changed->[0]{path}, $meta_file, 'status: correct file reported for chmod');
+    like(join("\n", @{ $changed->[0]{diff} }), qr/^\(meta: mode /, 'status: diff contains (meta: mode ...)');
+}
+
+########################################################################
+# Status and Diff_Path: File Truncated to 0 Bytes
+########################################################################
+{
+    my $sub_out = tempdir(CLEANUP => 1);
+    my $trunc_file = "$tracked_dir/trunc_test.conf";
+    open(my $tfh, '>', $trunc_file) or die $!;
+    print $tfh "content to disappear\n";
+    close($tfh);
+
+    my ($cfh, $trunc_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\n$trunc_file\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $trunc_cfg, quiet => 1)->run;
+
+    # Truncate to 0 bytes
+    open($tfh, '>', $trunc_file) or die $!;
+    close($tfh);
+
+    my $runner  = ChangeTrack::Runner->new(config => $trunc_cfg, quiet => 1);
+    my $changed = $runner->status;
+    is(scalar @$changed, 1, 'status: reports file truncated to 0 bytes');
+    is($changed->[0]{path}, $trunc_file, 'status: correct path for truncated file');
+    like(join("\n", @{ $changed->[0]{diff} }), qr/^-content to disappear/m,
+        'status: diff contains removed line for truncated file');
+
+    my $diffs = $runner->diff_path($trunc_file);
+    ok(exists $diffs->{$trunc_file}, 'diff_path: key exists for truncated file');
+    like(join("\n", @{ $diffs->{$trunc_file} }), qr/^-content to disappear/m,
+        'diff_path: returns unified diff of removed lines');
+}
+
 done_testing();

@@ -11,6 +11,10 @@ package ChangeTrack::VCS::Base;
 
 use strict;
 use warnings;
+use Carp qw(croak);
+use File::Copy qw(copy move);
+use File::Temp qw(tempdir);
+use ChangeTrack::Util qw(sync_mirror_path);
 =head1 NAME
 
 ChangeTrack::VCS::Base - abstract base class for changetrack-ng VCS backends
@@ -116,6 +120,38 @@ sub _mirror_rel {
         if grep { $_ eq '..' } split m{/+}, $real_path;
     (my $rel = $real_path) =~ s{^/+}{};
     return $rel;
+}
+
+# _with_temp_mirror_sync -- Temporarily sync $real_path to $mirror, run
+# $code->(), and restore the original $mirror file and timestamps afterward.
+sub _with_temp_mirror_sync {
+    my ($self, $real_path, $mirror, $code) = @_;
+    my $had_mirror = -e $mirror;
+    my ($tmp_dir, $backup, @st);
+    if ($had_mirror) {
+        @st      = stat($mirror);
+        $tmp_dir = tempdir(CLEANUP => 1);
+        $backup  = "$tmp_dir/mirror.bak";
+        copy($mirror, $backup) or croak "Failed to backup $mirror: $!";
+    }
+
+    sync_mirror_path($real_path, $mirror);
+    my $res = eval { $code->() };
+    my $err = $@;
+
+    if ($had_mirror) {
+        move($backup, $mirror) or croak "Failed to restore $mirror: $!";
+        if (@st) {
+            chmod($st[2] & 07777, $mirror);
+            utime($st[8], $st[9], $mirror);
+        }
+    }
+    else {
+        unlink $mirror;
+    }
+
+    die $err if $err;
+    return $res;
 }
 
 # output_path -- Map a real absolute path to its mirror location under output_dir.

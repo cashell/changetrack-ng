@@ -86,6 +86,61 @@ sub base_dir {
 }
 
 ########################################################################
+# conf.d/ Overrides Scalar Global Keys from Base Config
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/conf.d" or die $!;
+    write_file("$dir/conf.d", 'local.conf',
+        "[global]\nvcs = rcs\noutput_dir = /var/lib/changetrack-ng\ninterval = 60\n");
+
+    my $cfg = ChangeTrack::Config->load("$dir/main.conf");
+    is($cfg->global('vcs'),        'rcs',                      'conf.d/local.conf overrides vcs');
+    is($cfg->global('output_dir'), '/var/lib/changetrack-ng',  'conf.d/local.conf overrides output_dir');
+    is($cfg->global('interval'),   60,                         'conf.d/local.conf overrides interval');
+}
+
+########################################################################
+# Scalar Global Key Conflict Across Two conf.d Files Is Fatal
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/conf.d" or die $!;
+    write_file("$dir/conf.d", '10-first.conf',  "[global]\nvcs = rcs\n");
+    write_file("$dir/conf.d", '20-second.conf', "[global]\nvcs = fossil\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, 'Scalar global key set in two conf.d drop-in files is fatal');
+    like($@, qr/vcs.*already set|already set.*vcs/i,
+        'Error message names conflicting key');
+}
+
+########################################################################
+# Shipped changetrack-ng.conf with conf.d/ Override
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $shipped_conf = File::Spec->catfile($RealBin, '..', 'etc', 'changetrack-ng.conf');
+    ok(-f $shipped_conf, 'Shipped etc/changetrack-ng.conf exists');
+
+    my $temp_conf = "$dir/changetrack-ng.conf";
+    open(my $in, '<', $shipped_conf) or die "Cannot read $shipped_conf: $!";
+    open(my $out, '>', $temp_conf)   or die "Cannot write $temp_conf: $!";
+    while (my $line = <$in>) {
+        print {$out} $line;
+    }
+    close($in);
+    close($out);
+
+    mkdir "$dir/conf.d" or die $!;
+    write_file("$dir/conf.d", 'override.conf', "[global]\ninterval = 30\n");
+
+    my $cfg = ChangeTrack::Config->load($temp_conf);
+    is($cfg->global('interval'), '30',
+        'conf.d/override.conf overrides interval from shipped config');
+}
+
+########################################################################
 # Files Processed in Sorted Order (track.d/)
 ########################################################################
 {

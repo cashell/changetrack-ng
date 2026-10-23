@@ -273,10 +273,13 @@ sub run_cmd {
         warn "[changetrack-ng][][DEBUG] exec: $cmd_str\n";
     }
 
-    if (length $input) {
-        print $in_fh $input;
+    {
+        local $SIG{PIPE} = 'IGNORE';
+        if (length $input) {
+            print {$in_fh} $input;
+        }
+        close($in_fh);
     }
-    close($in_fh);
 
     # Drain stdout and stderr concurrently until both reach EOF.  An optional
     # wall-clock timeout acts as a watchdog: on expiry the child is killed and

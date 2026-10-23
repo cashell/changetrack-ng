@@ -26,9 +26,11 @@ section.  Heartbeat is always disabled (anti-spam).
 
 use feature qw(say);
 use parent 'ChangeTrack::Notify::Base';
+use Carp qw(carp);
+use Encode qw(encode);
 use POSIX qw(strftime);
 
-use ChangeTrack::Util qw(hostname fqdn);
+use ChangeTrack::Util qw(hostname fqdn run_cmd);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
 
@@ -50,9 +52,6 @@ sub new {
 sub heartbeat_enabled { 0 }
 
 sub name { 'email' }
-
-# config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(to from sendmail_path) }
 
 # send_changes -- Send per-recipient change digest emails.
 # Changes are grouped by recipient address.  Per-track recipients take
@@ -127,12 +126,13 @@ sub _format_body {
     return join("\n", @lines);
 }
 
-# _send_one -- Compose and deliver one RFC 2822 email to $to via sendmail.
+# _send_one -- Compose and deliver one RFC 2822 email to $recipient via sendmail.
 sub _send_one {
-    my ($self, $sendmail, $to, $host, $date, $body) = @_;
+    my ($self, $sendmail, $recipient, $host, $date, $body) = @_;
 
     my $from    = $self->{from};
     my $subject = "[changetrack-ng] Changes on $host \@ $date";
+    my $to      = $recipient;
 
     # Strip CR/LF to prevent mail-header injection via config-sourced values.
     for my $field (\$from, \$to, \$subject) {
@@ -146,18 +146,19 @@ sub _send_one {
         @cmd = ($^X, $sendmail, '-oi', '-f', $from, '--', $to);
     }
 
-    open(my $pipe, '|-', @cmd)
-        or die "Cannot open sendmail pipe: $!";
-    binmode($pipe, ':encoding(UTF-8)');
+    my $msg = "From: $from\n"
+        . "To: $to\n"
+        . "Subject: $subject\n"
+        . "Content-Type: text/plain; charset=UTF-8\n"
+        . "\n"
+        . $body;
 
-    print $pipe "From: $from\n";
-    print $pipe "To: $to\n";
-    print $pipe "Subject: $subject\n";
-    print $pipe "Content-Type: text/plain; charset=UTF-8\n";
-    print $pipe "\n";
-    print $pipe $body;
-
-    close($pipe) or die "sendmail exited with status $?\n";
+    my $res = run_cmd(cmd => \@cmd, input => encode('UTF-8', $msg));
+    if (!$res->{success}) {
+        carp "sendmail failed for $recipient (exit $res->{exit_code}): $res->{stderr}";
+        return 0;
+    }
+    return 1;
 }
 
 # _find_sendmail -- Return the path to a usable sendmail binary.

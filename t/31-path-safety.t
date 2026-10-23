@@ -72,4 +72,33 @@ close($f2);
 eval { ChangeTrack::Config->load($cfg_bad); 1 };
 like($@, qr/may not contain '\.\.'/, "config rejects a '..' track path");
 
+########################################################################
+# _internal_exclude_paths includes svn repo, lock_path, and file notifier
+########################################################################
+{
+    require ChangeTrack::Runner;
+    my $conf_dir = tempdir(CLEANUP => 1);
+    my $cfg_file = "$conf_dir/custom.conf";
+    open(my $cfh, '>', $cfg_file) or die $!;
+    print $cfh <<'EOF';
+[global]
+vcs = svn
+output_dir = /var/lib/changetrack-test
+lock_path = /var/run/custom.lock
+
+[notifier:file:audit]
+enabled = 1
+path = /var/log/changetrack.json
+EOF
+    close($cfh);
+
+    my $cfg = ChangeTrack::Config->load($cfg_file);
+    my $excludes = ChangeTrack::Runner::_internal_exclude_paths($cfg);
+    my %ex_map = map { $_ => 1 } @$excludes;
+
+    ok($ex_map{'/var/lib/changetrack-test-svnrepo'}, '_internal_exclude_paths includes svn repo');
+    ok($ex_map{'/var/run/custom.lock'}, '_internal_exclude_paths includes lock_path');
+    ok($ex_map{'/var/log/changetrack.json'}, '_internal_exclude_paths includes enabled file notifier path');
+}
+
 done_testing();

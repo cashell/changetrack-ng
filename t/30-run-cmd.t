@@ -93,4 +93,14 @@ SKIP: {
     ChangeTrack::Util::set_default_timeout(120);
 }
 
+# SIGPIPE protection: writing input to a process that exits without reading stdin.
+{
+    my $r = run_cmd(
+        cmd   => [$perl, '-e', 'exit 0'],
+        input => ('x' x 100_000),
+    );
+    ok($r->{success}, 'SIGPIPE ignored when child exits without reading stdin');
+    is($r->{exit_code}, 0, 'exit code is 0');
+}
+
 done_testing();

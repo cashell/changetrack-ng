@@ -55,9 +55,6 @@ sub heartbeat_enabled {
 
 sub name { 'webhook' }
 
-# config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(url full_diff heartbeat insecure timeout max_diff_bytes) }
-
 # validate_config -- Return an error string when no webhook URLs are configured.
 sub validate_config {
     my ($self) = @_;
@@ -164,9 +161,6 @@ sub _post_with_retry {
         $safe_url,
     );
 }
-
-# _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
-sub _sleep { sleep($_[1]) }
 
 # _count_added -- Count lines added (starting with '+', not '+++') in a diff.
 sub _count_added {

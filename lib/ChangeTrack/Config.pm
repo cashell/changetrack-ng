@@ -31,7 +31,8 @@ C<default>), and C<[notifier:E<lt>typeE<gt>:E<lt>nameE<gt>]>.
 
 C<conf.d/> (global only), C<track.d/> (track only), C<notifier.d/>
 (notifier only) -- siblings of the main config file; C<*.conf> files
-processed in sorted order.
+processed in sorted order.  Drop-in files in C<conf.d/> can override
+scalar C<[global]> keys set in the base configuration file.
 
 =item Include directives
 
@@ -49,12 +50,15 @@ be preceded by whitespace (e.g. C<timeout = 10  # seconds>).
 
 =over 4
 
-=item ChangeTrack::Config->load($path)
+=item ChangeTrack::Config->load(@paths)
 
-Parse the config file at I<$path> (required), scan sibling drop-in
+Parse the config file(s) at I<@paths> (required), scan sibling drop-in
 directories, process C<@include> directives, and return a
-C<ChangeTrack::Config> object.  Croaks on any parse error, missing
-required field, or I/O failure.
+C<ChangeTrack::Config> object.  Drop-in files in C<conf.d/*.conf> may
+override scalar C<[global]> keys defined in the base configuration file.
+Croaks on any parse error, conflicting scalar key definitions across files,
+duplicate scalar keys within a single file, missing required field,
+or I/O failure.
 
 =item $cfg->global($key)
 
@@ -183,7 +187,7 @@ sub new {
         global         => $args{global}    // {},
         tracks         => $args{tracks}    // [],
         notifiers      => $args{notifiers} // { email => [], webhook => [], otlp => [], file => [] },
-        _global_src    => {},   # key => source file path, for cross-file conflict detection
+        _global_src    => {},   # key => { file => $path, is_dropin => $bool }, for conflict detection
         _notifier_seen => {},   # "type:name" => source path, for duplicate-instance detection
     }, $class;
 }
@@ -191,21 +195,26 @@ sub new {
 # load -- Parse the main config file, scan sibling drop-in directories, and
 # return a ChangeTrack::Config.  Croaks on I/O or parse errors.
 sub load {
-    my ($class, $path) = @_;
+    my ($class, @paths) = @_;
 
-    -f $path or croak "Config file not found: $path";
+    croak "No config file specified" unless @paths;
 
     my $self    = $class->new;
     my %visited;
 
-    $self->_load_file($path, undef, \%visited);
+    for my $path (@paths) {
+        croak "Config file not found: " . ($path // '')
+            unless defined $path && -f $path;
 
-    # Scan sibling drop-in directories.
-    (my $dir = $path) =~ s{/[^/]+$}{};
-    $dir = '.' unless length $dir;
-    $self->_scan_dropin_dir("$dir/conf.d",     'global',   \%visited);
-    $self->_scan_dropin_dir("$dir/track.d",    'track',    \%visited);
-    $self->_scan_dropin_dir("$dir/notifier.d", 'notifier', \%visited);
+        $self->_load_file($path, undef, \%visited, 0);
+
+        # Scan sibling drop-in directories.
+        (my $dir = $path) =~ s{/[^/]+$}{};
+        $dir = '.' unless length $dir;
+        $self->_scan_dropin_dir("$dir/conf.d",     'global',   \%visited);
+        $self->_scan_dropin_dir("$dir/track.d",    'track',    \%visited);
+        $self->_scan_dropin_dir("$dir/notifier.d", 'notifier', \%visited);
+    }
 
     return $self;
 }
@@ -226,7 +235,7 @@ sub _scan_dropin_dir {
     for my $f (@files) {
         my $full = "$dir/$f";
         next unless -f $full;
-        $self->_load_file($full, $restrict, $visited);
+        $self->_load_file($full, $restrict, $visited, 1);
     }
 }
 
@@ -235,10 +244,12 @@ sub _scan_dropin_dir {
 ########################################################################
 
 # _load_file -- Parse one config file and merge its content into $self.
-# $restrict: undef (any section allowed), 'global', 'track', or 'notifier'.
-# $visited:  hashref of absolute paths already loaded (prevents recursion).
+# $restrict:  undef (any section allowed), 'global', 'track', or 'notifier'.
+# $visited:   hashref of absolute paths already loaded (prevents recursion).
+# $is_dropin: boolean indicating whether this file is a conf.d/ drop-in file.
 sub _load_file {
-    my ($self, $path, $restrict, $visited) = @_;
+    my ($self, $path, $restrict, $visited, $is_dropin) = @_;
+    $is_dropin //= 0;
 
     my $abs = _abs_path($path);
     return if $visited->{$abs}++;
@@ -284,7 +295,7 @@ sub _load_file {
             if (-d $inc_path) {
                 $self->_scan_dropin_dir($inc_path, $eff_restrict, $visited);
             } elsif (-f $inc_path) {
-                $self->_load_file($inc_path, $eff_restrict, $visited);
+                $self->_load_file($inc_path, $eff_restrict, $visited, $is_dropin);
             } else {
                 croak "Config error in $path line $lineno: \@include path not found: $inc_path";
             }
@@ -344,7 +355,7 @@ sub _load_file {
                 }
                 $val = _expand_env_vars($val, $path, $lineno);
                 $val = _expand_home_path($val, $path, $lineno) if $PATH_GLOBAL_KEYS{$key};
-                $self->_merge_global($key, $val, $path, $lineno);
+                $self->_merge_global($key, $val, $path, $lineno, $is_dropin);
 
             } elsif ($section eq 'notifier') {
                 unless ($KNOWN_NOTIFIER_KEYS{$ntype}{$key}) {
@@ -380,9 +391,11 @@ sub _load_file {
 ########################################################################
 
 # _merge_global -- Set or append a global key, enforcing cross-file conflict
-# rules for scalar keys (error if set in two different files).
+# rules for scalar keys (error if set in two different files, unless a conf.d
+# drop-in file is overriding a value from the base config file).
 sub _merge_global {
-    my ($self, $key, $val, $path, $lineno) = @_;
+    my ($self, $key, $val, $path, $lineno, $is_dropin) = @_;
+    $is_dropin //= 0;
 
     if ($ARRAY_GLOBAL_KEYS{$key}) {
         my @items = grep { length } split /[\s,]+/, $val;
@@ -390,15 +403,31 @@ sub _merge_global {
         return;
     }
 
-    # Scalar: error on cross-file conflict (same file: last-wins).
-    my $prev_src = $self->{_global_src}{$key};
-    if (defined $prev_src && $prev_src ne $path) {
+    my $prev = $self->{_global_src}{$key};
+    if (defined $prev) {
+        my $prev_file      = ref($prev) eq 'HASH' ? $prev->{file}      : $prev;
+        my $prev_is_dropin = ref($prev) eq 'HASH' ? ($prev->{is_dropin} // 0) : 0;
+
+        if ($prev_file eq $path) {
+            croak "Config error: duplicate key '$key' in [global] at $path line $lineno";
+        }
+
+        # Drop-in files (conf.d/*.conf) may override scalar keys from the base
+        # config file.  However, multiple drop-in files defining the same key,
+        # or multiple explicit top-level files defining the same key, is a fatal
+        # conflict.
+        if ($is_dropin && !$prev_is_dropin) {
+            $self->{global}{$key}      = _coerce_global_value($key, $val, $path, $lineno);
+            $self->{_global_src}{$key} = { file => $path, is_dropin => 1 };
+            return;
+        }
+
         croak "Config error in $path line $lineno: key '$key' was already set in "
-            . "$prev_src; scalar global keys may not be set in multiple files";
+            . "$prev_file; scalar global keys may not be set in multiple files";
     }
 
     $self->{global}{$key}      = _coerce_global_value($key, $val, $path, $lineno);
-    $self->{_global_src}{$key} = $path;
+    $self->{_global_src}{$key} = { file => $path, is_dropin => $is_dropin ? 1 : 0 };
 }
 
 # _coerce_global_value -- Apply type coercion to a raw string value.

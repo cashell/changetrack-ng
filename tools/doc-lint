@@ -204,11 +204,6 @@ sub parse_agent_md {
     return \@cmds;
 }
 
-# parse_claude_md -- Backwards compatibility alias for parse_agent_md
-sub parse_claude_md {
-    goto &parse_agent_md;
-}
-
 # parse_readme_md -- Extract subcommands from README.md Subcommands table
 sub parse_readme_md {
     my ($file) = @_;

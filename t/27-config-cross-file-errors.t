@@ -46,20 +46,52 @@ sub write_file {
 }
 
 ########################################################################
-# Scalar Global Key Conflict Across Main + conf.d Is Fatal
+# Scalar Global Key Conflict Across Multiple Explicit Files Is Fatal
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $f1  = write_file($dir, 'main1.conf',
+        "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n");
+    my $f2  = write_file($dir, 'main2.conf',
+        "[global]\noutput_dir = /var/lib/changetrack-ng\n");
+
+    my $ok = eval { ChangeTrack::Config->load($f1, $f2); 1 };
+    ok(!$ok, 'Scalar global key set in multiple explicit files is a fatal parse error');
+    like($@, qr/output_dir.*already set|already set.*output_dir/i,
+        'Error message names the conflicting key');
+}
+
+########################################################################
+# Scalar Global Key Conflict Across Two conf.d Files Is Fatal
 ########################################################################
 {
     my $dir = tempdir(CLEANUP => 1);
     write_file($dir, 'main.conf',
         "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n");
     mkdir "$dir/conf.d" or die $!;
-    write_file("$dir/conf.d", 'extra.conf',
+    write_file("$dir/conf.d", '10-first.conf',
         "[global]\noutput_dir = /var/lib/changetrack-ng\n");
+    write_file("$dir/conf.d", '20-second.conf',
+        "[global]\noutput_dir = /var/lib/other\n");
 
     my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
-    ok(!$ok, 'Scalar global key set in two files is a fatal parse error');
+    ok(!$ok, 'Scalar global key set in two drop-in files is a fatal parse error');
     like($@, qr/output_dir.*already set|already set.*output_dir/i,
         'Error message names the conflicting key');
+}
+
+########################################################################
+# Duplicate Scalar Global Key in Single File Is Fatal
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $f   = write_file($dir, 'dup.conf',
+        "[global]\nvcs = git\nvcs = rcs\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n");
+
+    my $ok = eval { ChangeTrack::Config->load($f); 1 };
+    ok(!$ok, 'Duplicate scalar global key in single file is a fatal parse error');
+    like($@, qr/duplicate key 'vcs' in \[global\]/i,
+        'Error message names duplicate key');
 }
 
 ########################################################################
