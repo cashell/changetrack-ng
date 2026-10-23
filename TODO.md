@@ -1,10 +1,24 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-10-08
+Last updated: 2026-10-23
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-10-23)
+
+- CORR-8: Made `diff()` and `is_dirty()` non-mutating across all 5 VCS backends (`Git`, `RCS`, `SVN`, `Mercurial`, `Fossil`) via `ChangeTrack::VCS::Base::_with_temp_mirror_sync()`, preventing read-only `status`, `diff`, and `run --dry-run` invocations from altering the VCS mirror or masking changes from subsequent runs.
+- CORR-9: Fixed `ChangeTrack::VCS::RCS::revert()` to use `co -p<rev>` instead of `co -r<rev> -l`, preventing RCS lock corruption on subsequent check-ins, and routed `RCS::output_path()` through `_mirror_rel()` to reject `..` path traversal.
+- CORR-10: Fixed `run`, `status`, and `diff` to capture unified diffs when a tracked non-empty file is truncated to 0 bytes, and updated `status` to report metadata-only changes (`chmod`/`chown`) with `(meta: ...)`.
+- CORR-11: Fixed `Mercurial::log_history()`, `SVN::log_history()`, and `SVN::revert()` to support files that have been deleted from the working tree.
+- OPS-7: Expanded `Runner::_internal_exclude_paths()` to automatically exclude the SVN repository directory (`$output_dir-svnrepo`), `lock_path`, and enabled `file` notifier log paths from self-tracking.
+- OPS-8: Routed `Notify::Email::_send_one()` through `ChangeTrack::Util::run_cmd()` with `SIGPIPE` protection (`local $SIG{PIPE} = 'IGNORE'`) and applied `command_timeout` across all CLI subcommands (`status`, `diff`, `log`, `revert`, `init`).
+- CONF-2: `conf.d/*.conf` drop-in files can now override scalar `[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base config file while still rejecting conflicting definitions between multiple `conf.d/*.conf` drop-ins or duplicate keys within the same file.
+- NOTIFY-2: Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed — sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
+- DEBT-12: Removed unused `config_keys()` and duplicate `_sleep()` methods from notifier classes, unused `parse_claude_md()` from `tools/doc-lint`, and redundant `install` rules from `packaging/debian/rules`.
+- PERF-5: Cached `HEAD` existence in `ChangeTrack::VCS::Git` and removed redundant per-commit `crlf-glob` subprocess invocation in `ChangeTrack::VCS::Fossil::commit()`.
+- PKG-5: Fixed `make install-user-systemd` in `Makefile` to strip the root-only `@DEFAULTSDIR@` `EnvironmentFile` directive and rewrite `--system` to `--user`.
 
 ## Completed (2026-10-08)
 

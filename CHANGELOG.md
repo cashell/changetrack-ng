@@ -18,6 +18,14 @@ All notable changes will be documented here.
 
 ### Changed
 
+- **Configuration drop-in inheritance:**
+  - `conf.d/*.conf` drop-in files can now override scalar `[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base config file while still rejecting conflicting definitions between multiple `conf.d/*.conf` drop-ins or duplicate keys within the same file.
+- **Structured notification event consolidation:**
+  - Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed — sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
+- **Codebase pruning and dead code elimination:**
+  - Removed unused `config_keys()` and duplicate `_sleep()` methods from notifier classes, unused `parse_claude_md()` from `tools/doc-lint`, and redundant `install` rules from `packaging/debian/rules`.
+- **VCS execution optimizations:**
+  - Cached `HEAD` existence in `ChangeTrack::VCS::Git` and removed redundant per-commit `crlf-glob` subprocess invocation in `ChangeTrack::VCS::Fossil::commit()`.
 - **Documentation de-duplication and separation of concerns:**
   - Streamlined `README.md` by delegating detailed OTLP/File attribute tables to `man/changetrack-ng.conf.5` and `ARCHITECTURE.md`, and delegating full Makefile variable override tables to `INSTALL.md`.
   - Streamlined `PRODUCT.md` by delegating raw filesystem layout paths to `INSTALL.md` and exit code definitions to `man/changetrack-ng.8` and `ARCHITECTURE.md`.
@@ -28,6 +36,20 @@ All notable changes will be documented here.
 
 ### Fixed
 
+- **VCS non-mutation during read-only commands:**
+  - Made `diff()` (and `is_dirty()`) non-mutating across all 5 VCS backends (`Git`, `RCS`, `SVN`, `Mercurial`, `Fossil`) via `ChangeTrack::VCS::Base::_with_temp_mirror_sync()`, preventing read-only `status`, `diff`, and `run --dry-run` invocations from altering the VCS mirror or masking changes from subsequent runs.
+- **RCS revert safety and path traversal protection:**
+  - Fixed `ChangeTrack::VCS::RCS::revert()` to use `co -p<rev>` instead of `co -r<rev> -l`, preventing RCS lock corruption on subsequent check-ins, and routed `RCS::output_path()` through `_mirror_rel()` to reject `..` path traversal.
+- **File truncation diffs and metadata-only status reporting:**
+  - Fixed `run`, `status`, and `diff` to capture unified diffs when a tracked non-empty file is truncated to 0 bytes, and updated `status` to report metadata-only changes (`chmod`/`chown`) with `(meta: ...)`.
+- **Deleted file history and revert operations:**
+  - Fixed `Mercurial::log_history()`, `SVN::log_history()`, and `SVN::revert()` to support files that have been deleted from the working tree.
+- **Self-tracking exclusion boundaries:**
+  - Expanded `Runner::_internal_exclude_paths()` to automatically exclude the SVN repository directory (`$output_dir-svnrepo`), `lock_path`, and enabled `file` notifier log paths from self-tracking.
+- **Subcommand timeouts and email delivery protection:**
+  - Routed `Notify::Email::_send_one()` through `ChangeTrack::Util::run_cmd()` with `SIGPIPE` protection (`local $SIG{PIPE} = 'IGNORE'`) and applied `command_timeout` across all CLI subcommands (`status`, `diff`, `log`, `revert`, `init`).
+- **User systemd unit packaging:**
+  - Fixed `make install-user-systemd` in `Makefile` to strip the root-only `@DEFAULTSDIR@` `EnvironmentFile` directive and rewrite `--system` to `--user`.
 - **Documentation technical accuracy and defects:**
   - Corrected `man/changetrack-ng.conf.5` sensitive file auto-detection formula from `(mode & 0044 == 0)` to `(mode & 0004 == 0)` (no world-read bit) to accurately reflect `Runner.pm`.
   - Removed invalid per-notifier `sensitive_notify` override from `man/changetrack-ng.conf.5` which was rejected as an unknown key by `Config.pm`.

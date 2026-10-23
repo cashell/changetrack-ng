@@ -179,8 +179,13 @@ Automatic drop-ins are fixed sibling directories next to the main config file:
 | `notifier.d/` | `[notifier:*]` only |
 
 All `*.conf` files in each directory are processed in sorted order and merged
-into the main config. Custom automatic drop-in directories are not configured
-separately; use explicit `@include` directives for custom files or directories.
+into the main config. Drop-in files in `conf.d/*.conf` may override scalar
+`[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base
+configuration file, while conflicting definitions between two drop-in files
+or duplicate keys within the same file remain fatal errors. Array-valued keys
+(`ignore`, `push_remote`) are appended across files. Custom automatic drop-in
+directories are not configured separately; use explicit `@include` directives
+for custom files or directories.
 
 ### `@include` Directives
 
@@ -238,7 +243,7 @@ unit files. The template is installed by `make install-hooks`.
 | `run` | Scan, commit, notify (default) |
 | `run --dry-run` or `-n` | Detect and report changes statically without mutating VCS or sending notifications |
 | `init` | Initialize VCS repo explicitly |
-| `status` | List changed files |
+| `status` | List changed files (including content modifications and metadata-only changes like chmod/chown) without modifying the VCS mirror |
 | `diff [path]` | Show pending unified diff |
 | `log [path]` | Show VCS history |
 | `revert <path> <rev>` | Restore file from a revision |
