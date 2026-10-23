@@ -59,6 +59,9 @@ is($vcs->output_path('/etc/ssl/certs/ca.crt'),
     "$output_dir/etc:ssl:certs:ca.crt",
     'output_path: nested path');
 
+eval { $vcs->output_path('/etc/../shadow') };
+like($@, qr/unsafe tracked path/, 'output_path rejects .. traversal');
+
 ########################################################################
 # Checkin (New File)
 ########################################################################
@@ -99,6 +102,7 @@ $diff = $vcs->diff($test_file);
 ok(@$diff > 0, 'diff: non-empty after modification');
 like(join("\n", @$diff), qr/modified/, 'diff: contains modification');
 like(join("\n", @$diff), qr/^\+\+\+/m, 'diff: looks like unified diff');
+ok($vcs->is_dirty($test_file), 'is_dirty: remains true after non-mutating diff');
 
 ########################################################################
 # Checkin Modified File
@@ -122,5 +126,25 @@ my $add_err    = do { local $@; eval { $vcs->add($test_file) };    $@ };
 my $commit_err = do { local $@; eval { $vcs->commit('batch msg') }; $@ };
 is($add_err,    '', 'add: no-op, no error');
 is($commit_err, '', 'commit: no-op, no error');
+
+########################################################################
+# Revert And Subsequent Checkin
+########################################################################
+eval { $vcs->revert($test_file, '1.1') };
+is($@, '', 'revert: succeeds without error');
+
+my $restored_content = do {
+    open(my $rfh, '<', $test_file) or die "Cannot read $test_file: $!";
+    local $/;
+    <$rfh>;
+};
+is($restored_content, "setting = original\n", 'revert: content restored to 1.1');
+
+open($fh, '>', $test_file) or die "Cannot write $test_file: $!";
+print $fh "setting = third\n";
+close($fh);
+
+eval { $vcs->checkin($test_file, 'Third checkin') };
+is($@, '', 'checkin after revert: no error (lock not corrupted)');
 
 done_testing();

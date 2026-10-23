@@ -111,6 +111,16 @@ ok(-e $mirror, 'checkin: mirror file created');
 my $diff = $vcs->diff($test_file);
 is_deeply($diff, ['(new file)'], 'diff: (new file) before first commit');
 
+# Untracked file: diff returns (new file) without creating mirror path
+my $untracked_file = "$tracked_dir/untracked.conf";
+open(my $ufh, '>', $untracked_file) or die "Cannot create: $!";
+print $ufh "setting = untracked\n";
+close($ufh);
+
+my $untracked_diff = $vcs->diff($untracked_file);
+is_deeply($untracked_diff, ['(new file)'], 'diff: untracked file returns (new file)');
+ok(!-e $vcs->output_path($untracked_file), 'diff: untracked file does not create mirror path');
+
 ########################################################################
 # Commit
 ########################################################################
@@ -142,6 +152,7 @@ $diff = $vcs->diff($test_file);
 ok(@$diff > 0, 'diff: non-empty after modification');
 like(join("\n", @$diff), qr/modified/, 'diff: contains modification');
 like(join("\n", @$diff), qr/^\+\+\+/m, 'diff: looks like unified diff');
+ok($vcs->is_dirty($test_file), 'is_dirty: remains true after non-mutating diff');
 
 ########################################################################
 # Checkin + Commit Modified File
@@ -197,6 +208,50 @@ like(join("\n", @$history), qr/Initial commit/,      'log_history: contains firs
 like(join("\n", @$history), qr/Modification commit/, 'log_history: contains second commit msg');
 
 ########################################################################
+# Remove
+########################################################################
+{
+    my $mirror2 = $vcs->output_path($file2);
+    ok(-e $mirror2, 'file2 mirror exists before remove');
+    $vcs->remove($file2);
+    ok(!-e $mirror2, 'remove: file2 mirror deleted');
+
+    $err = do { local $@; eval { $vcs->commit('Remove file2') }; $@ };
+    is($err, '', 'commit removal: no error');
+    ok(!-e $vcs->output_path($file2), 'output_path($file2) does not exist after commit');
+
+    my $rm_tl = run_cmd(cmd => ['fossil', 'timeline', '-R', "$output_dir.fossil", '-n', '5']);
+    like($rm_tl->{stdout}, qr/Remove file2/, 'remove: removal commit appears in fossil timeline');
+
+    my $rm_again_err = do { local $@; eval { $vcs->remove($file2) }; $@ };
+    is($rm_again_err, '', 'remove: calling remove on already-removed file succeeds');
+}
+
+########################################################################
+# Revert
+########################################################################
+{
+    my $history = $vcs->log_history($test_file);
+    my @revs;
+    for my $line (@$history) {
+        if ($line =~ /\[([0-9a-f]{10,})\]/) {
+            push @revs, $1;
+        }
+    }
+    my $first_rev = $revs[-1];
+    ok(defined $first_rev && length $first_rev, 'revert: found earliest commit hash');
+
+    $err = do { local $@; eval { $vcs->revert($test_file, $first_rev) }; $@ };
+    is($err, '', 'revert: no error');
+
+    open(my $rfh, '<', $test_file) or die "Cannot read $test_file: $!";
+    my $content = do { local $/; <$rfh> };
+    close($rfh);
+
+    is($content, "setting = original\n", 'revert: file content restored to original');
+}
+
+########################################################################
 # Push_Remote: Local Repo Clone
 ########################################################################
 {
@@ -210,21 +265,6 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
         goto DONE;
     }
 
-    my $push_output_dir = tempdir(CLEANUP => 1);
-    my $push_vcs = ChangeTrack::VCS::Fossil->new(
-        output_dir => $push_output_dir,
-        options    => {
-            fossil_repo  => "$output_dir.fossil",
-            push_remote  => $remote_repo,
-        },
-    );
-
-    # Re-use the already-open repo  --  open the existing repo in a new checkout dir
-    my $open_r = run_cmd(cmd => ['fossil', 'open', '--user', 'changetrack-ng', "$output_dir.fossil"],
-        # fossil open must run in the target dir; use a wrapper
-    );
-    # Instead: directly test push by committing something new in the original vcs
-    # and pushing to remote_repo
     my $push_file = "$tracked_dir/push_test.conf";
     open(my $pfh, '>', $push_file) or die $!;
     print $pfh "push test content\n";

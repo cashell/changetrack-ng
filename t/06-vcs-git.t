@@ -107,6 +107,7 @@ $diff = $vcs->diff($test_file);
 ok(@$diff > 0, 'diff: non-empty after modification');
 like(join("\n", @$diff), qr/modified/, 'diff: contains modification');
 like(join("\n", @$diff), qr/^\+\+\+/m, 'diff: looks like unified diff');
+ok($vcs->is_dirty($test_file), 'is_dirty: remains true after non-mutating diff');
 
 ########################################################################
 # Checkin + Commit Modified File
@@ -183,6 +184,23 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
 
     my $bare_log = run_cmd(cmd => ['git', '-C', $bare_dir, 'log', '--oneline']);
     like($bare_log->{stdout}, qr/Push test commit/, 'push_remote: commit visible in bare repo');
+}
+
+########################################################################
+# Diff On Un-Added File Does Not Create Mirror Path
+########################################################################
+{
+    my $never_added = "$tracked_dir/never_added.conf";
+    open(my $nfh, '>', $never_added) or die "Cannot create $never_added: $!";
+    print $nfh "never added content\n";
+    close($nfh);
+
+    my $na_mirror = $vcs->output_path($never_added);
+    ok(!-e $na_mirror, 'mirror file does not exist before diff');
+
+    my $na_diff = $vcs->diff($never_added);
+    is_deeply($na_diff, ['(new file)'], 'diff on un-added file returns (new file)');
+    ok(!-e $na_mirror, 'mirror file was not created by diff on un-added file');
 }
 
 done_testing();

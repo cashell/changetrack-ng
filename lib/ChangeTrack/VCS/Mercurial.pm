@@ -120,26 +120,26 @@ sub commit {
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
-    sync_mirror_path($real_path, $mirror);
+    return ['(new file)'] unless -e $mirror;
 
     my $st = $self->_hg('status', $mirror);
     return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
 
-    my $r = $self->_hg('diff', $mirror);
-    croak "hg diff failed: $r->{stderr}" unless $r->{success};
-    return ['(new file)'] if $r->{stdout} =~ /^diff\s+-r\s+0{12}\b/m;
-    return [] unless $r->{stdout} =~ /\S/;
-    return [split /\n/, $r->{stdout}];
+    return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+        my $r = $self->_hg('diff', $mirror);
+        croak "hg diff failed: $r->{stderr}" unless $r->{success};
+        return ['(new file)'] if $r->{stdout} =~ /^diff\s+-r\s+0{12}\b/m;
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    });
 }
 
 # log_history -- Return hg log lines for the mirror path of $real_path.
 sub log_history {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    return ['(no history yet)'] unless -e $mirror;
     my $r = $self->_hg('log', $mirror);
-    return ['(no history yet)'] unless $r->{stdout} =~ /\S/;
+    return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
 }
 
@@ -148,6 +148,7 @@ sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
     my $mirror = $self->output_path($real_path);
+    make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     my $r = $self->_hg('revert', '-r', $rev, '--no-backup', $mirror);
     croak "hg revert failed: $r->{stderr}" unless $r->{success};
     restore_mirror_path($mirror, $real_path);

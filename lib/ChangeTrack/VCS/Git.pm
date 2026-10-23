@@ -96,6 +96,7 @@ sub commit {
 
     my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'commit', '-m', $msg]);
     croak "git commit failed: $r->{stderr}" unless $r->{success};
+    $self->{_has_head} = 1;
 
     my $push_remote = $self->{options}{push_remote};
     return unless defined $push_remote;
@@ -110,25 +111,36 @@ sub commit {
     }
 }
 
+# _has_head -- Return true if the repository has at least one commit (cached).
+sub _has_head {
+    my ($self) = @_;
+    return 1 if $self->{_has_head};
+    my $head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'rev-parse', '--verify', 'HEAD']);
+    if ($head->{success}) {
+        $self->{_has_head} = 1;
+        return 1;
+    }
+    return 0;
+}
+
 # diff -- Return unified diff lines for $real_path vs HEAD.
 # Returns ['(new file)'] if the file has no prior commit; [] if unchanged.
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
-    sync_mirror_path($real_path, $mirror);
-
-    my $head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'rev-parse', '--verify', 'HEAD']);
-    return ['(new file)'] unless $head->{success};
+    return ['(new file)'] unless -e $mirror;
+    return ['(new file)'] unless $self->_has_head;
 
     my $rel     = $self->_rel_path($mirror);
     my $in_head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'cat-file', '-e', "HEAD:$rel"]);
     return ['(new file)'] unless $in_head->{success};
 
-    my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--no-color', 'HEAD', '--', $mirror]);
-    croak "git diff failed: $r->{stderr}" unless $r->{success};
-    return [] unless $r->{stdout} =~ /\S/;
-    return [split /\n/, $r->{stdout}];
+    return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+        my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--no-color', 'HEAD', '--', $mirror]);
+        croak "git diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    });
 }
 
 # log_history -- Return git log lines for the mirror path of $real_path.
