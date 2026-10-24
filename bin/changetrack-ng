@@ -135,35 +135,20 @@ sub cmd_run {
 
 # cmd_init -- Initialize the VCS output directory without running a scan.
 sub cmd_init {
+    my ($cfg) = @_;
     require ChangeTrack::Runner;
     require ChangeTrack::Config;
-    my $cfg = eval { ChangeTrack::Config->load($opts{config}) };
-    if ($@) { warn "changetrack-ng: cannot read config: $@\n"; return 64 }
+    $cfg //= eval { ChangeTrack::Config->load($opts{config}) };
+    if (!$cfg) { warn "changetrack-ng: cannot read config: $@\n"; return 64 }
 
-    my $vcs_name   = lc($cfg->global('vcs') // 'rcs');
-    my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
-
-    my %vcs_map = (
-        rcs  => 'ChangeTrack::VCS::RCS',
-        git  => 'ChangeTrack::VCS::Git',
-        fossil => 'ChangeTrack::VCS::Fossil',
-        svn  => 'ChangeTrack::VCS::SVN',
-        hg   => 'ChangeTrack::VCS::Mercurial',
-        mercurial => 'ChangeTrack::VCS::Mercurial',
-    );
-    my $vcs_class = $vcs_map{$vcs_name}
-        or do { warn "changetrack-ng: unknown VCS '$vcs_name'\n"; return 64 };
-    eval "require $vcs_class; 1"
-        or do { warn "changetrack-ng: cannot load $vcs_class: $@\n"; return 1 };
-
-    my $vcs = $vcs_class->new(output_dir => $output_dir);
-    if ($vcs->is_initialized) {
-        warn "changetrack-ng: already initialized in $output_dir\n" unless $opts{quiet};
+    my $runner = ChangeTrack::Runner->new(config => $cfg);
+    my ($vcs, $output_dir, $already) = $runner->init_vcs();
+    my $vcs_type = $cfg->global('vcs') // 'git';
+    if ($already) {
+        say "Already initialized ($vcs_type in $output_dir).";
         return 0;
     }
-    eval { $vcs->init };
-    if ($@) { warn "changetrack-ng: init failed: $@\n"; return 1 }
-    say "Initialized $vcs_name repository in $output_dir" unless $opts{quiet};
+    say "Initialized $vcs_type repository in $output_dir.";
     return 0;
 }
 

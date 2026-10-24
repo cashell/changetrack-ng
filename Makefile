@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng
-VERSION    := 0.7.3
+VERSION    := 0.7.4
 
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
@@ -405,7 +405,10 @@ install-user-uninstall:
 
 install-user-systemd:
 	install -d $(HOME)/.config/systemd/user
-	sed -e "s|@BINDIR@|$(HOME)/.local/bin|g" packaging/systemd/$(NAME).service > $(HOME)/.config/systemd/user/$(NAME).service
+	sed -e "s|@BINDIR@|$(HOME)/.local/bin|g" \
+	    -e "/@DEFAULTSDIR@/d" \
+	    -e "s|--system|--user|g" \
+	    packaging/systemd/$(NAME).service > $(HOME)/.config/systemd/user/$(NAME).service
 	install -m 644 packaging/systemd/$(NAME).timer $(HOME)/.config/systemd/user/$(NAME).timer
 	@if command -v systemctl >/dev/null 2>&1; then \
 		systemctl --user daemon-reload 2>/dev/null; \

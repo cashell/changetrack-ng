@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.7.3
+Version: 0.7.4
 
 For quick start and reference, see [README.md](README.md). For deployment and package building, see [INSTALL.md](INSTALL.md). For engineering internals, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -38,7 +38,7 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 |---------|---------|
 | `run` (default) | Full scan → commit → notify cycle |
 | `init` | Initialize the VCS output directory |
-| `status` | Show files with pending changes (exit 1 if any) |
+| `status` | Show files with pending changes — including content modifications and metadata-only changes (chmod/chown) — without modifying the VCS mirror (exit 1 if any) |
 | `diff [path]` | Show unified diff for pending or historical changes |
 | `log [path]` | Show VCS history for a tracked file |
 | `revert <path> <rev>` | Restore a file to a specific historical revision |
@@ -83,6 +83,10 @@ are traversed recursively; ignore patterns apply during traversal.
 
 Drop-in directories (`conf.d/`, `track.d/`, `notifier.d/`) and `@include`
 directives allow configs to be split across multiple files for composability.
+Drop-in files in `conf.d/*.conf` can override scalar `[global]` keys (`vcs`,
+`output_dir`, `interval`, etc.) defined in the base config file, while conflicting
+definitions between multiple drop-in files or duplicate keys within the same file
+remain fatal errors. Array-valued keys (`ignore`, `push_remote`) append across files.
 
 The `HOSTNAME` token is interpolated in values, useful for multi-host configs managed by a CM tool.
 

@@ -66,9 +66,6 @@ sub heartbeat_enabled {
 
 sub name { 'otlp' }
 
-# config_keys -- The set of constructor args this notifier reads from config.
-sub config_keys { qw(endpoint headers compression full_diff heartbeat timeout insecure resource_attributes emit_recipients max_diff_bytes severity_change severity_heartbeat severity_warning) }
-
 # validate_config -- Return an error string when no endpoint is configured.
 sub validate_config {
     my ($self) = @_;
@@ -134,73 +131,41 @@ sub _build_payload {
     } else {
         my ($chg_num, $chg_text) = $self->_severity_cfg('severity_change', 'INFO');
         for my $c (@{ $report->changes }) {
-            my $mtime = ($c->{file_meta} // {})->{mtime};
-            my $occurred_nano = defined $mtime
-                ? sprintf('%d000000000', $mtime)
-                : $observed_nano;
+            my $ev = $self->_build_change_event($c, $report->{start_time} // time());
+            my $occurred_nano = sprintf('%d000000000', $ev->{occurred_unix});
 
-            my ($type, $event_name, $body_msg);
-            if ($c->{is_removed}) {
-                $type       = 'removed';
-                $event_name = 'changetrack.file.removed';
-                $body_msg   = "config file removed: $c->{path}";
-            } elsif ($c->{is_new}) {
-                $type       = 'created';
-                $event_name = 'changetrack.file.created';
-                $body_msg   = "new config file: $c->{path}";
-            } else {
-                $type       = 'modified';
-                $event_name = 'changetrack.file.changed';
-                $body_msg   = "config file changed: $c->{path}";
+            my %ev_attrs = %{ $ev->{attributes} };
+
+            unless ($self->{full_diff}) {
+                delete $ev_attrs{'changetrack.file.diff'};
+                delete $ev_attrs{'config_change.diff'};
+                delete $ev_attrs{'config_change.diff_truncated'};
             }
 
             my @attrs = (
-                { key => 'event.name',     value => { stringValue => $event_name } },
-                { key => 'file.path',      value => { stringValue => $c->{path} } },
-                { key => 'file.name',      value => { stringValue => basename($c->{path}) } },
-                { key => 'file.directory', value => { stringValue => dirname($c->{path}) } },
-                { key => 'config_change.type', value => { stringValue => $type } },
-                { key => 'config_change.sensitive',
-                  value => { boolValue => $c->{is_sensitive} ? JSON::PP::true() : JSON::PP::false() } },
+                { key => 'event.name', value => { stringValue => $ev->{event_name} } },
                 @common_attrs,
             );
 
-            my $fm = $c->{file_meta} // {};
-            push @attrs, { key => 'file.mode',       value => { stringValue => $fm->{mode} } }
-                if defined $fm->{mode};
-            push @attrs, { key => 'file.owner.name', value => { stringValue => $fm->{owner} } }
-                if defined $fm->{owner};
-            push @attrs, { key => 'file.group.name', value => { stringValue => $fm->{group} } }
-                if defined $fm->{group};
-            push @attrs, { key => 'file.size', value => { intValue => sprintf('%d', $fm->{size}) } }
-                if defined $fm->{size};
+            for my $k (sort keys %ev_attrs) {
+                my $v = $ev_attrs{$k};
+                next unless defined $v;
 
-            if ($c->{meta_change}) {
-                push @attrs,
-                    { key => 'config_change.meta_summary', value => { stringValue => $c->{meta_change} } };
-            }
-
-            if ($self->{emit_recipients} && @{ $c->{recipients} // [] }) {
-                push @attrs, {
-                    key   => 'config_change.notified',
-                    value => { arrayValue => { values => [
-                        map { { stringValue => $_ } } @{ $c->{recipients} }
-                    ] } },
-                };
-            }
-
-            if ($self->{full_diff}) {
-                unless ($c->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-                    my ($diff_text, $truncated)
-                        = $self->_truncate_diff(join("\n", @{ $c->{diff} // [] }));
+                if ($k eq 'config_change.sensitive' || $k eq 'changetrack.file.sensitive') {
+                    push @attrs, { key => $k, value => { boolValue => $v ? JSON::PP::true() : JSON::PP::false() } };
+                } elsif ($k eq 'config_change.diff_truncated') {
+                    push @attrs, { key => $k, value => { boolValue => JSON::PP::true() } } if $v;
+                } elsif ($k eq 'file.size' || $k eq 'changetrack.file.uid' || $k eq 'changetrack.file.gid') {
+                    push @attrs, { key => $k, value => { intValue => sprintf('%d', $v) } };
+                } elsif ($k eq 'config_change.notified' || $k eq 'changetrack.notify.recipients') {
                     push @attrs, {
-                        key   => 'config_change.diff',
-                        value => { stringValue => $diff_text },
+                        key   => $k,
+                        value => { arrayValue => { values => [
+                            map { { stringValue => $_ } } @$v
+                        ] } },
                     };
-                    push @attrs, {
-                        key   => 'config_change.diff_truncated',
-                        value => { boolValue => JSON::PP::true() },
-                    } if $truncated;
+                } else {
+                    push @attrs, { key => $k, value => { stringValue => "$v" } };
                 }
             }
 
@@ -209,7 +174,7 @@ sub _build_payload {
                 observedTimeUnixNano => $observed_nano,
                 severityNumber       => $chg_num,
                 severityText         => $chg_text,
-                body                 => { stringValue => $body_msg },
+                body                 => { stringValue => $ev->{body} },
                 attributes           => \@attrs,
             };
         }
@@ -354,9 +319,6 @@ sub _post_with_retry {
     my $safe_url = ChangeTrack::Util::redact_url($ep);
     return $self->_http_post_with_retry($http, $ep, \%headers, $body, 'otlp', $safe_url);
 }
-
-# _sleep -- Pause for $secs seconds.  Extracted for test-mocking.
-sub _sleep { sleep($_[1]) }
 
 # _parse_config_headers -- Parse space-separated key=value pairs from config.
 # Backslash-escaped spaces in values are supported.

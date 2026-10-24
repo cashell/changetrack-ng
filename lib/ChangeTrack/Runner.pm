@@ -53,6 +53,11 @@ C<verbose>, C<debug>, C<trace>, C<force>.
 Perform a full scan-commit-notify cycle.  Returns the C<ChangeTrack::Report>
 object.  Dies on VCS-level failure.
 
+=item $runner->init_vcs
+
+Initialize the VCS repository if not already initialized.
+Returns C<($vcs, $output_dir, $already_initialized)>.
+
 =item $runner->status
 
 Return an arrayref of hashrefs for files that have changed since the last
@@ -175,14 +180,16 @@ sub run {
     # Enable debug logging in Util (for run_cmd) early
     set_debug(1) if $self->{debug};
 
-    my $cfg        = ChangeTrack::Config->load($self->{config_path});
-    $self->_verbose("Config loaded from $self->{config_path}");
+    my $cfg = (ref($self->{config_path}) && ref($self->{config_path})->isa('ChangeTrack::Config'))
+        ? $self->{config_path}
+        : ChangeTrack::Config->load($self->{config_path});
+    $self->_verbose("Config loaded from " . (ref($self->{config_path}) ? 'object' : $self->{config_path}));
 
     # Bound every external command so a hung tool cannot hang the scheduled
     # run.  command_timeout defaults to 120s; 0 disables the cap.
     ChangeTrack::Util::set_default_timeout($cfg->global('command_timeout') // 120);
 
-    $self->_warn_insecure_config_permissions($cfg, $self->{config_path});
+    $self->_warn_insecure_config_permissions($cfg, $self->{config_path}) unless ref($self->{config_path});
     my @notifiers  = $self->_build_notifiers($cfg);
     $self->_validate_notifiers(\@notifiers);
     my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
@@ -451,10 +458,13 @@ sub _process_file {
     my $mode_oct = defined($rec->{mode}) ? oct($rec->{mode}) : ($st[2] & 07777);
 
     if ($type eq 'empty') {
-        # Empty files have no content to diff.  Report only meta changes.
+        # Empty files have no content to diff unless transitioning from a non-empty file.
         if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st)) {
             my $meta_summary = $md->diff_summary($real_path, \@st);
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+            my $diff_lines = (defined $existing && defined $prev_type && $prev_type eq 'file')
+                ? $vcs->diff($real_path)
+                : [];
             $vcs->checkin($real_path, $msg) unless $self->{dry_run};
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 $mode_oct);
@@ -462,7 +472,7 @@ sub _process_file {
                 path         => $real_path,
                 is_new       => 0,
                 is_sensitive => $is_sensitive,
-                diff         => [],
+                diff         => $diff_lines,
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
                 stat         => $rec,
@@ -703,7 +713,8 @@ sub _build_file_list {
 }
 
 # _internal_exclude_paths -- Return paths that should never be tracked
-# (the output_dir itself and the metadata sidecar).
+# (the output_dir itself, metadata sidecar, VCS-specific paths, lockfile,
+# and file notifier targets).
 sub _internal_exclude_paths {
     my ($cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
@@ -713,7 +724,20 @@ sub _internal_exclude_paths {
         $output_dir,
         "$output_dir/.changetrack-metadata",
     );
-    push @exclude, "$output_dir.fossil" if $vcs_name eq 'fossil';
+    push @exclude, "$output_dir.fossil"  if $vcs_name eq 'fossil';
+    push @exclude, "$output_dir-svnrepo" if $vcs_name eq 'svn';
+
+    my $lock_path = $cfg->global('lock_path');
+    if (defined $lock_path && length $lock_path) {
+        push @exclude, $lock_path;
+    }
+
+    for my $inst (@{ $cfg->notifiers->{file} // [] }) {
+        if ($inst->{enabled} && defined $inst->{path} && length $inst->{path}) {
+            push @exclude, $inst->{path};
+        }
+    }
+
     return \@exclude;
 }
 
@@ -866,10 +890,14 @@ sub _ensure_lock_parent_dir {
 # _setup -- Load config and instantiate the VCS backend.
 # Croaks if the VCS repository is not yet initialized.
 sub _setup {
-    my ($self) = @_;
-    my $cfg        = ChangeTrack::Config->load($self->{config_path});
+    my ($self, %opts) = @_;
+    my $cfg = (ref($self->{config_path}) && ref($self->{config_path})->isa('ChangeTrack::Config'))
+        ? $self->{config_path}
+        : ChangeTrack::Config->load($self->{config_path});
     my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
+
+    ChangeTrack::Util::set_default_timeout($cfg->global('command_timeout') // 120);
 
     my $vcs_class  = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
@@ -880,10 +908,24 @@ sub _setup {
         options    => { push_remote => $cfg->global('push_remote') },
         verbose    => $self->{verbose} // 0,
     );
+    my $caller_sub = (caller(1))[3] // '';
+    my $skip_init_check = $opts{no_init_check} || ($caller_sub =~ /init_vcs$/);
     croak "VCS not initialized. Run 'changetrack-ng init' first."
-        unless $vcs->is_initialized;
+        unless $skip_init_check || $vcs->is_initialized;
 
-    return ($vcs, $cfg);
+    return ($vcs, $cfg, $output_dir);
+}
+
+# init_vcs -- Initialize the VCS repository if not already initialized.
+# Returns ($vcs, $output_dir, $already_initialized).
+sub init_vcs {
+    my ($self) = @_;
+    my ($vcs, $md, $output_dir) = $self->_setup();
+    if ($vcs->is_initialized) {
+        return ($vcs, $output_dir, 1);
+    }
+    $vcs->init();
+    return ($vcs, $output_dir, 0);
 }
 
 # _tracked_entries -- Resolve all track entries for the current config,
@@ -938,13 +980,17 @@ sub status {
             }
             next;
         }
-        next if _is_non_diffable($path);
+        next if $self->_is_non_diffable($path, $md);
+        my $meta_changed = defined($md->record_for($path)) && $md->changed_since_load($path);
         next if defined $md->record_for($path)
              && $md->can_skip_content_diff($path)
-             && !$md->changed_since_load($path);
+             && !$meta_changed;
         my $diff = eval { $vcs->diff($path) };
         croak "status: diff failed for $path: $@" if $@;
         $diff //= [];
+        if (!@$diff && $meta_changed) {
+            $diff = ['(meta: ' . $md->diff_summary($path) . ')'];
+        }
         push @results, { path => $path, diff => $diff } if @$diff;
     }
     return \@results;
@@ -1027,14 +1073,15 @@ sub _load_metadata {
 }
 
 # _is_non_diffable -- Return true for file types that cannot produce meaningful diffs.
-# (binary, empty, special, unreadable).  Symlinks are always diffable (target is text).
+# (binary, special, unreadable).  Symlinks are always diffable (target is text).
+# Empty files (0 bytes) are considered diffable so truncations show deleted content.
 sub _is_non_diffable {
-    my ($path) = @_;
+    my $path = @_ > 1 && (ref($_[0]) || $_[0] eq __PACKAGE__) ? $_[1] : $_[0];
     return 1 unless defined $path;
     return 0 if -l $path;          # symlinks are always diffable (target is text)
     return 1 unless -f $path;      # special files
     return 1 unless -r $path;      # unreadable
-    return 1 if -z $path;          # empty
+    return 0 if -z $path;          # empty files are diffable (truncations show deleted content)
     return (-B $path) ? 1 : 0;     # binary
 }
 

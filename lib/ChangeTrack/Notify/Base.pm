@@ -49,6 +49,11 @@ Returns the response hashref on 2xx and 4xx status (emitting a warning on 4xx).
 Retries on 5xx and 599 network errors with back-off delay doubling each attempt.
 Dies on terminal failure after 3 attempts.
 
+=item $notifier->_build_change_event($change, $observed_unix)
+
+Normalize a single Report change hashref into a canonical OpenTelemetry event
+structure shared by File and OTLP notifiers.
+
 =back
 
 =cut
@@ -109,7 +114,7 @@ sub _sensitive_notify_allowed {
 sub _diff_text_for {
     my ($self, $change) = @_;
     if ($change->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-        return ("[diff suppressed -- sensitive file (no group/world read)]");
+        return ('[diff suppressed — sensitive file; view via VCS log]');
     }
     return @{ $change->{diff} // [] };
 }
@@ -121,16 +126,112 @@ sub _diff_text_for {
 sub _truncate_diff {
     my ($self, $text) = @_;
     my $limit = $self->{max_diff_bytes} // 0;
-    return ($text, 0) unless $limit && $limit > 0;
+    return wantarray ? ($text, 0) : $text unless $limit && $limit > 0;
 
     require Encode;
     my $bytes = Encode::encode('UTF-8', $text);
-    return ($text, 0) if length($bytes) <= $limit;
+    return wantarray ? ($text, 0) : $text if length($bytes) <= $limit;
 
     # FB_QUIET stops decoding at the first incomplete trailing sequence, so the
     # cut never yields a broken multibyte character.
     my $cut = Encode::decode('UTF-8', substr($bytes, 0, $limit), Encode::FB_QUIET());
-    return ($cut . "\n[diff truncated -- exceeded max_diff_bytes ($limit)]", 1);
+    my $res = $cut . "\n[diff truncated -- exceeded max_diff_bytes ($limit)]";
+    return wantarray ? ($res, 1) : $res;
+}
+
+# _build_change_event -- Normalize a single Report change hashref into a
+# canonical OpenTelemetry event structure shared by File and OTLP notifiers.
+sub _build_change_event {
+    my ($self, $change, $observed_unix) = @_;
+    $observed_unix //= time();
+
+    my $path = $change->{path};
+    my $change_type = ($change->{removed} || $change->{is_removed}) ? 'removed'
+                    : ($change->{is_new} ? 'created' : 'modified');
+    my $event_name  = ($change_type eq 'modified') ? 'changetrack.file.changed'
+                    : "changetrack.file.$change_type";
+    my $body        = "File $change_type: $path";
+
+    my $fm = (ref($change->{file_meta}) eq 'HASH') ? $change->{file_meta}
+           : (ref($change->{stat}) eq 'HASH')      ? $change->{stat}
+           : {};
+
+    my $occurred_unix = $change->{mtime} // $fm->{mtime} // $observed_unix;
+    my $is_sensitive  = ($change->{sensitive} || $change->{is_sensitive}) ? 1 : 0;
+
+    require File::Basename;
+    my %attrs = (
+        'changetrack.file.path'        => $path,
+        'changetrack.file.change_type' => $change_type,
+        'changetrack.file.sensitive'   => $is_sensitive,
+        'file.path'                    => $path,
+        'file.name'                    => File::Basename::basename($path),
+        'file.directory'               => File::Basename::dirname($path),
+        'config_change.type'           => $change_type,
+        'config_change.sensitive'      => $is_sensitive,
+    );
+
+    if (defined $fm->{mode}) {
+        $attrs{'changetrack.file.mode'} = $fm->{mode};
+        $attrs{'file.mode'}             = $fm->{mode};
+    }
+    if (defined $fm->{uid}) {
+        $attrs{'changetrack.file.uid'} = $fm->{uid};
+    }
+    if (defined $fm->{gid}) {
+        $attrs{'changetrack.file.gid'} = $fm->{gid};
+    }
+    my $uname = $fm->{uname} // $fm->{owner} // $fm->{user};
+    if (defined $uname) {
+        $attrs{'changetrack.file.uname'} = $uname;
+        $attrs{'file.owner.name'}        = $uname;
+    }
+    my $gname = $fm->{gname} // $fm->{group};
+    if (defined $gname) {
+        $attrs{'changetrack.file.gname'} = $gname;
+        $attrs{'file.group.name'}        = $gname;
+    }
+    if (defined $fm->{size}) {
+        $attrs{'file.size'} = $fm->{size} + 0;
+    }
+
+    if ($change->{meta_change}) {
+        $attrs{'config_change.meta_summary'} = $change->{meta_change};
+    }
+
+    if ($self->{emit_recipients} && @{ $change->{recipients} // [] }) {
+        $attrs{'changetrack.notify.recipients'} = [ @{ $change->{recipients} } ];
+        $attrs{'config_change.notified'}        = [ @{ $change->{recipients} } ];
+    }
+
+    my ($diff_text, $diff_truncated);
+    if ($is_sensitive && (($self->{sensitive_notify} // 'suppress') eq 'suppress')) {
+        $diff_text      = "[diff suppressed \x{2014} sensitive file; view via VCS log]";
+        $diff_truncated = 0;
+    } elsif (ref($change->{diff}) eq 'ARRAY' && @{ $change->{diff} }) {
+        my ($cut, $trunc) = $self->_truncate_diff(join("\n", @{ $change->{diff} }));
+        $diff_text      = $cut;
+        $diff_truncated = $trunc ? 1 : 0;
+    }
+
+    if (defined $diff_text) {
+        $attrs{'changetrack.file.diff'} = $diff_text;
+        $attrs{'config_change.diff'}    = $diff_text;
+        if ($diff_truncated) {
+            $attrs{'config_change.diff_truncated'} = 1;
+        }
+    }
+
+    return {
+        change_type    => $change_type,
+        event_name     => $event_name,
+        body           => $body,
+        occurred_unix  => $occurred_unix,
+        observed_unix  => $observed_unix,
+        diff           => $diff_text,
+        diff_truncated => $diff_truncated,
+        attributes     => \%attrs,
+    };
 }
 
 # Severity name -> OTel severityNumber.  Single source of truth for both

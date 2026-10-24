@@ -229,4 +229,37 @@ SKIP: {
     is($md3->record_for($file)->{type}, 'file', 'metadata type updated back to file');
 }
 
+########################################################################
+# Test 4: File Truncation to 0 Bytes (file -> empty) Captures Deleted Diff
+########################################################################
+{
+    my $work_dir   = tempdir(CLEANUP => 1);
+    my $output_dir = tempdir(CLEANUP => 1);
+    my $file       = "$work_dir/truncate_test.txt";
+
+    open(my $fh, '>', $file) or die $!;
+    print {$fh} "line to be deleted 1\nline to be deleted 2\n";
+    close($fh);
+
+    my ($cfh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $output_dir\n\n[track]\n$file\n";
+    close($cfh);
+
+    my $r1 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep1 = $r1->run;
+    is(scalar @{ $rep1->changes }, 1, 'initial run: tracked non-empty file');
+
+    # Truncate file to 0 bytes
+    open($fh, '>', $file) or die $!;
+    close($fh);
+
+    my $r2 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep2 = $r2->run;
+    is(scalar @{ $rep2->changes }, 1, 'run 2: truncation change detected');
+    my $change = $rep2->changes->[0];
+    ok(@{ $change->{diff} } > 0, 'run 2: diff is not empty for file truncation to empty');
+    like(join("\n", @{ $change->{diff} }), qr/^-line to be deleted/m,
+        'run 2: diff contains deleted line removals');
+}
+
 done_testing();

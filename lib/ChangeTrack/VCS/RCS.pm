@@ -38,7 +38,7 @@ sub model { 'per-file' }
 # /etc/passwd -> $output_dir/etc:passwd  (colons replace path separators)
 sub output_path {
     my ($self, $real_path) = @_;
-    (my $flat = $real_path) =~ s{^/}{};
+    my $flat = $self->_mirror_rel($real_path);
     # Percent-escape '%' and ':' before mapping '/' to ':' so distinct paths
     # (e.g. /etc/a/b and a real file /etc/a:b) cannot collide onto one archive.
     $flat =~ s/%/%25/g;
@@ -105,7 +105,7 @@ sub remove {
     unlink($op) if -e $op || -l $op;
 }
 
-# diff -- Copy the real file to output_path and run rcsdiff.
+# diff -- Compare real file to RCS archive using temporary mirror sync.
 # Returns [] if unchanged, arrayref of unified-diff lines if changed.
 # Returns ['(new file)'] if no RCS history exists yet.
 sub diff {
@@ -115,14 +115,13 @@ sub diff {
         return ['(new file)'];
     }
 
-    $self->_ensure_output_dir($real_path);
     my $op = $self->output_path($real_path);
-    sync_mirror_path($real_path, $op);
-
-    my $r = run_cmd(cmd => ['rcsdiff', '-u', $op]);
-    return [] if $r->{exit_code} == 0;
-    return [split /\n/, $r->{stdout}] if $r->{exit_code} == 1;
-    croak "rcsdiff error for $op: $r->{stderr}";
+    return $self->_with_temp_mirror_sync($real_path, $op, sub {
+        my $r = run_cmd(cmd => ['rcsdiff', '-u', $op]);
+        return [] if $r->{exit_code} == 0;
+        return [split /\n/, $r->{stdout}] if $r->{exit_code} == 1;
+        croak "rcsdiff error for $op: $r->{stderr}";
+    });
 }
 
 # is_dirty -- Return true if the real file differs from the latest RCS revision.
@@ -130,12 +129,11 @@ sub is_dirty {
     my ($self, $real_path) = @_;
     return 1 unless -e $self->_rcs_file($real_path);
 
-    $self->_ensure_output_dir($real_path);
     my $op = $self->output_path($real_path);
-    sync_mirror_path($real_path, $op);
-
-    my $r = run_cmd(cmd => ['rcsdiff', '-q', $op]);
-    return $r->{exit_code} != 0;
+    return $self->_with_temp_mirror_sync($real_path, $op, sub {
+        my $r = run_cmd(cmd => ['rcsdiff', '-q', $op]);
+        return $r->{exit_code} != 0;
+    });
 }
 
 # log_history -- Return rlog output lines for $real_path.
@@ -152,8 +150,12 @@ sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
     my $op = $self->output_path($real_path);
-    my $r = run_cmd(cmd => ['co', "-r$rev", '-l', $op]);
+    my $r  = run_cmd(cmd => ['co', "-p$rev", $op]);
     croak "co failed: $r->{stderr}" unless $r->{success};
+    open(my $fh, '>', $op) or croak "Cannot write $op: $!";
+    binmode($fh);
+    print {$fh} $r->{stdout};
+    close($fh) or croak "Cannot close $op: $!";
     restore_mirror_path($op, $real_path);
 }
 

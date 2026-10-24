@@ -671,7 +671,7 @@ SKIP: {
 }
 
 ########################################################################
-# Sensitive File: Ct.Diff Omitted With Otlp_Full_Diff=1 + Suppress
+# Sensitive File: Ct.Diff Placeholder Emitted With Otlp_Full_Diff=1 + Suppress
 ########################################################################
 {
     my $body_file = File::Spec->catfile($tmpdir, 'sens_suppress.json');
@@ -692,7 +692,10 @@ SKIP: {
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
     ok($a{'config_change.sensitive'}{boolValue}, 'Sensitive suppress: config_change.sensitive=true');
-    ok(!exists $a{'config_change.diff'},         'Sensitive suppress: config_change.diff omitted');
+    is($a{'config_change.diff'}{stringValue}, '[diff suppressed — sensitive file; view via VCS log]',
+        'Sensitive suppress: config_change.diff placeholder');
+    is($a{'changetrack.file.diff'}{stringValue}, '[diff suppressed — sensitive file; view via VCS log]',
+        'Sensitive suppress: changetrack.file.diff placeholder');
 }
 
 ########################################################################

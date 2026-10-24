@@ -216,9 +216,6 @@ sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
 
-    # Existing repos may predate this default, so enforce each run.
-    $self->_ensure_crlf_setting();
-
     # Skip if nothing pending.
     my $changes = $self->_run('fossil', 'changes', '--classify', '--hash');
     return unless $changes->{stdout} =~ /\S/;
@@ -263,20 +260,19 @@ sub commit {
 sub diff {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
-    make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
-    sync_mirror_path($real_path, $mirror);
+    return ['(new file)'] unless -e $mirror;
 
-    # Ensure the file is tracked and mtime-based false negatives are avoided.
-    $self->add($real_path);
-    my $changes = $self->_run('fossil', 'changes', '--classify', '--hash', '--', $rel);
-    return ['(new file)'] if $changes->{stdout} =~ /^ADDED\b/m;
-    return [] unless $changes->{stdout} =~ /\S/;
+    my $rel = $self->_rel_path($mirror);
+    return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+        my $changes = $self->_run('fossil', 'changes', '--classify', '--hash', '--', $rel);
+        return ['(new file)'] if $changes->{stdout} =~ /^(?:ADDED|EXTRA)\b/m;
+        return [] unless $changes->{stdout} =~ /\S/;
 
-    my $r = $self->_run('fossil', 'diff', '--unified', '--', $rel);
-    croak "fossil diff failed: $r->{stderr}" unless $r->{success};
-    return [] unless $r->{stdout} =~ /\S/;
-    return [split /\n/, $r->{stdout}];
+        my $r = $self->_run('fossil', 'diff', '--unified', '--', $rel);
+        croak "fossil diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    });
 }
 
 # log_history -- Return fossil finfo -l lines for $real_path.

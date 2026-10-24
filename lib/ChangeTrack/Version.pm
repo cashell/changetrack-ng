@@ -31,6 +31,6 @@ list of files to keep in sync.
 
 # Single authoritative version string for all ChangeTrack:: modules.
 # The Makefile VERSION variable is the build-system authority; keep in sync.
-our $VERSION = '0.7.3';
+our $VERSION = '0.7.4';
 
 1;

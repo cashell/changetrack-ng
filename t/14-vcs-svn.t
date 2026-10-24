@@ -107,6 +107,19 @@ $diff = $vcs->diff($test_file);
 ok(@$diff > 0, 'diff: non-empty after modification');
 like(join("\n", @$diff), qr/modified/, 'diff: contains modification');
 like(join("\n", @$diff), qr/^\+\+\+/m, 'diff: looks like unified diff');
+ok($vcs->is_dirty($test_file), 'is_dirty: remains true after non-mutating diff');
+
+########################################################################
+# Non-Mutating Diff on Untracked File
+########################################################################
+my $untracked_file = "$tracked_dir/untracked.conf";
+open($fh, '>', $untracked_file) or die $!;
+print $fh "untracked = true\n";
+close($fh);
+
+my $untracked_diff = $vcs->diff($untracked_file);
+is_deeply($untracked_diff, ['(new file)'], 'diff: (new file) for untracked file');
+ok(!-e $vcs->output_path($untracked_file), 'diff: does not create mirror path for untracked file');
 
 ########################################################################
 # Checkin + Commit Modified File
@@ -177,6 +190,24 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
     print $fh $orig_content;
     close($fh);
 }
+
+########################################################################
+# Remove and Log_History on Deleted File
+########################################################################
+$vcs->remove($file2);
+$vcs->commit('Remove file2');
+ok(!-e $vcs->output_path($file2), 'remove: mirror file removed');
+
+my $del_log = $vcs->log_history($file2);
+ok(@$del_log > 0, 'log_history on deleted file: returns lines');
+isnt($del_log->[0], '(no history yet)', 'log_history on deleted file: not (no history yet)');
+like(join("\n", @$del_log), qr/Atomic batch commit/, 'log_history on deleted file: contains prior history');
+
+# Revert deleted file from revision 3
+$vcs->revert($file2, 3);
+ok(-e $file2, 'revert on deleted file: restores real file');
+my $reverted_file2 = do { open(my $f, '<', $file2) or die $!; local $/; <$f> };
+like($reverted_file2, qr/key = val/, 'revert on deleted file: content restored');
 
 # Note: SVN has no push_remote concept  --  svn commit IS push.
 # The repository URL used at checkout time is the effective remote.
