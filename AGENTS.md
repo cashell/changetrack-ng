@@ -21,6 +21,8 @@ make install-systemd       # Install systemd timer (templates @BINDIR@)
 make install-cron          # Install hourly cron job
 make dist                  # Build release tarball
 make fatpack               # Build standalone single-file script
+make packages              # Build all release packages & SHA256SUMS into $(RELEASE_DIR)/v$(VERSION)/
+make clean-build           # Clean out-of-tree build directory $(BUILD_DIR)/v$(VERSION)/
 ```
 
 No build step required — Perl modules are used directly from `lib/`.
@@ -265,6 +267,45 @@ On every version bump, update **all 8** of the following in sync (automated via 
 | 6 | `PRODUCT.md` | `Version:` header in frontmatter |
 | 7 | `MANIFEST.toml` | `[meta] version` and `updated` fields |
 | 8 | `README.md` | Inline release/tarball version references |
+
+### Mandatory Release & Version-Bump Validation Gate
+
+1. **Confirm Target Version First:** Never assume SemVer increments (`major`, `minor`, or `patch`) or package build revisions — always confirm the exact target version (`x.y.z`) with the user before running `make bump-version`.
+2. **Pre-PR Validation Gate (In-Tree + Out-of-Tree Package Build):** Before committing a version bump, opening a release PR, or tagging a release, you **MUST** validate both the in-tree test suite and the full out-of-tree package build (`make packages`):
+
+```bash
+make bump-version VERSION=x.y.z
+make dev-check
+make test
+make packages        # Builds tarballs, fatpack, .deb (runs make test inside unpacked tarball), and .rpm in ~/dev/releases/changetrack-ng/vx.y.z/
+(cd ~/dev/releases/changetrack-ng/vx.y.z && sha256sum -c SHA256SUMS)
+make clean-build
+make clean
+```
+
+Never declare a release or version bump ready based solely on in-tree `make test` — `dpkg-buildpackage` and `rpmbuild` execute inside the unpacked release tarball (which excludes `dev_doc` files such as `AGENTS.md` and `TODO.md`), so `make packages` is required to verify that all release artifacts build and pass their embedded test suites cleanly. Do not delete or overwrite existing versioned directories under `~/dev/releases/changetrack-ng/` without explicit user confirmation.
+
+### Post-Merge Tagging & GitHub Release Workflow
+
+After the version-bump PR is merged into `main`:
+
+1. **Sync `main` and create an annotated tag `vx.y.z`:**
+   ```bash
+   git checkout main && git pull --ff-only origin main
+   git tag -a vx.y.z -m "changetrack-ng vx.y.z"
+   git push origin vx.y.z
+   ```
+2. **Build/verify release artifacts from the tagged `main` commit:**
+   If any commits were added after the pre-PR package build, re-run `make packages && make clean-build && make clean` on `main` and verify `(cd ~/dev/releases/changetrack-ng/vx.y.z && sha256sum -c SHA256SUMS)`.
+3. **Publish the GitHub Release (`gh release create`):**
+   Use the `[x.y.z]` section of `CHANGELOG.md` (with an `# changetrack-ng vx.y.z` heading and `## Artifact Verification` footer) as release notes, and attach the **10 canonical release assets** from `~/dev/releases/changetrack-ng/vx.y.z/` (excluding `.buildinfo` and `.changes`):
+   - `changetrack-ng-x.y.z.tar.gz` (full source tarball)
+   - `changetrack-ng-x.y.z-deploy.tar.gz` (production deployment tarball)
+   - `changetrack-ng-x.y.z-minimal.tar.gz` (minimal fatpacked tarball)
+   - `changetrack-ng-x.y.z.pl` (standalone FatPack script)
+   - `changetrack-ng_x.y.z-1_all.deb`, `changetrack-ng_x.y.z-1.dsc`, `changetrack-ng_x.y.z-1.debian.tar.xz` (Debian binary + `3.0 quilt` source)
+   - `changetrack-ng-x.y.z-1.noarch.rpm`, `changetrack-ng-x.y.z-1.src.rpm` (RHEL/Fedora binary + source RPMs)
+   - `SHA256SUMS` (checksums covering the 9 release artifacts above)
 
 ## Copyright and Licensing
 

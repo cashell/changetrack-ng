@@ -314,6 +314,53 @@ The example configs must stay consistent:
 
 ---
 
+## Release & Package Verification
+
+### 1. Pre-PR Version Bump & Package Build Gate
+
+When bumping the project version or preparing a release PR:
+
+1. **Confirm the target SemVer version (`x.y.z`)** explicitly before bumping.
+2. Run `make bump-version VERSION=x.y.z` to atomically update all 8 version authority files (`lib/ChangeTrack/Version.pm`, `Makefile`, `CHANGELOG.md`, `packaging/debian/changelog`, `packaging/rpm/changetrack-ng.spec`, `PRODUCT.md`, `MANIFEST.toml`, and `README.md`).
+3. Run `make dev-check && make test` to validate syntax, config parity, documentation links/POD, manifest integrity, and the full in-tree test suite.
+4. Run `make packages` (`tools/build-packages --all`) **before** committing the version bump or opening the release PR. This builds all release tarballs (`full`, `deploy`, `minimal`), the standalone FatPack script, Debian packages (`3.0 quilt` via `dpkg-buildpackage`, which runs `make test` inside the unpacked source tarball without `dev_doc` files), RPM packages (`.noarch.rpm` and `.src.rpm`), and `SHA256SUMS` inside isolated versioned directories (`~/dev/build/changetrack-ng/vx.y.z/` and `~/dev/releases/changetrack-ng/vx.y.z/`).
+5. Verify the generated checksums and clean temporary build trees:
+   ```bash
+   (cd ~/dev/releases/changetrack-ng/vx.y.z && sha256sum -c SHA256SUMS)
+   make clean-build && make clean
+   ```
+6. Commit the version bump on the release branch and open the pull request to `main`.
+
+### 2. Post-Merge Tagging & GitHub Release Publication
+
+Once the release PR is merged to `main`:
+
+1. Checkout `main`, pull the merged commit, and create/push an annotated tag `vx.y.z`:
+   ```bash
+   git checkout main && git pull --ff-only origin main
+   git tag -a vx.y.z -m "changetrack-ng vx.y.z"
+   git push origin vx.y.z
+   ```
+2. Build (or rebuild if any post-PR commits occurred) the release packages from `main` via `make packages && make clean-build && make clean`, and verify `sha256sum -c SHA256SUMS` inside `~/dev/releases/changetrack-ng/vx.y.z/`.
+3. Publish the GitHub release using `gh release create vx.y.z --title "vx.y.z"` with the `[x.y.z]` section from `CHANGELOG.md` as release notes, attaching the 10 canonical release assets from `~/dev/releases/changetrack-ng/vx.y.z/` (excluding `.buildinfo` and `.changes`):
+   ```bash
+   gh release create vx.y.z \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z-1.noarch.rpm \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z-1.src.rpm \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z-deploy.tar.gz \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z-minimal.tar.gz \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z.pl \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng-x.y.z.tar.gz \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng_x.y.z-1.debian.tar.xz \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng_x.y.z-1.dsc \
+     ~/dev/releases/changetrack-ng/vx.y.z/changetrack-ng_x.y.z-1_all.deb \
+     ~/dev/releases/changetrack-ng/vx.y.z/SHA256SUMS \
+     --title "vx.y.z" \
+     --notes-file <release-notes.md>
+   ```
+
+---
+
 ## Security Considerations
 
 - Never log secrets (webhook URLs with tokens, OTLP auth headers) at default verbosity
