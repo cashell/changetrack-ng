@@ -30,8 +30,8 @@ if (!-f $agent_file) {
 }
 my $readme_file = File::Spec->catfile($repo_dir, 'README.md');
 
-# Validate existence of expected files
-for my $file ($bin_file, $man_file, $agent_file, $readme_file) {
+# Validate existence of expected files (AGENTS.md is dev_doc and omitted from release tarballs)
+for my $file ($bin_file, $man_file, $readme_file) {
     if (!-f $file) {
         die "Error: Required file not found: $file\n";
     }
@@ -47,7 +47,9 @@ check_source('bin/changetrack-ng header comment', parse_bin_header($bin_file), $
 check_source('bin/changetrack-ng usage help',     parse_bin_usage($bin_file),  $canonical);
 check_source('bin/changetrack-ng inline POD',     parse_bin_pod($bin_file),    $canonical);
 check_source('man/changetrack-ng.8 manual page',  parse_man_page($man_file),   $canonical);
-check_source('AGENTS.md architectural reference', parse_agent_md($agent_file), $canonical);
+if (-f $agent_file) {
+    check_source('AGENTS.md architectural reference', parse_agent_md($agent_file), $canonical);
+}
 check_source('README.md subcommands table',       parse_readme_md($readme_file), $canonical);
 
 # 2. Check POD syntax across all modules, scripts, and manual pages
