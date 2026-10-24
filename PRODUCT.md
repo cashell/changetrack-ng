@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Version: 0.7.3
+Version: 0.7.4
 
 For quick start and reference, see [README.md](README.md). For deployment and package building, see [INSTALL.md](INSTALL.md). For engineering internals, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

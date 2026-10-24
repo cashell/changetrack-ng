@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.7.3
+Version:        0.7.4
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,9 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Sat Oct 24 2026 Christopher Cashell <topher@zyp.org> - 0.7.4-1
+- New upstream release 0.7.4
+
 * Mon Oct 12 2026 Christopher Cashell <topher@zyp.org> - 0.7.3-1
 - Install /etc/sysconfig/changetrack-ng defaults file and track in %files
 - Add out-of-tree package building tooling and Makefile integration

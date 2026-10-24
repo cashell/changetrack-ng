@@ -6,6 +6,7 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-24
 ### Added
 
 - **Documentation additions:**
