@@ -224,4 +224,46 @@ SKIP: {
     unlink $real, $mirror;
 }
 
+########################################################################
+# Release Tarball Simulation: tools/doc-lint Without dev_doc Files
+########################################################################
+{
+    my $sim_dir  = tempdir(CLEANUP => 1);
+    my $repo_dir = File::Spec->catdir($RealBin, '..');
+
+    # Mirror the release tarball layout (excluding dev_doc files like AGENTS.md and TODO.md)
+    for my $subdir (qw(bin lib man docs tools)) {
+        my $src = File::Spec->catdir($repo_dir, $subdir);
+        my $dst = File::Spec->catdir($sim_dir, $subdir);
+        symlink($src, $dst) or die "Cannot symlink $src -> $dst: $!";
+    }
+    for my $doc (qw(README.md CHANGELOG.md INSTALL.md CONTRIBUTING.md ARCHITECTURE.md PRODUCT.md SECURITY.md)) {
+        my $src = File::Spec->catfile($repo_dir, $doc);
+        my $dst = File::Spec->catfile($sim_dir, $doc);
+        symlink($src, $dst) or die "Cannot symlink $src -> $dst: $!";
+    }
+
+    ok(!-e File::Spec->catfile($sim_dir, 'AGENTS.md'), 'tarball simulation excludes AGENTS.md');
+    my $doc_lint = File::Spec->catfile($sim_dir, 'tools', 'doc-lint');
+    my $out = '';
+    open(my $lfh, '-|', $^X, $doc_lint) or die "Cannot run doc-lint: $!";
+    $out .= $_ while <$lfh>;
+    close($lfh);
+    is($? >> 8, 0, 'tools/doc-lint succeeds when AGENTS.md is absent (release tarball mode)');
+}
+
+########################################################################
+# tools/build-packages: Versioned Subdirectory & SHA256SUMS Filtering
+########################################################################
+{
+    my $bp_file = File::Spec->catfile($RealBin, '..', 'tools', 'build-packages');
+    open(my $bfh, '<', $bp_file) or die "Cannot open $bp_file: $!";
+    my $bp_src = do { local $/; <$bfh> };
+    close($bfh);
+
+    like($bp_src, qr/my \$ver_subdir\s*=\s*"v\$version"/, 'build-packages uses v<version> subdirectory');
+    like($bp_src, qr/catdir\(\$opt_release_dir,\s*\$ver_subdir\)/, 'build-packages stages releases under RELEASE_DIR/v<version>');
+    like($bp_src, qr/buildinfo\|changes/, 'build-packages excludes .buildinfo and .changes from SHA256SUMS');
+}
+
 done_testing();

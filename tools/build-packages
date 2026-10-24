@@ -69,43 +69,47 @@ if ($opt_all) {
 my $version = $opt_version || get_project_version($repo_dir);
 die "[build-packages] Error: Could not determine project version\n" unless $version;
 
+my $ver_subdir    = "v$version";
+my $ver_build_dir = File::Spec->catdir($opt_build_dir, $ver_subdir);
+my $ver_rel_dir   = File::Spec->catdir($opt_release_dir, $ver_subdir);
+
 print "==> changetrack-ng package builder (v$version)\n";
 print "    Source tree : $repo_dir\n";
-print "    Build tree  : $opt_build_dir\n";
-print "    Release dir : $opt_release_dir\n\n";
+print "    Build tree  : $ver_build_dir\n";
+print "    Release dir : $ver_rel_dir\n\n";
 
 if ($opt_clean) {
-    clean_trees($opt_build_dir, $repo_dir);
+    clean_trees($ver_build_dir, $repo_dir);
     exit 0 unless ($opt_tarballs || $opt_fatpack || $opt_deb || $opt_rpm);
 }
 
-ensure_dir($opt_build_dir);
-ensure_dir($opt_release_dir);
+ensure_dir($ver_build_dir);
+ensure_dir($ver_rel_dir);
 
 my @staged_files;
 
 if ($opt_tarballs) {
-    push @staged_files, build_tarballs($repo_dir, $version, $opt_release_dir);
+    push @staged_files, build_tarballs($repo_dir, $version, $ver_rel_dir);
 }
 
 if ($opt_fatpack) {
-    push @staged_files, build_fatpack($repo_dir, $version, $opt_release_dir);
+    push @staged_files, build_fatpack($repo_dir, $version, $ver_rel_dir);
 }
 
 if ($opt_deb) {
-    push @staged_files, build_debian($repo_dir, $version, $opt_build_dir, $opt_release_dir);
+    push @staged_files, build_debian($repo_dir, $version, $ver_build_dir, $ver_rel_dir);
 }
 
 if ($opt_rpm) {
-    push @staged_files, build_rpm($repo_dir, $version, $opt_build_dir, $opt_release_dir);
+    push @staged_files, build_rpm($repo_dir, $version, $ver_build_dir, $ver_rel_dir);
 }
 
 if ($opt_checksums) {
-    generate_checksums($opt_release_dir);
+    generate_checksums($ver_rel_dir);
 }
 
 print "\n==> All requested packaging tasks completed successfully.\n";
-print "    Artifacts staged in $opt_release_dir\n";
+print "    Artifacts staged in $ver_rel_dir\n";
 
 exit 0;
 
@@ -126,8 +130,8 @@ Options:
   --rpm                 Build RPM packages (.noarch.rpm, .src.rpm)
   --checksums           Generate SHA256SUMS file in release directory
   --clean               Clean out-of-tree build directories and workspace dist files
-  --build-dir DIR       Working directory for builds (default: ~/dev/build/changetrack-ng)
-  --release-dir DIR     Destination for release files (default: ~/dev/releases/changetrack-ng)
+  --build-dir DIR       Base working directory for builds (stages in DIR/v<version>; default: ~/dev/build/changetrack-ng)
+  --release-dir DIR     Base destination for release files (stages in DIR/v<version>; default: ~/dev/releases/changetrack-ng)
   --version VER         Override version string
   -h, --help            Show this help text
 USAGE
@@ -192,6 +196,7 @@ sub build_tarballs {
         my $dst = File::Spec->catfile($rel_dir, $f);
         if (-f $src) {
             copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
+            unlink($src);
             push @staged, $dst;
             print "    Staged: $f\n";
         } else {
@@ -215,6 +220,7 @@ sub build_fatpack {
     if (-f $src) {
         copy($src, $dst) or die "[build-packages] Failed to copy $src to $dst: $!\n";
         chmod 0755, $dst;
+        unlink($src);
         print "    Staged: $fname\n";
         return ($dst);
     } else {
@@ -301,8 +307,10 @@ sub build_rpm {
     }
 
     my $rpm_work = File::Spec->catdir($build_root, 'rpmbuild');
-    remove_tree(File::Spec->catdir($rpm_work, 'BUILD')) if -d File::Spec->catdir($rpm_work, 'BUILD');
-    remove_tree(File::Spec->catdir($rpm_work, 'BUILDROOT')) if -d File::Spec->catdir($rpm_work, 'BUILDROOT');
+    for my $clean_sub (qw(BUILD BUILDROOT RPMS SRPMS SOURCES SPECS)) {
+        my $sub_path = File::Spec->catdir($rpm_work, $clean_sub);
+        remove_tree($sub_path) if -d $sub_path;
+    }
     ensure_dir($rpm_work);
     for my $subdir (qw(BUILD BUILDROOT RPMS SOURCES SPECS SRPMS)) {
         ensure_dir(File::Spec->catdir($rpm_work, $subdir));
@@ -391,7 +399,11 @@ sub generate_checksums {
     print "==> Generating SHA256 checksums...\n";
 
     opendir(my $dh, $rel_dir) or die "[build-packages] Cannot open $rel_dir: $!\n";
-    my @files = sort grep { -f File::Spec->catfile($rel_dir, $_) && $_ ne 'SHA256SUMS' } readdir($dh);
+    my @files = sort grep {
+        -f File::Spec->catfile($rel_dir, $_)
+            && $_ ne 'SHA256SUMS'
+            && $_ !~ /\.(?:buildinfo|changes)$/
+    } readdir($dh);
     closedir($dh);
 
     my $sums_file = File::Spec->catfile($rel_dir, 'SHA256SUMS');

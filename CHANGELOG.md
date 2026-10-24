@@ -6,6 +6,13 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Versioned release and build staging directories:**
+  - Updated `tools/build-packages` (`make packages`, `make deb`, `make rpm`, `make clean-build`) to stage build trees and release artifacts under versioned subdirectories (`~/dev/build/changetrack-ng/v<version>/` and `~/dev/releases/changetrack-ng/v<version>/`) so historical release builds are preserved cleanly.
+  - Updated `generate_checksums()` in `tools/build-packages` to exclude `.buildinfo` and `.changes` metadata files from `SHA256SUMS` so checksums match the published release assets, and cleaned temporary in-tree tarballs/fatpack scripts and `rpmbuild` subdirectories during builds.
+  - Documented the mandatory pre-release package build verification gate (`make packages`), version-confirmation discipline, annotated Git tagging (`git tag -a vx.y.z`), and GitHub Release publication workflow (`gh release create`) with the 10 canonical release assets in `AGENTS.md` and `CONTRIBUTING.md`.
+
 ## [0.7.4] - 2026-10-24
 ### Added
 
