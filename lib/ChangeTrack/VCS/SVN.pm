@@ -72,7 +72,7 @@ sub add {
     my $mirror = $self->output_path($real_path);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
-    my $r = $self->_run('svn', 'add', '--parents', '--force', $mirror);
+    my $r = $self->_run('svn', 'add', '--parents', '--force', '--no-ignore', $mirror);
     croak "svn add failed: $r->{stderr}" unless $r->{success};
 }
 

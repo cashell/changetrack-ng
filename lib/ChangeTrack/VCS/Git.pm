@@ -47,6 +47,7 @@ sub init {
     carp "git config user.name failed: $cn->{stderr}"  unless $cn->{success};
     my $ce = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'config', 'user.email', $email]);
     carp "git config user.email failed: $ce->{stderr}" unless $ce->{success};
+    $self->_ensure_attributes_neutralized;
 }
 
 # is_initialized -- Return true if a .git directory exists in output_dir.
@@ -55,13 +56,42 @@ sub is_initialized {
     return -d "$self->{output_dir}/.git";
 }
 
+# _ensure_attributes_neutralized -- Write .git/info/attributes so mirrored
+# .gitattributes files cannot alter stored bytes (eol/ident/filter) or hide diffs.
+sub _ensure_attributes_neutralized {
+    my ($self) = @_;
+    return if $self->{_attrs_ok};
+    my $git_dir = "$self->{output_dir}/.git";
+    return unless -d $git_dir;
+    my $info_dir   = "$git_dir/info";
+    my $attrs_file = "$info_dir/attributes";
+    my $rule       = '* !text !eol !ident !filter !diff';
+    if (-f $attrs_file && open(my $rfh, '<', $attrs_file)) {
+        my $cur = do { local $/; <$rfh> } // '';
+        close($rfh);
+        if (index($cur, $rule) >= 0) {
+            $self->{_attrs_ok} = 1;
+            return;
+        }
+    }
+    make_path($info_dir, { mode => 0700 }) unless -d $info_dir;
+    open(my $wfh, '>>', $attrs_file) or do {
+        carp "Cannot write $attrs_file: $!";
+        return;
+    };
+    print {$wfh} "$rule\n";
+    close($wfh) or carp "Cannot close $attrs_file: $!";
+    $self->{_attrs_ok} = 1;
+}
+
 # add -- Copy the real file to the mirror tree and stage it with git add.
 sub add {
     my ($self, $real_path) = @_;
+    $self->_ensure_attributes_neutralized;
     my $mirror = $self->output_path($real_path);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
-    my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'add', $mirror]);
+    my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'add', '-f', '--', $mirror]);
     croak "git add failed: $r->{stderr}" unless $r->{success};
 }
 

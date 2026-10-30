@@ -61,17 +61,17 @@ sub is_initialized {
 }
 
 # add -- Copy the real file to the mirror and register it with hg add.
-# Only runs 'hg add' for files that appear as untracked ('?') in hg status.
+# Runs 'hg add' for untracked ('?') or .hgignore-matched ('I') files.
 sub add {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
     make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
     sync_mirror_path($real_path, $mirror);
 
-    # Only invoke 'hg add' for untracked files ('?' prefix in hg status).
-    my $st = $self->_hg('status', $mirror);
-    if ($st->{stdout} =~ /^\?/m) {
-        my $r = $self->_hg('add', $mirror);
+    # Invoke 'hg add' for untracked ('?') or .hgignore-matched ('I') files.
+    my $st = $self->_hg('status', '-A', '--', $mirror);
+    if ($st->{stdout} =~ /^[?I]/m) {
+        my $r = $self->_hg('add', '--', $mirror);
         croak "hg add failed: $r->{stderr}" unless $r->{success};
     }
 }
@@ -122,8 +122,8 @@ sub diff {
     my $mirror = $self->output_path($real_path);
     return ['(new file)'] unless -e $mirror;
 
-    my $st = $self->_hg('status', $mirror);
-    return ['(new file)'] if $st->{stdout} =~ /^\?/m || $st->{stdout} =~ /^A/m;
+    my $st = $self->_hg('status', '-A', '--', $mirror);
+    return ['(new file)'] if $st->{stdout} =~ /^[?IA]/m;
 
     return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
         my $r = $self->_hg('diff', $mirror);

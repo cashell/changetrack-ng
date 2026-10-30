@@ -194,7 +194,7 @@ sub add {
     sync_mirror_path($real_path, $mirror);
 
     # 'fossil add' is idempotent: new files are ADDED, tracked files are SKIP.
-    my $r = $self->_run('fossil', 'add', '--', $rel);
+    my $r = $self->_run('fossil', 'add', '--force', '--', $rel);
     croak "fossil add failed for '$real_path': $r->{stderr}" unless $r->{success};
 }
 
