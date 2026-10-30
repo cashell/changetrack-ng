@@ -327,6 +327,9 @@ sub run {
     # Enforce private permissions (0700 dirs, 0600 files) on output_dir and siblings
     $self->_enforce_output_permissions($output_dir, $report);
 
+    # Warn if an existing whole-repo mirror contains a nested VCS repository
+    $self->_warn_nested_mirror_repos($output_dir, $report) if $vcs->model eq 'whole-repo';
+
     $self->_verbose("Processing " . scalar(@entries) . " tracked paths");
 
     for my $entry (@entries) {
@@ -1270,6 +1273,42 @@ sub _enforce_output_permissions {
             $self->_warn($msg);
             $report->add_warning($msg) if $report;
         }
+    }
+}
+
+# _warn_nested_mirror_repos -- Scan a whole-repo mirror for nested .git/.hg/.svn
+# repositories (left behind by pre-fix runs on trees like etckeeper's /etc) and
+# emit an actionable warning without deleting anything automatically.
+sub _warn_nested_mirror_repos {
+    my ($self, $output_dir, $report) = @_;
+    return unless defined $output_dir && -d $output_dir;
+    (my $root = $output_dir) =~ s{(?<=.)/+$}{};
+
+    my %nested_markers = map { $_ => 1 } qw(.git .hg .svn);
+    my @nested;
+
+    find({
+        wanted => sub {
+            my $p = $File::Find::name;
+            return if $p eq $root;
+            my $base = basename($p);
+            return unless $nested_markers{$base};
+
+            my $is_dir     = (-d $_ && !-l $_);
+            my $is_gitfile = ($base eq '.git' && -f $_ && !-l $_);
+            return unless $is_dir || $is_gitfile;
+
+            $File::Find::prune = 1 if $is_dir;
+            return if dirname($p) eq $root;    # backend's own root control dir
+            push @nested, $p;
+        },
+        no_chdir => 1,
+    }, $root);
+
+    for my $nested_path (sort @nested) {
+        my $msg = "Nested repository at $nested_path inside the mirror; files below it were not being committed. See README 'Recovering from a nested repository'.";
+        $self->_warn($msg);
+        $report->add_warning($msg) if $report;
     }
 }
 
