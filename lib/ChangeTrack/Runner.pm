@@ -115,6 +115,11 @@ my %NOTIFY_CLASSES = (
     otlp    => 'ChangeTrack::Notify::OTLP',
 );
 
+# Foreign VCS control directories and Fossil checkout DB files; mirroring them
+# nests a repo inside output_dir so the backend silently skips paths below it.
+my %FOREIGN_VCS_DIRS  = map { $_ => 1 } qw(.git .hg .svn CVS .bzr _darcs);
+my %FOREIGN_VCS_FILES = map { $_ => 1 } qw(.fslckout _FOSSIL_);
+
 # Built-in ignore patterns applied on top of user config.
 # Note: #*# cannot go in qw() (# starts a comment there), so it's added separately.
 # Path-containing patterns (with /) match as a suffix of the full path.
@@ -642,6 +647,10 @@ sub _build_file_list {
 
         if ($track->{kind} eq 'file') {
             my $p = $track->{path};
+            if (_is_foreign_vcs_path($p)) {
+                $self->_trace("$p: skipped (foreign VCS path)");
+                next;
+            }
             if (_should_ignore($p, basename($p), $ignore_pats)) {
                 $self->_trace("$p: ignored by pattern");
                 next;
@@ -658,11 +667,27 @@ sub _build_file_list {
             $dir_opts{$dir} = { sensitive => $opt_sensitive, recipients => $recips };
             next unless -d $dir;
             next if _is_excluded_path($dir, $exclude_paths);
+            if (_is_foreign_vcs_path($dir)) {
+                $self->_trace("$dir: pruned (foreign VCS dir)");
+                next;
+            }
 
             find({
                 wanted => sub {
+                    if (-d $_ && !-l $_) {
+                        my $p = $File::Find::name;
+                        if ($FOREIGN_VCS_DIRS{ basename($p) } || _is_excluded_path($p, $exclude_paths)) {
+                            $self->_trace("$p: pruned (foreign VCS dir or internal path)");
+                            $File::Find::prune = 1;
+                        }
+                        return;
+                    }
                     return unless -f $_ || -l $_;
                     my $p = $File::Find::name;
+                    if (_is_foreign_vcs_path($p)) {
+                        $self->_trace("$p: skipped (foreign VCS path)");
+                        return;
+                    }
                     if (_should_ignore($p, basename($p), $ignore_pats)) {
                         $self->_trace("$p: ignored by pattern");
                         return;
@@ -682,6 +707,10 @@ sub _build_file_list {
     # Reconcile deleted files from tracked directories using metadata
     if ($md && $md->{records}) {
         for my $stored_path (sort keys %{ $md->{records} }) {
+            if (_is_foreign_vcs_path($stored_path)) {
+                $md->mark_removed($stored_path);
+                next;
+            }
             next if $live_paths{$stored_path};
             next if -e $stored_path || -l $stored_path;
 
@@ -755,6 +784,18 @@ sub _is_excluded_path {
         return 1 if index($norm_path, "$norm_exclude/") == 0;
     }
     return 0;
+}
+
+# _is_foreign_vcs_path -- Return true if any path segment is a foreign VCS
+# control directory (or .git file) or the filename is a Fossil checkout DB.
+sub _is_foreign_vcs_path {
+    my ($path) = @_;
+    return 0 unless defined $path && length $path;
+    (my $norm = $path) =~ s{\\}{/}g;
+    my @segs = grep { length $_ } split m{/}, $norm;
+    return 0 unless @segs;
+    return 1 if $FOREIGN_VCS_FILES{ $segs[-1] };
+    return (grep { $FOREIGN_VCS_DIRS{$_} } @segs) ? 1 : 0;
 }
 
 # _should_ignore -- Return true if $full_path or its basename matches
