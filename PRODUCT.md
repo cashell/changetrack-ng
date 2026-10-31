@@ -145,6 +145,8 @@ The flock-based lock ensures concurrent invocations (e.g., cron + package hook) 
 | Special (FIFO, socket, device) | Metadata only (warns) | `/dev/log` |
 | Missing (previously tracked) | Reported as removed | Deleted config files |
 
+Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`) and Fossil checkout databases (`.fslckout`, `_FOSSIL_`) inside tracked trees are automatically skipped so whole-repo mirrors remain isolated from nested repositories (such as `etckeeper` in `/etc`).
+
 ---
 
 ## Diagnostics

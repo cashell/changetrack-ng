@@ -8,10 +8,19 @@ All notable changes will be documented here.
 
 ### Changed
 
+- **Mirror isolation for foreign VCS control paths:**
+  - Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`), `.git` submodule/worktree files, Fossil checkout databases (`.fslckout`, `_FOSSIL_`), and internal excluded directories are now pruned during directory traversal instead of being mirrored or walked.
 - **Versioned release and build staging directories:**
   - Updated `tools/build-packages` (`make packages`, `make deb`, `make rpm`, `make clean-build`) to stage build trees and release artifacts under versioned subdirectories (`~/dev/build/changetrack-ng/v<version>/` and `~/dev/releases/changetrack-ng/v<version>/`) so historical release builds are preserved cleanly.
   - Updated `generate_checksums()` in `tools/build-packages` to exclude `.buildinfo` and `.changes` metadata files from `SHA256SUMS` so checksums match the published release assets, and cleaned temporary in-tree tarballs/fatpack scripts and `rpmbuild` subdirectories during builds.
   - Documented the mandatory pre-release package build verification gate (`make packages`), version-confirmation discipline, annotated Git tagging (`git tag -a vx.y.z`), and GitHub Release publication workflow (`gh release create`) with the 10 canonical release assets in `AGENTS.md` and `CONTRIBUTING.md`.
+
+### Fixed
+
+- **Silent tracking failure on etckeeper and nested-repository trees:**
+  - Files inside a tracked directory containing another tool's VCS repository (such as `/etc/.git` on `etckeeper` hosts, `.svn/`, or `.hg/`) were previously mirrored along with the foreign control directory, causing whole-repo backends to treat the subtree as a nested repository and silently skip committing changes below it. Added a startup warning for pre-existing nested repositories inside `output_dir`, and silently purge stale foreign-VCS records from `.changetrack-metadata`.
+- **Tracked ignore and attributes file interference:**
+  - Whole-repo backends now isolate mirror commits from VCS ignore and attribute files inside tracked trees (`git add -f --`, `.git/info/attributes` neutralization of `text`/`eol`/`ident`/`filter`/`diff`, `svn add --no-ignore`, `hg status -A` for `.hgignore`-matched paths, and `fossil add --force`).
 
 ## [0.7.4] - 2026-10-24
 ### Added

@@ -502,6 +502,12 @@ dist        = ["full"]
 tags        = ["test"]
 tests       = ["tools/bump-version"]
 
+[test."t/40-mirror-isolation.t"]
+description = "Tests for mirror isolation: foreign VCS pruning, .gitignore/.gitattributes isolation, excluded-dir pruning, and nested-repo startup warnings"
+dist        = ["full"]
+tags        = ["test"]
+tests       = ["mirror-isolation", "ChangeTrack::Runner", "ChangeTrack::VCS::Git", "ChangeTrack::VCS::SVN", "ChangeTrack::VCS::Mercurial"]
+
 ########################################################################
 # test_support
 ########################################################################
