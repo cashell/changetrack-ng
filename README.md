@@ -204,6 +204,27 @@ guard.
 For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
 
+## Coexisting with etckeeper and Tracked Repositories
+
+Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`) and Fossil checkout state files (`.fslckout`, `_FOSSIL_`) inside tracked directories are automatically skipped, and tracked `.gitignore`, `.gitattributes`, `.hgignore`, or `svn:ignore` rules do not suppress or alter files recorded in the `changetrack-ng` mirror. This allows `changetrack-ng` to safely track `/etc` alongside `etckeeper` or monitor application directories that are themselves VCS checkouts.
+
+### Recovering from a nested repository
+
+If an earlier version of `changetrack-ng` mirrored a nested repository into `output_dir` (for example `/var/lib/changetrack-ng/etc/.git`), `changetrack-ng` logs a warning on each run (`Nested repository at ... inside the mirror`) without deleting history automatically. To recover:
+
+```sh
+# 1. Upgrade changetrack-ng, then list nested repos inside the mirror (do not delete yet)
+find /var/lib/changetrack-ng -mindepth 2 \( -name .git -o -name .svn -o -name .hg \) -prune -print
+
+# 2. Remove only those listed nested control paths (never output_dir/.git itself)
+
+# 3. Force a one-time full re-record by moving the metadata sidecar aside
+mv /var/lib/changetrack-ng/.changetrack-metadata /root/changetrack-metadata.bak
+changetrack-ng run -v
+```
+
+Note: Step 3 triggers one notification run listing tracked files as newly recorded.
+
 ## Global Options
 
 These flags apply to all subcommands. For full CLI reference, see [man/changetrack-ng.8](man/changetrack-ng.8):
