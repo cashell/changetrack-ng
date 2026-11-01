@@ -17,6 +17,8 @@ All notable changes will be documented here.
 
 ### Fixed
 
+- **Unbounded `run_cmd()` stdin write on hung subprocesses:**
+  - `ChangeTrack::Util::run_cmd()` now enforces `command_timeout` while writing and flushing `input` to a child process's stdin pipe, preventing a stalled `sendmail` or external command from blocking past the timeout and holding the run lock indefinitely.
 - **Silent tracking failure on etckeeper and nested-repository trees:**
   - Files inside a tracked directory containing another tool's VCS repository (such as `/etc/.git` on `etckeeper` hosts, `.svn/`, or `.hg/`) were previously mirrored along with the foreign control directory, causing whole-repo backends to treat the subtree as a nested repository and silently skip committing changes below it. Added a startup warning for pre-existing nested repositories inside `output_dir`, and silently purge stale foreign-VCS records from `.changetrack-metadata`.
 - **Tracked ignore and attributes file interference:**
