@@ -403,4 +403,54 @@ close($fh);
         'diff_path: returns unified diff of removed lines');
 }
 
+########################################################################
+# Revert_Path: Refuses While Run Lock Is Held
+########################################################################
+{
+    require ChangeTrack::Lock;
+    my $sub_out   = tempdir(CLEANUP => 1);
+    my $lock_path = "$sub_out/ct.lock";
+    my $rev_file  = "$tracked_dir/revert_lock.conf";
+
+    open(my $rfh, '>', $rev_file) or die $!;
+    print $rfh "version 1\n";
+    close($rfh);
+    chmod(0644, $rev_file);
+
+    my ($cfh, $rev_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\nlock_path = $lock_path\n\n[track]\n$rev_file\n";
+    close($cfh);
+    chmod(0600, $rev_cfg);
+
+    ChangeTrack::Runner->new(config => $rev_cfg, quiet => 1)->run;
+
+    my $head = ChangeTrack::Util::run_cmd(cmd => ['git', '-C', $sub_out, 'rev-parse', 'HEAD']);
+    chomp(my $sha = $head->{stdout});
+
+    open($rfh, '>', $rev_file) or die $!;
+    print $rfh "version 2\n";
+    close($rfh);
+
+    my $held = ChangeTrack::Lock->new(path => $lock_path, timeout => 0);
+    ok($held->acquire, 'revert lock test: acquired active run lock');
+
+    eval {
+        ChangeTrack::Runner->new(config => $rev_cfg, force => 1, quiet => 1)->revert_path($rev_file, $sha);
+    };
+    like($@, qr/holds the lock/, 'revert_path croaks when lock is held (even with force => 1)');
+
+    open(my $chk, '<', $rev_file) or die $!;
+    my $during = do { local $/; <$chk> };
+    close($chk);
+    is($during, "version 2\n", 'live file is unchanged when revert is blocked by lock');
+
+    $held->release;
+
+    ChangeTrack::Runner->new(config => $rev_cfg, quiet => 1)->revert_path($rev_file, $sha);
+    open($chk, '<', $rev_file) or die $!;
+    my $after = do { local $/; <$chk> };
+    close($chk);
+    is($after, "version 1\n", 'revert_path succeeds once lock is released');
+}
+
 done_testing();
