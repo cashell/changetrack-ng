@@ -273,12 +273,26 @@ sub run_cmd {
         warn "[changetrack-ng][][DEBUG] exec: $cmd_str\n";
     }
 
+    my $timed_out  = 0;
+    my $child_done = 0;
+    my $deadline   = (defined $timeout && $timeout > 0) ? time() + $timeout : undef;
+
     {
         local $SIG{PIPE} = 'IGNORE';
-        if (length $input) {
-            print {$in_fh} $input;
-        }
-        close($in_fh);
+        # Bound the stdin write by the same deadline as the drain loop; a child
+        # that never reads would otherwise block print()/close() past timeout.
+        my $stdin_ok = eval {
+            local $SIG{ALRM} = sub { die "stdin write timed out\n" };
+            alarm(int($timeout) || 1) if defined $deadline;
+            if (length $input) {
+                print {$in_fh} $input;
+            }
+            close($in_fh);
+            alarm(0);
+            1;
+        };
+        alarm(0);
+        $timed_out = 1 unless $stdin_ok;
     }
 
     # Drain stdout and stderr concurrently until both reach EOF.  An optional
@@ -290,11 +304,8 @@ sub run_cmd {
     # platforms where select() on pipes does not report EOF (e.g. Windows).
     my $sel = IO::Select->new($out_fh, $err_fh);
     my %buf;
-    my $timed_out  = 0;
-    my $child_done = 0;
-    my $deadline   = (defined $timeout && $timeout > 0) ? time() + $timeout : undef;
 
-    while ($sel->count) {
+    while (!$timed_out && $sel->count) {
         my $wait = 1;
         if (defined $deadline) {
             my $remaining = $deadline - time();
@@ -336,6 +347,14 @@ sub run_cmd {
     }
 
     waitpid($pid, 0) unless $child_done;
+    if ($timed_out) {
+        local $SIG{PIPE} = 'IGNORE';
+        eval {
+            require IO::Handle;
+            $in_fh->blocking(0);
+            close($in_fh);
+        };
+    }
     my $status = $?;
     # Report signal termination as 128+signal so a killed child is not treated
     # as a clean (exit 0) success.

@@ -103,4 +103,18 @@ SKIP: {
     is($r->{exit_code}, 0, 'exit code is 0');
 }
 
+# Hung stdin reader protection: large stdin write to a non-reading child is bounded by timeout.
+SKIP: {
+    skip 'alarm does not interrupt blocking I/O on Windows', 3 if $^O eq 'MSWin32';
+    my $t0 = time();
+    my $r  = run_cmd(
+        cmd     => [$perl, '-e', 'sleep 30'],
+        input   => ('x' x 1_000_000),
+        timeout => 2,
+    );
+    ok($r->{timed_out}, 'stdin write to a non-reading child is bounded by timeout');
+    cmp_ok(time() - $t0, '<', 10, 'returned promptly on hung stdin reader');
+    ok(!$r->{success}, 'reported as failure');
+}
+
 done_testing();
