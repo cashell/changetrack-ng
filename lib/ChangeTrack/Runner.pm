@@ -74,7 +74,9 @@ Return a hashref mapping file paths to arrayrefs of log lines.
 
 =item $runner->revert_path($path, $rev)
 
-Restore I<$path> to VCS revision I<$rev>.
+Restore I<$path> to VCS revision I<$rev>.  Acquires the advisory run lock
+(honoring C<lock_timeout>, with C<force =E<gt> 0>) to prevent concurrent
+repository mutations; croaks if the lock cannot be acquired.
 
 =back
 

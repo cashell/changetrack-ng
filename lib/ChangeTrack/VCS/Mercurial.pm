@@ -20,7 +20,8 @@ ChangeTrack::VCS::Mercurial - Mercurial VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using Mercurial (hg).
 Tracked files are copied into a mirror tree under C<output_dir>, which is
-an hg repository.
+an hg repository.  Passes C<-A> during status checks to preserve mirror
+isolation against in-tree F<.hgignore> files.
 
 =cut
 

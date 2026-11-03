@@ -20,7 +20,8 @@ ChangeTrack::VCS::Fossil - Fossil VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using Fossil.  Tracked
 files are copied into a mirror tree under C<output_dir>, which is an open
-Fossil working directory.
+Fossil working directory.  Passes C<--force> during file additions to prevent
+interactive prompt blocking on ignore patterns.
 
 =cut
 

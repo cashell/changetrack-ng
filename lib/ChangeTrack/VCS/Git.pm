@@ -20,6 +20,8 @@ ChangeTrack::VCS::Git - Git VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using Git.  Tracked files
 are copied into a mirror tree under C<output_dir> and committed as a batch.
+Mirror isolation protections ensure tracked attributes (via F<.git/info/attributes>
+neutralization) and ignore rules (via C<git add -f>) do not suppress tracking.
 Supports optional push to one or more remotes after each commit.
 
 =cut

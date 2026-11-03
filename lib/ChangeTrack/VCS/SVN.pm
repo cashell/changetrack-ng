@@ -20,7 +20,8 @@ ChangeTrack::VCS::SVN - Subversion VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using Subversion (svn).
 Tracked files are copied into a mirror tree under C<output_dir>, which is
-an svn working copy.
+an svn working copy.  Passes C<--no-ignore> on file addition to preserve
+mirror isolation from in-tree ignore configurations.
 
 =cut
 
