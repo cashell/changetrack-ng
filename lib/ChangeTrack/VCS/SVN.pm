@@ -81,7 +81,7 @@ sub remove {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
     my $st     = $self->_run('svn', 'status', $mirror);
-    if ($st->{stdout} =~ /^[ MA]/m) {
+    if ($st->{stdout} =~ /^[ MA!]/m) {
         my $r = $self->_run('svn', 'rm', '--force', $mirror);
         croak "svn rm failed for '$mirror': $r->{stderr}" unless $r->{success};
     } elsif (-e $mirror || -l $mirror) {

@@ -409,15 +409,17 @@ sub _process_file {
     # File no longer on disk
     unless (@st) {
         if (defined $existing) {
+            unless ($self->{dry_run}) {
+                eval { $vcs->remove($real_path) };
+                if (my $err = $@) {
+                    $err =~ s/\n$//;
+                    $self->_warn("VCS remove failed for $real_path (will retry next run): $err");
+                    $report->add_warning("VCS remove failed for $real_path: $err");
+                    return;    # keep metadata record so the next run retries
+                }
+            }
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
             $self->_debug("Removed: $real_path");
             $self->_info("Removed: $real_path");
         } else {
@@ -569,12 +571,15 @@ sub _handle_non_trackable {
     $self->_trace("$real_path: classified as $type, metadata only");
 
     if ($prev_vcs_eligible) {
-        eval { $vcs->remove($real_path) unless $self->{dry_run} };
-        if ($@) {
-            my $err = $@;
-            $err =~ s/\n$//;
-            $self->_warn("VCS remove failed for $real_path: $err");
-            $report->add_warning("VCS remove failed for $real_path: $err");
+        unless ($self->{dry_run}) {
+            eval { $vcs->remove($real_path) };
+            if (my $err = $@) {
+                $err =~ s/\n$//;
+                $md->rollback($real_path);
+                $self->_warn("VCS remove failed for $real_path (will retry next run): $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+                return;
+            }
         }
         $report->add_change(
             path         => $real_path,
