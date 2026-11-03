@@ -453,4 +453,38 @@ close($fh);
     is($after, "version 1\n", 'revert_path succeeds once lock is released');
 }
 
+########################################################################
+# Update-Ignore: Atomic .gitignore Rewrite and No Temp Leftovers
+########################################################################
+{
+    my $sub_out = tempdir(CLEANUP => 1);
+    chmod 0700, $sub_out;
+    my ($cfh, $ign_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\nignore = *.custom-ign\n\n[track]\nDIRECTORY $tracked_dir\n";
+    close($cfh);
+    chmod(0600, $ign_cfg);
+
+    my $gitignore = "$sub_out/.gitignore";
+    open(my $ufh, '>', $gitignore) or die $!;
+    print $ufh "# user custom rule\nlocal.tmp\n";
+    close($ufh);
+
+    my $bin = File::Spec->catfile($RealBin, '..', 'bin', 'changetrack-ng');
+    my $r   = ChangeTrack::Util::run_cmd(cmd => [$^X, $bin, '-c', $ign_cfg, '-q', 'update-ignore']);
+    ok($r->{success}, 'update-ignore exits 0');
+    ok(-f $gitignore, '.gitignore exists after update-ignore');
+
+    open(my $gfh, '<', $gitignore) or die $!;
+    my $content = do { local $/; <$gfh> };
+    close($gfh);
+    like($content, qr/# user custom rule\nlocal\.tmp/, 'update-ignore preserves existing user rules');
+    like($content, qr/# BEGIN managed by changetrack-ng.*\n\*\.custom-ign\n.*# END managed by changetrack-ng/s,
+        'update-ignore writes managed block with user ignore pattern');
+
+    opendir(my $dh, $sub_out) or die $!;
+    my @leftovers = grep { /^\.gitignore\./ || /\.tmp/ } readdir($dh);
+    closedir($dh);
+    is(scalar @leftovers, 0, 'no temporary .gitignore files left behind in output_dir');
+}
+
 done_testing();
