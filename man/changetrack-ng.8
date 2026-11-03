@@ -49,13 +49,14 @@ Show VCS history.  If I<path> is given, show history for that file only.
 
 =item B<revert> I<path> I<rev>
 
-Restore I<path> to revision I<rev> in the VCS.  Prompts for confirmation
-unless B<--force> is given.
+Restore I<path> to revision I<rev> in the VCS.  Acquires the advisory run lock
+(honoring C<lock_timeout>) to prevent concurrent repository mutations.  Prompts
+for confirmation unless B<--force> is given.
 
 =item B<update-ignore>
 
-Write or refresh the VCS-native ignore file (e.g., C<.gitignore>) using the
-built-in defaults plus any patterns in the config C<ignore> key.
+Write or refresh the VCS-native ignore file (e.g., C<.gitignore>) atomically
+using the built-in defaults plus any patterns in the config C<ignore> key.
 
 =back
 
@@ -95,7 +96,8 @@ metadata, or sending notifications.
 
 =item B<-f>, B<--force>
 
-Bypass interactive confirmation prompts (e.g., for B<revert>).
+Bypass interactive confirmation prompts (e.g., for B<revert>).  Does not
+bypass or override the advisory run lock.
 
 =item B<-q>, B<--quiet>
 
