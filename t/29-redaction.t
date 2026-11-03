@@ -108,4 +108,58 @@ unlike(redact_url('https://h/services/SECRETTOKEN'), qr/SECRETTOKEN/,
         'config header value has no CR/LF');
 }
 
+########################################################################
+# Runner --debug config dump redacts secret-bearing global and notifier keys
+########################################################################
+
+{
+    require ChangeTrack::Runner;
+    require File::Temp;
+    my $work = File::Temp::tempdir(CLEANUP => 1);
+    my $out  = "$work/out";
+    mkdir $out, 0700 or die $!;
+    my $tracked = "$work/a.conf";
+    open(my $tfh, '>', $tracked) or die $!;
+    print {$tfh} "x=1\n";
+    close($tfh);
+
+    my $cfg_path = "$work/ct.ini";
+    open(my $cfh, '>', $cfg_path) or die $!;
+    print {$cfh} <<"INI";
+[global]
+vcs = git
+output_dir = $out
+lock_path = $work/ct.lock
+push_remote = https://deploy:G1TS3CR3T\@example.com/repo.git
+
+[notifier:otlp:central]
+enabled = true
+endpoint = http://127.0.0.1:19754/v1/logs
+headers = Authorization=Bearer OTLP_TOP_SECRET_TOKEN
+heartbeat = false
+
+[track]
+$tracked
+INI
+    close($cfh);
+    chmod 0600, $cfg_path;
+
+    is(ChangeTrack::Runner::_redacted_config_value('api_key', 'raw-key-123'),
+        '***REDACTED***', '_redacted_config_value masks widened key names (api_key)');
+
+    my @stderr;
+    {
+        local $SIG{__WARN__} = sub { push @stderr, $_[0] };
+        # dry_run fails before init unless initialized; init first, then run with debug => 1
+        ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->init_vcs;
+        # Make tracked file unchanged on 2nd run or run once with heartbeat = false so OTLP doesn't even connect
+        ChangeTrack::Runner->new(config => $cfg_path, debug => 1, quiet => 1)->run;
+    }
+    my $dump = join('', @stderr);
+    like($dump, qr/config: push_remote = \*\*\*REDACTED\*\*\*/, 'debug dump redacts global push_remote');
+    like($dump, qr/config: notifier:otlp:central:headers = \*\*\*REDACTED\*\*\*/, 'debug dump redacts notifier headers');
+    unlike($dump, qr/G1TS3CR3T/, 'debug dump never leaks git push_remote token');
+    unlike($dump, qr/OTLP_TOP_SECRET_TOKEN/, 'debug dump never leaks notifier header token');
+}
+
 done_testing();
