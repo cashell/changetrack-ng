@@ -3,7 +3,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches to
 #   subcommands (run, init, status, diff, log, revert, update-ignore).
@@ -443,11 +443,13 @@ Show version-control history for a single path or all tracked files.
 
 =item C<revert E<lt>pathE<gt> E<lt>revE<gt>>
 
-Restore a file or symlink from a specific revision.
+Restore a file or symlink from a specific revision. Acquires the advisory run
+lock (honoring C<lock_timeout>) to prevent concurrent repository mutations.
 
 =item C<update-ignore>
 
-Update backend-specific ignore configuration where supported.
+Update backend-specific ignore configuration where supported. Writes changes
+atomically via a temporary file.
 
 =back
 
@@ -484,8 +486,8 @@ or dispatching notifications.
 
 =item C<-f, --force>
 
-Bypass interactive confirmation prompts (for example, on C<revert>) and force
-through lock prompts.
+Bypass interactive confirmation prompts (for example, on C<revert>). Does not
+bypass or override the advisory run lock.
 
 =item C<-q, --quiet>
 

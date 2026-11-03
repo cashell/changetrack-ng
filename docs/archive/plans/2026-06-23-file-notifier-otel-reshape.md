@@ -82,7 +82,7 @@ Replace the entire contents of `t/09-notify-file.t` with:
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # 09-notify-file.t - Tests for the per-event OTel-shaped File notifier.
 #
@@ -298,7 +298,7 @@ Replace the entire contents of `lib/ChangeTrack/Notify/File.pm` with:
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::Notify::File - Append-only per-event OTel-shaped NDJSON
 #   log notifier with optional heartbeat.

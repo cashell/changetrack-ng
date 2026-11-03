@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::Runner - Main orchestration engine: config -> lock -> file
 #   list -> process -> commit -> notify.
@@ -74,7 +74,9 @@ Return a hashref mapping file paths to arrayrefs of log lines.
 
 =item $runner->revert_path($path, $rev)
 
-Restore I<$path> to VCS revision I<$rev>.
+Restore I<$path> to VCS revision I<$rev>.  Acquires the advisory run lock
+(honoring C<lock_timeout>, with C<force =E<gt> 0>) to prevent concurrent
+repository mutations; croaks if the lock cannot be acquired.
 
 =back
 

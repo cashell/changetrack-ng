@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # 33-cleanup.t - Tests for Phase 5 correctness fixes: disabled-notifier name
 #   reuse (CTNG-30), revert revision validation (CTNG-31), unknown-option

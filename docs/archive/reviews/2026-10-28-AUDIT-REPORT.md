@@ -4,7 +4,7 @@
 - **Commit audited:** `5d91430` (main, clean tree)
 - **Scope:** the whole repo, read the way a new maintainer would. The focus was the run path, VCS backends, locking, `run_cmd`, metadata, and the notifiers.
 - **Priority order used:** correct, safe, holds under load, tested, fast, lean.
-- **Companion plan:** [AUDIT-PLAN.md](AUDIT-PLAN.md)
+- **Companion plan:** [2026-10-28-AUDIT-PLAN.md](../plans/2026-10-28-AUDIT-PLAN.md)
 
 ## What this repo does
 

@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # 30-run-cmd.t - Tests for run_cmd drain-to-EOF, signal-aware exit code,
 #   and the optional wall-clock timeout watchdog (CTNG-06, CTNG-23).

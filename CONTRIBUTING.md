@@ -30,7 +30,7 @@ The description line must start with the file/module name, then ` - `, then a co
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches
 #   to subcommands (run, init, status, diff, log, revert, update-ignore).
@@ -46,7 +46,7 @@ use warnings;
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::Runner - Orchestration: config -> lock -> file list ->
 #   process -> commit -> notify
@@ -72,7 +72,7 @@ ChangeTrack::Runner - Main orchestration engine
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # 06-vcs-git.t - Tests for Git VCS backend (ChangeTrack::VCS::Git).
 #
@@ -375,7 +375,7 @@ Once the release PR is merged to `main`:
 All source files carry SPDX tags:
 
 ```
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 ```
 

@@ -1,7 +1,7 @@
 # changetrack-ng Audit Remediation Plan
 
 - **Date:** 2026-10-28
-- **Source:** [AUDIT-REPORT.md](AUDIT-REPORT.md). Finding numbers below match the report.
+- **Source:** [2026-10-28-AUDIT-REPORT.md](../reviews/2026-10-28-AUDIT-REPORT.md). Finding numbers below match the report.
 - **Baseline:** `5d91430` (main)
 
 ## Approach

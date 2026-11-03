@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::VCS::SVN - Whole-repo with local file:// svnadmin
 #   repository.
@@ -20,7 +20,8 @@ ChangeTrack::VCS::SVN - Subversion VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using Subversion (svn).
 Tracked files are copied into a mirror tree under C<output_dir>, which is
-an svn working copy.
+an svn working copy.  Passes C<--no-ignore> on file addition to preserve
+mirror isolation from in-tree ignore configurations.
 
 =cut
 

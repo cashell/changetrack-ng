@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::Util - Shared utility functions: hostname, fqdn, run_cmd
 #   (IPC::Open3), sync/restore mirror paths, set_debug flag.
@@ -61,7 +61,8 @@ C<IO::Select>-based reading of stdout and stderr.  Arguments:
 
 =item C<timeout> (optional) -- wall-clock seconds.  Acts as a watchdog: if it
 expires the child is killed (C<TERM> then C<KILL>) and the result is flagged
-C<timed_out>.  Defaults to C<$ChangeTrack::Util::DEFAULT_TIMEOUT> (120s) so a
+C<timed_out>.  Applies across stdin transmission and handle closure as well as
+stdout/stderr capture.  Defaults to C<$ChangeTrack::Util::DEFAULT_TIMEOUT> (120s) so a
 hung command cannot hang a scheduled run; pass C<0> to disable the cap.
 stdout/stderr are always drained until EOF so a slow-but-progressing command
 is never truncated.

@@ -103,6 +103,7 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
  Lock.acquire()         →  flock(LOCK_EX|LOCK_NB) or timeout loop
                              │
  _build_file_list()     →  Expand [track] entries (files + recursive dirs)
+                         →  Prune foreign VCS directories (.git, .svn, .hg, RCS, CVS, _darcs, .bzr, .fslckout, _FOSSIL_)
                          →  Apply ignore patterns (each glob precompiled to its own qr//, tested in turn)
                              │
  ┌─ For each tracked path ───────────────────────────────────────────────────┐
@@ -135,6 +136,7 @@ All whole-repo backends (Git, Fossil, SVN, Mercurial) use a mirror tree:
 - Symlinks are serialized as a text file containing `__CHANGTRACK_NG_SYMLINK_TARGET__=<target>`
 - The mirror tree is the VCS working copy; diffs are computed by comparing the copy against HEAD/tip
 - Revert restores mirror → real file (or recreates symlink)
+- Mirror isolation protections ensure tracked VCS configuration (e.g. tracked `.gitignore` or `.gitattributes` from tools like `etckeeper`) cannot suppress or alter tracking: Git neutralizes attributes via `$GIT_DIR/info/attributes` and uses `add -f --`; SVN passes `--no-ignore`; Mercurial passes `-A`; Fossil passes `--force`. Nested foreign VCS control directories are pruned during discovery.
 
 ### 3.3 Flat layout model (RCS)
 
@@ -308,6 +310,7 @@ VCS backend working-directory management differs by backend:
 | Notification delivery | Silent failure → false monitoring confidence | Retry logic; heartbeat signals; warn on failure |
 | Symlink following | Unexpected file content capture | `lstat()` for metadata; `sync_mirror_path` handles symlinks explicitly |
 | Lock file race | Double-execution | `flock(2)` is atomic; pidfile is advisory |
+| Nested tracked repos | VCS pollution or stage suppression via in-tree ignores/attributes | Automatic foreign VCS pruning; mirror isolation flags (`git add -f`, attributes override, `svn --no-ignore`, `hg -A`, `fossil --force`); startup warning on nested repo root |
 
 ---
 
@@ -342,7 +345,7 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 | `status` | Show files with pending changes (exit 1 if changes) |
 | `diff [path]` | Show unified diff for pending changes |
 | `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file to a specific revision |
+| `revert <path> <rev>` | Restore file to a specific revision (acquires advisory run lock) |
 | `update-ignore` | Sync VCS-native ignore file with configured patterns |
 
 There is no `migrate-config` subcommand and no v1→v2 config migration tooling. (`Metadata::import_from_v1_statistics` exists only as a stub that `carp`s "not yet implemented".)

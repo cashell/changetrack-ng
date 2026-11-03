@@ -39,7 +39,7 @@ override_dh_installsystemd:
 	dh_installsystemd changetrack-ng.timer
 
 override_dh_installdocs:
-	dh_installdocs README.md INSTALL.md ARCHITECTURE.md PRODUCT.md CONTRIBUTING.md
+	dh_installdocs README.md INSTALL.md ARCHITECTURE.md PRODUCT.md CONTRIBUTING.md SECURITY.md docs/QUICKSTART.md docs/COOKBOOK.md
 
 override_dh_installchangelogs:
 	dh_installchangelogs CHANGELOG.md

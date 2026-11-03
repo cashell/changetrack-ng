@@ -1,10 +1,20 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 
 Items are prioritized by severity and grouped by category.
 
 ---
+
+## Completed (2026-11-03)
+
+- SEC-7: Prune foreign VCS control directories (`.git`, `.svn`, `.hg`, `RCS`, `CVS`, `_darcs`, `.bzr`) and Fossil checkout databases (`.fslckout`, `_FOSSIL_`) during file discovery in `Runner::_build_file_list()`, silently purge stale foreign VCS paths from `.changetrack-metadata`, and issue startup warnings if foreign VCS repositories are detected directly inside `$output_dir`.
+- SEC-8: Mirror isolation protections against tracked VCS ignore and attribute files: enforce `git add -f --`, neutralize attributes via `$GIT_DIR/info/attributes` (`* !text !eol !ident !filter !diff`), `svn add --no-ignore`, `hg status -A` (matching untracked and ignored states), and `fossil add --force`.
+- SEC-9: Bound `run_cmd` child stdin writes and handle close calls with `alarm` based on `timeout` in `ChangeTrack::Util`, ensuring processes that fail to read stdin or stall on write cannot block execution indefinitely.
+- CORR-12: Acquire advisory run lock (`lock_timeout`, `force => 0`) in `Runner::revert_path()` to prevent concurrent `revert` invocations or racing with scheduled `run` executions.
+- CORR-13: Sequence VCS file removal ahead of in-memory metadata removal in `Runner::_process_file()` and `_handle_non_trackable()` with rollback on failure, and expand SVN and Mercurial status checks in `remove()` (`!` status) to tolerate already-unlinked working copy files.
+- OPS-9: Check `chmod` return value in `Runner::_enforce_output_permissions()` and emit an explicit warning if tightening output directory or repository permissions fails.
+- DEBT-14: Consolidated `--debug` config dump loops and broadened sensitive key redaction via `Runner::_redacted_config_value()`; write `.gitignore` atomically via temporary file and rename with `0600` permissions in `changetrack-ng update-ignore`.
 
 ## Completed (2026-10-23)
 

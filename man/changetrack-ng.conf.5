@@ -122,6 +122,11 @@ B<Compiled bytecode:> C<*.pyc> C<*.pyo> C<*.elc>
 B<System runtime:> C<mtab> C<ld.so.cache> C<prelink.cache> C<adjtime>
 C<udev/hwdb.bin> C<lvm/cache> C<lvm/archive>
 
+Foreign VCS control directories (C<.git>, C<.svn>, C<.hg>, C<RCS>, C<CVS>,
+C<_darcs>, C<.bzr>) and Fossil checkout state files (C<.fslckout>, C<_FOSSIL_>)
+are unconditionally pruned and skipped during traversal to preserve mirror
+isolation and prevent nested repository recursion.
+
 =back
 
 =head2 Sensitive files
@@ -481,7 +486,7 @@ Project homepage: L<https://github.com/cashell/changetrack-ng>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2026 Christopher Cashell <topher@zyp.org>
+Copyright 2026 Christopher Cashell <topher+github@zyp.org>
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the

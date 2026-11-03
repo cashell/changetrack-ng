@@ -21,7 +21,7 @@ Security updates are actively provided for the latest minor release branch:
 
 If you discover a security vulnerability in `changetrack-ng`, please report it responsibly by contacting the maintainer directly:
 
-- **Primary Contact:** Christopher Cashell <topher@zyp.org>
+- **Primary Contact:** Christopher Cashell <topher+github@zyp.org>
 - **Response Target:** Acknowledgement within 48 hours, followed by patch development and coordinated release.
 
 Please include:
