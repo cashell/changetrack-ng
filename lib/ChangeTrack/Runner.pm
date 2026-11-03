@@ -1277,13 +1277,9 @@ sub _enforce_output_permissions {
         my $mode = $st[2];
         if (($mode & 0077) != 0) {
             my $new_mode = ($mode & ~0077) & 07777;
-            chmod($new_mode, $path);
-            my $msg = sprintf(
-                "Tightened insecure permissions on %s from %04o to %04o",
-                $path,
-                $mode & 07777,
-                $new_mode,
-            );
+            my $msg = chmod($new_mode, $path)
+                ? sprintf("Tightened insecure permissions on %s from %04o to %04o", $path, $mode & 07777, $new_mode)
+                : sprintf("Cannot tighten insecure permissions on %s (%04o): %s", $path, $mode & 07777, $!);
             $self->_warn($msg);
             $report->add_warning($msg) if $report;
         }
