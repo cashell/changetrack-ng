@@ -116,7 +116,6 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 
 - Notifier `headers` and `resource_attributes` (OTLP) are scalar strings; the parser in OTLP.pm handles scalar/arrayref polymorphically via `_parse_kv_config_value()` — this is fragile and worth hardening
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
-- `Util::run_cmd()` command timeout is configurable via `command_timeout` (default 120s)
 
 ## Key Design Constraints
 
@@ -324,5 +323,5 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 
 ## Implementation Status
 
-All roadmap implementation phases have been pre-completed and validated against `TODO.md` as of version 0.5.0.
-Tests in `t/` (1,043 tests across 36 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
+All roadmap implementation phases have been pre-completed and validated against `TODO.md`.
+Tests in `t/` (1,258 tests across 39 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
