@@ -153,7 +153,7 @@ The description line is mandatory and must start with the file/module name, then
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches
 #   to subcommands (run, init, status, diff, log, revert, update-ignore).
@@ -169,7 +169,7 @@ use warnings;
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # ChangeTrack::Runner - Orchestration: config -> lock -> file list ->
 #   process -> commit -> notify
@@ -191,7 +191,7 @@ ChangeTrack::Runner - Main orchestration engine
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 #######################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # 01-config-v2.t - Tests for v2 INI config parsing (ChangeTrack::Config).
 #
@@ -309,7 +309,7 @@ After the version-bump PR is merged into `main`:
 ## Copyright and Licensing
 
 All source files carry SPDX tags:
-- `SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>`
+- `SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>`
 - `SPDX-License-Identifier: GPL-3.0-or-later`
 
 Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) are covered by `.reuse/dep5`.

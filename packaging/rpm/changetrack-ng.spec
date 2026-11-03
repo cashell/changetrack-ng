@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
@@ -112,15 +112,15 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
-* Sat Oct 24 2026 Christopher Cashell <topher@zyp.org> - 0.7.4-1
+* Sat Oct 24 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.4-1
 - New upstream release 0.7.4
 
-* Mon Oct 12 2026 Christopher Cashell <topher@zyp.org> - 0.7.3-1
+* Mon Oct 12 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.3-1
 - Install /etc/sysconfig/changetrack-ng defaults file and track in %files
 - Add out-of-tree package building tooling and Makefile integration
 - Ensure release tarball test resilience when dev docs are absent
 
-* Sun Oct 11 2026 Christopher Cashell <topher@zyp.org> - 0.7.2-1
+* Sun Oct 11 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.2-1
 - Enforce umask(0077) and mode 0700 private permissions on storage directories
 - Prevent loss of changes on VCS/diff errors with rollback and re-sequenced commit
 - Non-blocking DNF hook execution and notifier delivery error propagation
@@ -130,7 +130,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Modernize Subversion backend to use absolute paths without chdir
 - Reconcile manual pages, documentation, and manifest inventory
 
-* Fri Sep 18 2026 Christopher Cashell <topher@zyp.org> - 0.7.1-1
+* Fri Sep 18 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.1-1
 - Directory deletion detection and VCS removal: reconcile vanished files against
   metadata sidecar; stage removal across Git, SVN, Mercurial, Fossil, and RCS
 - Bidirectional file type transition handling (file <-> symlink, trackable <-> non-trackable)
@@ -140,7 +140,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Test suite platform safety: probe symlink creation support, use core IO::Uncompress::Gunzip
 - Add loaded_files() accessor to ChangeTrack::Config and remove() to VCS backends
 
-* Mon Jun 29 2026 Christopher Cashell <topher@zyp.org> - 0.7.0-1
+* Mon Jun 29 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.0-1
 - Security hardening release (consolidated multi-tool security review)
 - Explicit TLS verification (verify_SSL=1) on webhook and otlp notifiers
 - Redact credentials (URI userinfo, tokens) in debug traces, config dumps,
@@ -159,7 +159,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - RCS colon-encoding collision fixed; webhook honors max_diff_bytes and zeroes
   sensitive line counts when the diff is suppressed
 - Numerous correctness/POD fixes (see CHANGELOG.md)
-* Thu Jun 25 2026 Christopher Cashell <topher@zyp.org> - 0.6.1-1
+* Thu Jun 25 2026 Christopher Cashell <topher+github@zyp.org> - 0.6.1-1
 - OTel conformance: canonical attribute model on the otlp and file notifiers
   (file.path/name/directory, config_change.type/sensitive/diff, file.mode/owner/
   group/size, changetrack.files_tracked/run_duration_ms) and namespaced event
@@ -173,7 +173,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Fix: register the new notifier keys in the config-file parse whitelist so
   setting them no longer aborts parsing
 
-* Tue May 19 2026 Christopher Cashell <topher@zyp.org> - 0.6.0-1
+* Tue May 19 2026 Christopher Cashell <topher+github@zyp.org> - 0.6.0-1
 - BREAKING: Notifier configuration redesigned; [notifier:<type>:<name>] subsections
   replace the flat notify= list and all prefixed notifier keys (email_to, email_from,
   webhook_url, otlp_endpoint, otlp_headers, notify_log_path, file_heartbeat, etc.)
@@ -188,7 +188,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
   t/26-config-include-directives.t, t/27-config-cross-file-errors.t
 - Install creates conf.d/, track.d/, notifier.d/ under /etc/changetrack-ng/
 
-* Thu May 15 2026 Christopher Cashell <topher@zyp.org> - 0.5.5-1
+* Thu May 15 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.5-1
 - Add --system and --user flags for explicit config scope declaration
 - Add CHANGETRACK_CONFIG env var (beats --system/--user; loses to -c)
 - Source /etc/default/changetrack-ng (Debian) or /etc/sysconfig/changetrack-ng (RHEL)
@@ -196,7 +196,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Add DEFAULTSDIR Makefile variable with auto-detection via 'command -v dnf'
 - Add t/23-config-resolution.t: 8-test suite for config resolution priority
 
-* Wed May 14 2026 Christopher Cashell <topher@zyp.org> - 0.5.4-1
+* Wed May 14 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.4-1
 - Add three-tier diagnostic system: --verbose/-v (high-level run structure),
   --debug/-d (external commands + effective config with secrets redacted),
   --trace/-t (per-file disposition for every tracked path, O(N) output).
@@ -205,20 +205,20 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Add t/22-verbose-debug.t: 42-test suite for the diagnostic tiers
 - Add PRODUCT.md and CONTRIBUTING.md project documentation files
 
-* Tue May 12 2026 Christopher Cashell <topher@zyp.org> - 0.5.3-1
+* Tue May 12 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.3-1
 - Fix: Fossil backend sets FOSSIL_HOME when HOME is absent (systemd service
   environment), resolving "not within an open check-out" errors
 
-* Fri May 08 2026 Christopher Cashell <topher@zyp.org> - 0.5.2-1
+* Fri May 08 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.2-1
 - Perf: status, diff, and log subcommands now apply metadata fast-path,
   skipping unchanged files without spawning a VCS process per file
 - Add t/16-subcommands.t: tests for status/diff fast-path and clean-file diff_path
 
-* Tue May 06 2026 Christopher Cashell <topher@zyp.org> - 0.5.1-1
+* Tue May 06 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.1-1
 - Fix: all unattended invocations (apt, pacman hooks; cron; systemd) now pass --quiet,
   preventing change reports from flooding terminal output during package manager operations
 
-* Tue May 06 2026 Christopher Cashell <topher@zyp.org> - 0.5.0-1
+* Tue May 06 2026 Christopher Cashell <topher+github@zyp.org> - 0.5.0-1
 - Add config_keys() to each notifier; _build_notifier filters to notifier-specific keys
 - Add t/21-report.t: 52-test dedicated suite for ChangeTrack::Report
 - Add start_time/end_time accessors to Report.pm (were documented but missing)
@@ -232,7 +232,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Precompile ignore patterns once per run (was per-file); improves scaling
 - Deduplicate notifier construction via shared _build_notifier helper
 
-* Sun May 04 2026 Christopher Cashell <topher@zyp.org> - 0.4.3-1
+* Sun May 04 2026 Christopher Cashell <topher+github@zyp.org> - 0.4.3-1
 - Unified metadata type system: drop skip_reason, use single type field
   (file, symlink, binary, empty, unreadable, special, directory, missing)
 - Performance: metadata-based fast path skips unchanged files without I/O
@@ -241,7 +241,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 - Fix: binary file warnings only emitted on first detection
 - Fix: getpwuid/getgrgid portability for non-POSIX platforms
 
-* Mon Apr 28 2026 Christopher Cashell <topher@zyp.org> - 0.3.0-1
+* Mon Apr 28 2026 Christopher Cashell <topher+github@zyp.org> - 0.3.0-1
 - Initial RPM packaging
 - Clean Perl rewrite of changetrack with modern VCS and notification support
 - Supports RCS, Git, Fossil, SVN, Mercurial backends

@@ -2,7 +2,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 ########################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 ########################################################################
 # 39-bump-version.t - Tests for tools/bump-version atomic version orchestrator.
 #
@@ -101,7 +101,7 @@ changetrack-ng (0.7.3-1) unstable; urgency=medium
 
   * Previous release.
 
- -- Christopher Cashell <topher@zyp.org>  Mon, 12 Oct 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Mon, 12 Oct 2026 00:00:00 +0000
 EOF
         File::Spec->catfile($tmp_dir, 'packaging', 'rpm', 'changetrack-ng.spec') => <<'EOF',
 Name: changetrack-ng
@@ -109,7 +109,7 @@ Version: 0.7.3
 Release: 1%{?dist}
 
 %changelog
-* Mon Oct 12 2026 Christopher Cashell <topher@zyp.org> - 0.7.3-1
+* Mon Oct 12 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.3-1
 - Previous release
 EOF
         File::Spec->catfile($tmp_dir, 'PRODUCT.md') => <<'EOF',
@@ -166,7 +166,7 @@ EOF
     my $rpm = read_test_file(File::Spec->catfile($tmp_dir, 'packaging', 'rpm', 'changetrack-ng.spec'));
     like($rpm, qr/Version:\s*0\.8\.0/, 'RPM spec Version set to 0.8.0');
     like($rpm, qr/Release:\s*2%\{\?dist\}/, 'RPM spec Release set to 2%{?dist}');
-    like($rpm, qr/\* Sun Nov 01 2026 Christopher Cashell <topher\@zyp\.org> - 0\.8\.0-2/, 'RPM %changelog prepended correctly');
+    like($rpm, qr/\* Sun Nov 01 2026 Christopher Cashell <topher\+github\@zyp\.org> - 0\.8\.0-2/, 'RPM %changelog prepended correctly');
 
     my $prod = read_test_file(File::Spec->catfile($tmp_dir, 'PRODUCT.md'));
     like($prod, qr/Version: 0\.8\.0/, 'PRODUCT.md Version updated to 0.8.0');

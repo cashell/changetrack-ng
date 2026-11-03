@@ -8,6 +8,8 @@ All notable changes will be documented here.
 
 ### Changed
 
+- **Maintainer contact address:**
+  - Updated project maintainer contact email address across repository files.
 - **Atomic `.gitignore` updates in `update-ignore`:**
   - `bin/changetrack-ng` (`_update_gitignore`) now writes `output_dir/.gitignore` via a mode-`0600` sibling temporary file and atomic `rename()`, matching `ChangeTrack::Metadata::save()`.
 - **Consolidated `--debug` config redaction:**
@@ -38,7 +40,7 @@ All notable changes will be documented here.
 ### Added
 
 - **Documentation additions:**
-  - Added [SECURITY.md](SECURITY.md) covering supported release branches, responsible vulnerability disclosure process (`topher@zyp.org`), and architectural threat boundaries.
+  - Added [SECURITY.md](SECURITY.md) covering supported release branches, responsible vulnerability disclosure process (`topher+github@zyp.org`), and architectural threat boundaries.
   - Added [docs/COOKBOOK.md](docs/COOKBOOK.md) providing production recipes for host integrity, Nginx/reverse proxy team routing, OpenTelemetry (OTLP) enterprise monitoring, multi-destination audit logging, user dotfile tracking, and central remote Git backups.
   - Added [docs/QUICKSTART.md](docs/QUICKSTART.md) with a 5-minute practical onboarding walkthrough.
   - Added a comprehensive Documentation Index table and reciprocal cross-links across `README.md`, `PRODUCT.md`, `INSTALL.md`, `ARCHITECTURE.md`, and `CONTRIBUTING.md`.

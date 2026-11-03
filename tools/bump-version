@@ -3,7 +3,7 @@
 # perltidy -i=4 -vt=1 -vtc=0 -lp -cti=1 -cab=1 -nbbc -csc -b
 ########################################################################
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 ########################################################################
 # tools/bump-version - Atomic orchestrator for synchronizing version
 #   strings across all 8 project version authority files.
@@ -282,7 +282,7 @@ changetrack-ng ($ver-$rev) unstable; urgency=medium
 
   * New upstream release $ver.
 
- -- Christopher Cashell <topher\@zyp.org>  $rfc_date
+ -- Christopher Cashell <topher+github\@zyp.org>  $rfc_date
 
 EOF
     return $stanza . $text;
@@ -299,7 +299,7 @@ sub transform_rpm_spec {
 
     my $entry = <<EOF;
 %changelog
-* $rpm_date Christopher Cashell <topher\@zyp.org> - $ver-$rev
+* $rpm_date Christopher Cashell <topher+github\@zyp.org> - $ver-$rev
 - New upstream release $ver
 
 EOF

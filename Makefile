@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher@zyp.org>
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 NAME       := changetrack-ng

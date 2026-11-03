@@ -2,7 +2,7 @@ changetrack-ng (0.7.4-1) unstable; urgency=medium
 
   * New upstream release 0.7.4.
 
- -- Christopher Cashell <topher@zyp.org>  Sat, 24 Oct 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Sat, 24 Oct 2026 00:00:00 +0000
 
 changetrack-ng (0.7.3-1) unstable; urgency=medium
 
@@ -11,7 +11,7 @@ changetrack-ng (0.7.3-1) unstable; urgency=medium
   * Add out-of-tree package building script and Makefile targets.
   * Make developer doc check conditional in doc-lint during package test.
 
- -- Christopher Cashell <topher@zyp.org>  Mon, 12 Oct 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Mon, 12 Oct 2026 00:00:00 +0000
 
 changetrack-ng (0.7.2-1) unstable; urgency=medium
 
@@ -28,7 +28,7 @@ changetrack-ng (0.7.2-1) unstable; urgency=medium
   * Consolidate HTTP retry/backoff in Notify::Base.
   * Reconcile manual pages, documentation, and manifest inventory.
 
- -- Christopher Cashell <topher@zyp.org>  Sun, 11 Oct 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Sun, 11 Oct 2026 00:00:00 +0000
 
 changetrack-ng (0.7.1) unstable; urgency=medium
 
@@ -45,7 +45,7 @@ changetrack-ng (0.7.1) unstable; urgency=medium
     IO::Uncompress::Gunzip.
   * Add loaded_files() accessor to ChangeTrack::Config and remove() to VCS backends.
 
- -- Christopher Cashell <topher@zyp.org>  Fri, 18 Sep 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Fri, 18 Sep 2026 00:00:00 +0000
 
 changetrack-ng (0.7.0) unstable; urgency=high
 
@@ -75,7 +75,7 @@ changetrack-ng (0.7.0) unstable; urgency=high
     change for paths containing a literal colon; tracked symlinks re-snapshot once;
     '..' in track paths is now a fatal config error.
 
- -- Christopher Cashell <topher@zyp.org>  Mon, 29 Jun 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Mon, 29 Jun 2026 00:00:00 +0000
 
 changetrack-ng (0.6.1) unstable; urgency=medium
 
@@ -94,7 +94,7 @@ changetrack-ng (0.6.1) unstable; urgency=medium
   * Fix: register the new notifier keys in the config-file parse whitelist so
     setting them no longer aborts config parsing.
 
- -- Christopher Cashell <topher@zyp.org>  Thu, 25 Jun 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Thu, 25 Jun 2026 00:00:00 +0000
 
 changetrack-ng (0.6.0) unstable; urgency=high
 
@@ -118,7 +118,7 @@ changetrack-ng (0.6.0) unstable; urgency=high
   * Add t/24-config-sections.t, t/25-config-drop-in-dirs.t,
     t/26-config-include-directives.t, t/27-config-cross-file-errors.t.
 
- -- Christopher Cashell <topher@zyp.org>  Tue, 19 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Tue, 19 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.5) unstable; urgency=medium
 
@@ -133,7 +133,7 @@ changetrack-ng (0.5.5) unstable; urgency=medium
     /etc/sysconfig on RHEL via 'command -v dnf').
   * Add t/23-config-resolution.t: 8-test suite for config resolution priority.
 
- -- Christopher Cashell <topher@zyp.org>  Thu, 15 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Thu, 15 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.4) unstable; urgency=medium
 
@@ -145,14 +145,14 @@ changetrack-ng (0.5.4) unstable; urgency=medium
   * Add t/22-verbose-debug.t: 42-test suite for the diagnostic tiers.
   * Add PRODUCT.md and CONTRIBUTING.md project documentation files.
 
- -- Christopher Cashell <topher@zyp.org>  Wed, 14 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Wed, 14 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.3) unstable; urgency=medium
 
   * Fix: Fossil backend sets FOSSIL_HOME when HOME is absent in the service
     environment, resolving "not within an open check-out" errors under systemd.
 
- -- Christopher Cashell <topher@zyp.org>  Tue, 12 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Tue, 12 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.2) unstable; urgency=medium
 
@@ -160,7 +160,7 @@ changetrack-ng (0.5.2) unstable; urgency=medium
     skipping unchanged files without spawning a VCS process per file.
   * Add t/16-subcommands.t: coverage for status/diff fast-path and clean-file diff_path.
 
- -- Christopher Cashell <topher@zyp.org>  Fri, 08 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Fri, 08 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.1) unstable; urgency=medium
 
@@ -168,7 +168,7 @@ changetrack-ng (0.5.1) unstable; urgency=medium
     pass --quiet, preventing change reports from flooding terminal output during
     package manager operations. DNF plugin was already fully silent.
 
- -- Christopher Cashell <topher@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
 
 changetrack-ng (0.5.0) unstable; urgency=medium
 
@@ -186,7 +186,7 @@ changetrack-ng (0.5.0) unstable; urgency=medium
   * Precompile ignore patterns once per run (was per-file); improves scaling.
   * Deduplicate notifier construction via shared _build_notifier helper.
 
- -- Christopher Cashell <topher@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Tue, 06 May 2026 00:00:00 +0000
 
 changetrack-ng (0.4.3) unstable; urgency=medium
 
@@ -198,7 +198,7 @@ changetrack-ng (0.4.3) unstable; urgency=medium
   * Fix: binary file warnings only emitted on first detection.
   * Fix: getpwuid/getgrgid portability for non-POSIX platforms.
 
- -- Christopher Cashell <topher@zyp.org>  Sun, 04 May 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Sun, 04 May 2026 00:00:00 +0000
 
 changetrack-ng (0.3.0) unstable; urgency=medium
 
@@ -208,4 +208,4 @@ changetrack-ng (0.3.0) unstable; urgency=medium
   * Supports Email, Webhook, OTLP, and File notification channels.
   * Includes systemd timer, cron.hourly script, and apt/pacman hooks.
 
- -- Christopher Cashell <topher@zyp.org>  Mon, 28 Apr 2026 00:00:00 +0000
+ -- Christopher Cashell <topher+github@zyp.org>  Mon, 28 Apr 2026 00:00:00 +0000
