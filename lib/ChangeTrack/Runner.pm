@@ -204,20 +204,8 @@ sub run {
     $self->_verbose("Notify: " . (@notifiers ? join(', ', map { ref($_) } @notifiers) : 'none'));
 
     # Acquire run lock  --  silently skip if another instance is running (safe for cron)
-    my $lock_path = $cfg->global('lock_path');
-    unless (defined($lock_path) && $lock_path =~ /\S/) {
-        $lock_path = _default_lock_path();
-    }
-    _ensure_lock_parent_dir($lock_path);
-
-    my $lock_timeout = $cfg->global('lock_timeout') // 0;
-    $self->_verbose("Acquiring lock: $lock_path (timeout=${lock_timeout}s)");
-
-    my $lock = ChangeTrack::Lock->new(
-        path    => $lock_path,
-        timeout => $lock_timeout,
-        force   => $self->{force},
-    );
+    my $lock = $self->_lock_for($cfg, $self->{force});
+    $self->_verbose("Acquiring lock: $lock->{path} (timeout=$lock->{timeout}s)");
     unless ($lock->acquire) {
         $self->_verbose("Skipping: another instance holds lock");
         $self->_info("Another instance is running; skipping this run.");
@@ -264,7 +252,7 @@ sub run {
     my $md = ChangeTrack::Metadata->load($meta_path);
     $self->_debug("Metadata sidecar: $meta_path (" . scalar(keys %{ $md->{records} }) . " entries loaded)");
     $self->_debug("Hostname resolved: " . hostname());
-    $self->_debug("Lock path: $lock_path (running as uid=$>)");
+    $self->_debug("Lock path: $lock->{path} (running as uid=$>)");
 
     # Debug: dump effective config values (redact secrets)
     if ($self->{debug}) {
@@ -421,15 +409,17 @@ sub _process_file {
     # File no longer on disk
     unless (@st) {
         if (defined $existing) {
+            unless ($self->{dry_run}) {
+                eval { $vcs->remove($real_path) };
+                if (my $err = $@) {
+                    $err =~ s/\n$//;
+                    $self->_warn("VCS remove failed for $real_path (will retry next run): $err");
+                    $report->add_warning("VCS remove failed for $real_path: $err");
+                    return;    # keep metadata record so the next run retries
+                }
+            }
             $report->add_removed(path => $real_path, recipients => $recipients);
             $md->mark_removed($real_path);
-            eval { $vcs->remove($real_path) unless $self->{dry_run} };
-            if ($@) {
-                my $err = $@;
-                $err =~ s/\n$//;
-                $self->_warn("VCS remove failed for $real_path: $err");
-                $report->add_warning("VCS remove failed for $real_path: $err");
-            }
             $self->_debug("Removed: $real_path");
             $self->_info("Removed: $real_path");
         } else {
@@ -581,12 +571,15 @@ sub _handle_non_trackable {
     $self->_trace("$real_path: classified as $type, metadata only");
 
     if ($prev_vcs_eligible) {
-        eval { $vcs->remove($real_path) unless $self->{dry_run} };
-        if ($@) {
-            my $err = $@;
-            $err =~ s/\n$//;
-            $self->_warn("VCS remove failed for $real_path: $err");
-            $report->add_warning("VCS remove failed for $real_path: $err");
+        unless ($self->{dry_run}) {
+            eval { $vcs->remove($real_path) };
+            if (my $err = $@) {
+                $err =~ s/\n$//;
+                $md->rollback($real_path);
+                $self->_warn("VCS remove failed for $real_path (will retry next run): $err");
+                $report->add_warning("VCS remove failed for $real_path: $err");
+                return;
+            }
         }
         $report->add_change(
             path         => $real_path,
@@ -891,6 +884,21 @@ sub _bool_or_default {
     return $default;
 }
 
+# _lock_for -- Construct a ChangeTrack::Lock from $cfg, ensuring parent dir exists.
+sub _lock_for {
+    my ($self, $cfg, $force) = @_;
+    my $lock_path = $cfg->global('lock_path');
+    unless (defined($lock_path) && $lock_path =~ /\S/) {
+        $lock_path = _default_lock_path();
+    }
+    _ensure_lock_parent_dir($lock_path);
+    return ChangeTrack::Lock->new(
+        path    => $lock_path,
+        timeout => $cfg->global('lock_timeout') // 0,
+        force   => $force ? 1 : 0,
+    );
+}
+
 # _default_lock_path -- Return the appropriate lock file path.
 # root gets /var/run/changetrack-ng.lock;
 # unprivileged users get $XDG_CACHE_HOME/changetrack-ng.lock.
@@ -1129,15 +1137,21 @@ sub _is_non_diffable {
     return (-B $path) ? 1 : 0;     # binary
 }
 
-# revert_path -- Revert $path to $rev via the VCS, preserving original
-# file mode and ownership after the VCS restore.
+# revert_path -- Revert $path to $rev via the VCS under the run lock,
+# preserving original file mode and ownership after the VCS restore.
 sub revert_path {
     my ($self, $path, $rev) = @_;
-    my ($vcs) = $self->_setup;
+    my ($vcs, $cfg) = $self->_setup;
+
+    # Never pass force => 1: CLI --force skips the revert prompt, not the run lock.
+    my $lock = $self->_lock_for($cfg, 0);
+    $lock->acquire
+        or croak "Another changetrack-ng run holds the lock ($lock->{path}); retry shortly";
 
     my $pre = _snapshot_existing_file($path);
     $vcs->revert($path, $rev);
     _restore_file_metadata($self, $path, $pre) if $pre;
+    $lock->release;
 }
 
 # _snapshot_existing_file -- Capture the current mode/uid/gid of $path
@@ -1263,13 +1277,9 @@ sub _enforce_output_permissions {
         my $mode = $st[2];
         if (($mode & 0077) != 0) {
             my $new_mode = ($mode & ~0077) & 07777;
-            chmod($new_mode, $path);
-            my $msg = sprintf(
-                "Tightened insecure permissions on %s from %04o to %04o",
-                $path,
-                $mode & 07777,
-                $new_mode,
-            );
+            my $msg = chmod($new_mode, $path)
+                ? sprintf("Tightened insecure permissions on %s from %04o to %04o", $path, $mode & 07777, $new_mode)
+                : sprintf("Cannot tighten insecure permissions on %s (%04o): %s", $path, $mode & 07777, $!);
             $self->_warn($msg);
             $report->add_warning($msg) if $report;
         }

@@ -267,7 +267,7 @@ unit files. The template is installed by `make install-hooks`.
 | `status` | List changed files (including content modifications and metadata-only changes like chmod/chown) without modifying the VCS mirror |
 | `diff [path]` | Show pending unified diff |
 | `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file from a revision |
+| `revert <path> <rev>` | Restore file from a revision (acquires the run lock; waits up to `lock_timeout` or refuses while a run holds the lock) |
 | `update-ignore` | Refresh VCS ignore file |
 
 ## Notification Channels

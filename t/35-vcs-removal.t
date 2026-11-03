@@ -230,4 +230,58 @@ use_ok('ChangeTrack::VCS::RCS');
     );
 }
 
+########################################################################
+# Test 5: Failed VCS Remove Retains Metadata and Retries Next Run
+########################################################################
+{
+    my $work_dir   = tempdir(CLEANUP => 1);
+    my $output_dir = tempdir(CLEANUP => 1);
+    chmod 0700, $output_dir;
+    my $track_dir  = "$work_dir/configs";
+    make_path($track_dir);
+
+    my $keep_file  = "$track_dir/keep.conf";
+    my $retry_file = "$track_dir/retry.conf";
+    for my $f ($keep_file, $retry_file) {
+        open(my $fh, '>', $f) or die $!;
+        print {$fh} "data for $f\n";
+        close($fh);
+    }
+
+    my ($cfh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $output_dir\nlock_path = $work_dir/ct.lock\n\n[track]\nDIRECTORY $track_dir\n";
+    close($cfh);
+    chmod 0600, $cfg_path;
+
+    ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->run;
+    unlink($retry_file) or die $!;
+
+    my $rep_fail;
+    {
+        no warnings 'redefine';
+        local *ChangeTrack::VCS::Git::remove = sub { die "simulated index.lock\n" };
+        local $SIG{__WARN__} = sub { };
+        $rep_fail = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->run;
+    }
+
+    ok(scalar(grep { /VCS remove failed.*simulated index\.lock/ } @{ $rep_fail->warnings }),
+        'failed remove recorded in report warnings');
+    is(scalar(grep { $_->{is_removed} } @{ $rep_fail->changes }), 0,
+        'failed remove does not emit premature removed change');
+    my $md_mid = ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
+    ok(defined $md_mid->record_for($retry_file),
+        'metadata record preserved after failed VCS remove');
+
+    my $rep_ok = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->run;
+    my @removed_ok = grep { $_->{is_removed} && $_->{path} eq $retry_file } @{ $rep_ok->changes };
+    is(scalar @removed_ok, 1, 'retry run records removed change once VCS remove succeeds');
+
+    my $md_after = ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
+    ok(!defined $md_after->record_for($retry_file),
+        'metadata record dropped after successful retry');
+
+    my $tree = run_cmd(cmd => ['git', '-C', $output_dir, 'ls-tree', '-r', '--name-only', 'HEAD']);
+    unlike($tree->{stdout}, qr/retry\.conf/, 'retry.conf removed from Git HEAD on retry');
+}
+
 done_testing();

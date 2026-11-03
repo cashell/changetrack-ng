@@ -17,6 +17,12 @@ All notable changes will be documented here.
 
 ### Fixed
 
+- **Run lock enforcement on `revert`:**
+  - `ChangeTrack::Runner::revert_path()` now acquires the advisory run lock (`lock_path` / `lock_timeout`) before modifying the VCS mirror or live file, refusing if another run holds the lock without ever stealing a live run's lock under `--force`.
+- **Retained metadata on failed VCS removals:**
+  - `ChangeTrack::Runner` now stages `$vcs->remove()` before marking a vanished (or newly non-trackable) file as removed in `.changetrack-metadata` and the run report, preserving the metadata record on error so the removal is retried on the next run.
+- **Honest permission-tightening failure warning:**
+  - `ChangeTrack::Runner::_enforce_output_permissions()` now checks the return value of `chmod()` and logs `"Cannot tighten insecure permissions..."` when `chmod()` fails instead of falsely reporting success.
 - **Unbounded `run_cmd()` stdin write on hung subprocesses:**
   - `ChangeTrack::Util::run_cmd()` now enforces `command_timeout` while writing and flushing `input` to a child process's stdin pipe, preventing a stalled `sendmail` or external command from blocking past the timeout and holding the run lock indefinitely.
 - **Silent tracking failure on etckeeper and nested-repository trees:**

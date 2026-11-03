@@ -81,7 +81,7 @@ sub remove {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
     my $st     = $self->_hg('status', $mirror);
-    if ($st->{stdout} =~ /^[ MARC]/m) {
+    if ($st->{stdout} =~ /^[ MARC!]/m) {
         my $r = $self->_hg('rm', '--force', $mirror);
         croak "hg rm failed for '$mirror': $r->{stderr}" unless $r->{success};
     } elsif (-e $mirror || -l $mirror) {
