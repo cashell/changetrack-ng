@@ -79,7 +79,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 %files
 %license LICENSE
-%doc README.md INSTALL.md ARCHITECTURE.md CHANGELOG.md PRODUCT.md CONTRIBUTING.md
+%doc README.md INSTALL.md ARCHITECTURE.md CHANGELOG.md PRODUCT.md CONTRIBUTING.md SECURITY.md docs/QUICKSTART.md docs/COOKBOOK.md
 %doc %{_docdir}/%{name}/examples
 
 %{_bindir}/changetrack-ng
