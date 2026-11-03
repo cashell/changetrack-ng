@@ -298,14 +298,31 @@ sub _update_gitignore {
         $existing .= $block;
     }
 
-    open(my $fh, '>', $path) or do {
+    require File::Temp;
+    my ($fh, $tmp) = eval {
+        File::Temp::tempfile('.gitignore.XXXXXXXX', DIR => $dir, UNLINK => 0);
+    };
+    if ($@ || !$fh) {
+        warn "changetrack-ng: cannot write $path: $!\n";
+        return;
+    }
+    chmod 0600, $tmp;
+    print {$fh} $existing or do {
+        close($fh);
+        unlink($tmp);
         warn "changetrack-ng: cannot write $path: $!\n";
         return;
     };
-    print $fh $existing
-        or do { warn "changetrack-ng: cannot write $path: $!\n"; return };
-    close($fh)
-        or do { warn "changetrack-ng: cannot finalize $path: $!\n"; return };
+    close($fh) or do {
+        unlink($tmp);
+        warn "changetrack-ng: cannot finalize $path: $!\n";
+        return;
+    };
+    rename($tmp, $path) or do {
+        unlink($tmp);
+        warn "changetrack-ng: cannot rename $tmp -> $path: $!\n";
+        return;
+    };
 
     say "Updated: $path" unless $opts{quiet};
 }

@@ -257,16 +257,7 @@ sub run {
     # Debug: dump effective config values (redact secrets)
     if ($self->{debug}) {
         for my $key (sort keys %{ $cfg->{global} }) {
-            my $val = $cfg->{global}{$key};
-            $val = join(' ', @$val) if ref $val eq 'ARRAY';
-            $val //= '';
-            if ($key =~ /header|secret|token|password|url|uri|endpoint|remote/i) {
-                $val = '***REDACTED***';
-            }
-            else {
-                $val = redact_secrets($val);
-            }
-            $self->_debug("config: $key = $val");
+            $self->_debug("config: $key = " . _redacted_config_value($key, $cfg->{global}{$key}));
         }
         my $notifiers = $cfg->notifiers;
         for my $type (sort keys %$notifiers) {
@@ -274,16 +265,7 @@ sub run {
                 my $iname = $inst->{instance_name} // 'default';
                 for my $key (sort keys %$inst) {
                     next if $key eq 'instance_name';
-                    my $val = $inst->{$key};
-                    $val = join(' ', @$val) if ref $val eq 'ARRAY';
-                    $val //= '';
-                    if ($key =~ /header|secret|token|password|url|uri|endpoint|remote/i) {
-                        $val = '***REDACTED***';
-                    }
-                    else {
-                        $val = redact_secrets($val);
-                    }
-                    $self->_debug("config: notifier:$type:$iname:$key = $val");
+                    $self->_debug("config: notifier:$type:$iname:$key = " . _redacted_config_value($key, $inst->{$key}));
                 }
             }
         }
@@ -882,6 +864,16 @@ sub _bool_or_default {
     return 1 if $raw =~ /^(?:1|true|yes|on)$/i;
     return 0 if $raw =~ /^(?:0|false|no|off)$/i;
     return $default;
+}
+
+# _redacted_config_value -- Format and redact a config value for debug logging.
+sub _redacted_config_value {
+    my ($key, $val) = @_;
+    $val = join(' ', @$val) if ref $val eq 'ARRAY';
+    $val //= '';
+    return '***REDACTED***'
+        if $key =~ /header|secret|token|password|url|uri|endpoint|remote|key|auth|bearer|credential/i;
+    return redact_secrets($val);
 }
 
 # _lock_for -- Construct a ChangeTrack::Lock from $cfg, ensuring parent dir exists.
