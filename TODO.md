@@ -1,6 +1,6 @@
 # changetrack-ng — TODO / Issues / Improvements
 
-Last updated: 2026-10-23
+Last updated: 2026-11-02
 
 Items are prioritized by severity and grouped by category.
 
@@ -111,6 +111,12 @@ Items are prioritized by severity and grouped by category.
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs.
 
 ---
+
+## Someday / Maybe
+
+### DEBT-13: Remove legacy Windows (`MSWin32`) shims and test skip guards (Very Low)
+
+**Issue:** Early development left behind scattered `$^O eq 'MSWin32'` branches, backslash path normalizations, and `MSWin32` test skip guards (e.g., `Metadata.pm`, `Runner.pm`, `t/30-run-cmd.t`). Because `changetrack-ng` is strictly a Unix/Linux system tool by design and is not intended to support Windows, these shims could eventually be pruned — very low priority, and we may not bother unless touching those areas anyway.
 
 ---
 

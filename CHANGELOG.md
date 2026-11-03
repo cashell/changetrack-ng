@@ -8,6 +8,10 @@ All notable changes will be documented here.
 
 ### Changed
 
+- **Atomic `.gitignore` updates in `update-ignore`:**
+  - `bin/changetrack-ng` (`_update_gitignore`) now writes `output_dir/.gitignore` via a mode-`0600` sibling temporary file and atomic `rename()`, matching `ChangeTrack::Metadata::save()`.
+- **Consolidated `--debug` config redaction:**
+  - Deduplicated `[global]` and notifier `--debug` config-dump masking in `ChangeTrack::Runner` into `_redacted_config_value()` and expanded the secret key matcher to cover `key`, `auth`, `bearer`, and `credential`.
 - **Mirror isolation for foreign VCS control paths:**
   - Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`), `.git` submodule/worktree files, Fossil checkout databases (`.fslckout`, `_FOSSIL_`), and internal excluded directories are now pruned during directory traversal instead of being mirrored or walked.
 - **Versioned release and build staging directories:**
