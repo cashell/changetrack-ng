@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
 Name:           changetrack-ng
-Version:        0.7.4
+Version:        0.7.5
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -112,6 +112,9 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 
 
 %changelog
+* Tue Nov 03 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.5-1
+- New upstream release 0.7.5
+
 * Sat Oct 24 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.4-1
 - New upstream release 0.7.4
 

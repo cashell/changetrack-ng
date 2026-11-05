@@ -6,6 +6,13 @@ All notable changes will be documented here.
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-03
+### Added
+
+- **Packaging documentation coverage:**
+  - Added [SECURITY.md](SECURITY.md), [docs/QUICKSTART.md](docs/QUICKSTART.md), and [docs/COOKBOOK.md](docs/COOKBOOK.md) to Debian (`dh_installdocs`) and RPM (`%doc`) package manifests.
+  - Expanded [.reuse/dep5](.reuse/dep5) patterns to recursively cover all documentation and packaging directories.
+
 ### Changed
 
 - **Maintainer contact address:**
