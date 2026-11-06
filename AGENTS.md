@@ -297,6 +297,7 @@ After the version-bump PR is merged into `main`:
 2. **Build/verify release artifacts from the tagged `main` commit:**
    If any commits were added after the pre-PR package build, re-run `make packages && make clean-build && make clean` on `main` and verify `(cd ~/dev/releases/changetrack-ng/vx.y.z && sha256sum -c SHA256SUMS)`.
 3. **Publish the GitHub Release (`gh release create`):**
+   Always set the release title (`--title`) using the canonical prefixed format: `changetrack-ng vx.y.z` (e.g. `changetrack-ng v0.7.5`, never bare `vx.y.z`).
    Use the `[x.y.z]` section of `CHANGELOG.md` (with an `# changetrack-ng vx.y.z` heading and `## Artifact Verification` footer) as release notes, and attach the **10 canonical release assets** from `~/dev/releases/changetrack-ng/vx.y.z/` (excluding `.buildinfo` and `.changes`):
    - `changetrack-ng-x.y.z.tar.gz` (full source tarball)
    - `changetrack-ng-x.y.z-deploy.tar.gz` (production deployment tarball)
