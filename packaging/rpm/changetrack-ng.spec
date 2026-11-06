@@ -98,6 +98,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 %dir %{_sysconfdir}/%{name}/notifier.d
 %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 %config(noreplace) %{_sysconfdir}/sysconfig/%{name}
+%config(noreplace) %{_sysconfdir}/logrotate.d/%{name}
 
 %dir %attr(0700,root,root) %{_localstatedir}/lib/%{name}
 
