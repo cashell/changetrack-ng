@@ -872,6 +872,13 @@ dist         = ["full", "deploy", "minimal", "deb", "rpm"]
 tags         = ["packaging", "defaults", "debian"]
 notes        = "Installed to /etc/default/ on Debian or /etc/sysconfig/ on RHEL; sourced by cron, systemd, and hooks"
 
+[packaging."packaging/logrotate/changetrack-ng"]
+description  = "logrotate configuration for /var/log/changetrack-ng.jsonl and .log"
+install_path = "$(LOGROTATEDIR)/changetrack-ng"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "deb", "rpm"]
+tags         = ["packaging", "logrotate"]
+
 ########################################################################
 # build
 ########################################################################

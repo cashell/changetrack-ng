@@ -10,9 +10,14 @@ changetrack-ng - system file change tracker
 
 =head1 DESCRIPTION
 
-B<changetrack-ng> tracks changes to system files and directories using a
-pluggable VCS backend (RCS, Git, Fossil, SVN, or Mercurial) and notifies
-via one or more channels (email, webhook, OTLP, file log).
+B<changetrack-ng> provides automated, versioned configuration backup and
+change tracking for system files and directories using a pluggable VCS backend
+(RCS, Git, Fossil, SVN, or Mercurial) and notifies via one or more channels
+(email, webhook, OTLP, file log).
+
+It preserves full revision history (capturing file contents, POSIX permissions,
+ownership, and symlink targets) and supports instant point-in-time recovery
+and rollback via the B<revert> subcommand.
 
 On each run it compares file metadata and content against the last recorded
 state, commits any changes to the VCS repository, and dispatches notifications.

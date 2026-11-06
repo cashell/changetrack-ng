@@ -201,4 +201,15 @@ sub write_main {
     }
 }
 
+########################################################################
+# Default Config Tracks Self Config Directory
+########################################################################
+{
+    my $conf_path = File::Spec->catfile($RealBin, '..', 'etc', 'changetrack-ng.conf');
+    my $cfg       = eval { ChangeTrack::Config->load($conf_path) };
+    ok(defined $cfg, 'Default etc/changetrack-ng.conf loads cleanly');
+    my @self_track = grep { $_->{kind} eq 'directory' && $_->{path} eq '/etc/changetrack-ng' } @{ $cfg->tracks };
+    is(scalar @self_track, 1, 'Default config contains directory track entry for /etc/changetrack-ng');
+}
+
 done_testing();

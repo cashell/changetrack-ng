@@ -270,4 +270,84 @@ SKIP: {
     like($dnf_content, qr/sys\.stderr\.write.*WARNING/, 'dnf plugin outputs warning to stderr on failure');
 }
 
+########################################################################
+# Finding 6: Track Deduplication, Option Merging, and Slash Normalization
+########################################################################
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $outdir = File::Spec->catdir($tmpdir, 'outdir');
+    my $dir_overlap = File::Spec->catdir($tmpdir, 'overlapdir');
+    mkdir($dir_overlap, 0755) or die "mkdir: $!";
+
+    my $file_dup = File::Spec->catfile($tmpdir, 'dup.conf');
+    open(my $dfh, '>', $file_dup) or die "open: $!";
+    print {$dfh} "dup content\n";
+    close($dfh);
+
+    my $file_overlap = File::Spec->catfile($dir_overlap, 'file.conf');
+    open(my $ofh, '>', $file_overlap) or die "open: $!";
+    print {$ofh} "overlap content\n";
+    close($ofh);
+
+    my $file_del = File::Spec->catfile($dir_overlap, 'deleted.conf');
+    open(my $del_fh, '>', $file_del) or die "open: $!";
+    print {$del_fh} "to be deleted\n";
+    close($del_fh);
+
+    # Config with:
+    # 1) Duplicate explicit file entries for $file_dup
+    # 2) Overlapping DIRECTORY with trailing slash and explicit file $file_overlap
+    my $cfg_file = File::Spec->catfile($tmpdir, 'ct.conf');
+    open(my $cfh, '>', $cfg_file) or die "open: $!";
+    print {$cfh} <<"EOF";
+[global]
+vcs = git
+output_dir = $outdir
+
+[track]
+$file_dup : dev1\@example.com
+$file_dup : dev2\@example.com sensitive=yes
+DIRECTORY $dir_overlap/ : dir\@example.com sensitive=no
+$file_overlap : file\@example.com sensitive=yes
+EOF
+    close($cfh);
+
+    my $cfg = ChangeTrack::Config->load($cfg_file);
+
+    # 1) Trailing slash normalization in Config
+    my ($dir_track) = grep { $_->{kind} eq 'directory' } @{ $cfg->tracks };
+    is($dir_track->{path}, $dir_overlap, 'trailing slash on directory track entry was normalized');
+
+    # 2) Tracked entries deduplication and option merging
+    my $runner = ChangeTrack::Runner->new(config => $cfg_file, quiet => 1);
+    my $entries = $runner->_tracked_entries($cfg);
+
+    # $file_dup appears once, $file_overlap appears once, $file_del appears once (from directory)
+    is(scalar(@$entries), 3, 'duplicate file entries and overlapping dir resolved to 3 unique paths');
+
+    my ($e_dup) = grep { $_->{path} eq $file_dup } @$entries;
+    ok($e_dup, 'duplicate file resolved to single entry');
+    is_deeply($e_dup->{recipients}, ['dev1@example.com', 'dev2@example.com'], 'duplicate file recipients merged preserving order');
+    is($e_dup->{sensitive}, 'yes', 'sensitive=yes preserved on duplicate file');
+
+    my ($e_overlap) = grep { $_->{path} eq $file_overlap } @$entries;
+    ok($e_overlap, 'overlapping directory and file resolved to single entry');
+    is_deeply($e_overlap->{recipients}, ['dir@example.com', 'file@example.com'], 'overlapping directory and file recipients merged');
+    is($e_overlap->{sensitive}, 'yes', 'explicit file sensitive=yes overrides directory sensitive=no');
+
+    # 3) Run report change count (only 1 change per unique file, 3 total)
+    my $rep1 = $runner->run;
+    is(scalar(@{ $rep1->changes }), 3, 'initial run produced exactly 3 changes (no duplicate changes)');
+    my @dup_changes = grep { $_->{path} eq $file_dup } @{ $rep1->changes };
+    is(scalar(@dup_changes), 1, 'duplicate file produced exactly 1 change in report');
+
+    # 4) Deleted file reconciliation under normalized directory with trailing slash
+    unlink($file_del) or die "unlink: $!";
+    my $runner2 = ChangeTrack::Runner->new(config => $cfg_file, quiet => 1);
+    my $rep2 = $runner2->run;
+    my @removed = grep { $_->{is_removed} } @{ $rep2->changes };
+    is(scalar(@removed), 1, 'deleted file under normalized directory reconciled as removed');
+    is($removed[0]->{path}, $file_del, 'reconciled removed file path matches');
+}
+
 done_testing();

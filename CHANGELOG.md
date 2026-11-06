@@ -5,6 +5,21 @@ All notable changes will be documented here.
 **Project homepage:** <https://github.com/cashell/changetrack-ng>
 
 ## [Unreleased]
+### Added
+
+- **Default self-configuration tracking:**
+  - Added `DIRECTORY /etc/changetrack-ng` to default configuration templates so changes to changetrack-ng's own configuration and drop-ins are automatically tracked and versioned out of the box.
+- **Logrotate configuration and packaging:**
+  - Added logrotate configuration for `/var/log/changetrack-ng.jsonl` with monthly rotation and retention, integrated into Debian packaging, RPM spec, and installation targets.
+
+### Changed
+
+- **Tracked path deduplication:**
+  - Deduplicated tracked files during scan expansion in `ChangeTrack::Runner`, preventing redundant `stat()` calls, duplicate notifications, or multiple processing when individual files overlap with tracked directories or when paths are specified multiple times.
+- **Default file notifier enabled:**
+  - Enabled the local JSONL file notifier (`[notifier:file:default]`) by default in standard configurations pointing to `/var/log/changetrack-ng.jsonl` with `full_diff = 0` (metadata and change summary without raw diff payload), providing an immediate local audit log out of the box.
+- **Documentation accentuating versioned backup and revert:**
+  - Updated README, Product Overview, Quickstart guide, man pages, and distribution package descriptions to emphasize changetrack-ng's role as an automated, versioned configuration backup system preserving complete historical revisions (content, POSIX permissions, ownership, symlinks) with point-in-time recovery via `revert`.
 
 ## [0.7.5] - 2026-11-03
 ### Added

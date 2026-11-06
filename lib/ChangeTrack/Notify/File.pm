@@ -40,9 +40,9 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{path}             //= '/var/log/changetrack-ng.log';
+    $self->{path}             //= '/var/log/changetrack-ng.jsonl';
     $self->{heartbeat}        //= 0;
-    $self->{full_diff}        //= 1;
+    $self->{full_diff}        //= 0;
     $self->{sensitive_notify} //= 'suppress';
     $self->{emit_recipients}  //= 0;
     $self->{max_diff_bytes}   //= 0;

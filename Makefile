@@ -15,6 +15,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 HOOKSDIR    ?= $(LIBDIR)/hooks
 CRONDIR     ?= /etc/cron.hourly
 DEFAULTSDIR ?= $(if $(shell command -v dnf 2>/dev/null),/etc/sysconfig,/etc/default)
+LOGROTATEDIR ?= $(SYSCONFDIR)/logrotate.d
 DESTDIR     ?=
 BUILD_DIR   ?= $(HOME)/dev/build/$(NAME)
 RELEASE_DIR ?= $(HOME)/dev/releases/$(NAME)
@@ -22,7 +23,7 @@ RELEASE_DIR ?= $(HOME)/dev/releases/$(NAME)
 
 PERL       ?= perl
 
-.PHONY: all test test-dirty bump-version dev-check syntax-check config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra deb rpm packages release-artifacts clean-build
+.PHONY: all test test-dirty bump-version dev-check syntax-check config-lint doc-lint install uninstall dist dist-deploy dist-minimal clean install-hooks install-debug-hooks install-systemd install-cron install-logrotate _install_logrotate install-man man fatpack install-user install-user-systemd install-user-cron install-user-uninstall debian-build-setup debian-build-cleanup _install_defaults manifest-lint manifest-extra deb rpm packages release-artifacts clean-build
 
 all:
 	@echo "$(NAME) $(VERSION)"
@@ -45,6 +46,7 @@ all:
 	@echo "  make install-debug-hooks Install debug hooks (verbose log to /var/log/changetrack-ng-apt-debug.log)"
 	@echo "  make install-systemd Install systemd timer"
 	@echo "  make install-cron    Install cron.hourly job"
+	@echo "  make install-logrotate   Install logrotate configuration"
 	@echo "  make install-user    Install under ~/.local + ~/.config"
 	@echo "  make install-user-uninstall Remove user install files"
 	@echo "  make install-user-systemd Install user systemd timer"
@@ -116,7 +118,7 @@ install-man: man
 	install -m 644 man/changetrack-ng.8.gz    $(DESTDIR)$(MANDIR)/man8/changetrack-ng.8.gz
 	install -m 644 man/changetrack-ng.conf.5.gz $(DESTDIR)$(MANDIR)/man5/changetrack-ng.conf.5.gz
 
-install: _install_dirs _install_bin _install_lib _install_conf _install_examples _install_defaults
+install: _install_dirs _install_bin _install_lib _install_conf _install_examples _install_defaults _install_logrotate
 
 _install_conf_user:
 	install -d $(HOME)/.config/$(NAME)
@@ -338,6 +340,17 @@ _install_defaults:
 		echo "Installed defaults: $(DESTDIR)$(DEFAULTSDIR)/$(NAME)"; \
 	else \
 		echo "Skipping defaults (already exists): $(DESTDIR)$(DEFAULTSDIR)/$(NAME)"; \
+	fi
+
+install-logrotate: _install_logrotate
+
+_install_logrotate:
+	install -d $(DESTDIR)$(LOGROTATEDIR)
+	@if [ ! -f $(DESTDIR)$(LOGROTATEDIR)/$(NAME) ]; then \
+		install -m 644 packaging/logrotate/$(NAME) $(DESTDIR)$(LOGROTATEDIR)/$(NAME); \
+		echo "Installed logrotate config: $(DESTDIR)$(LOGROTATEDIR)/$(NAME)"; \
+	else \
+		echo "Skipping logrotate config (already exists): $(DESTDIR)$(LOGROTATEDIR)/$(NAME)"; \
 	fi
 
 
