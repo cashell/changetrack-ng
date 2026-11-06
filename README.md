@@ -8,8 +8,8 @@ A modernized rewrite of the `changetrack` system file change tracker.
 
 `changetrack-ng` provides automated, versioned configuration backup and change
 tracking for Linux systems. It watches files and directories, records full
-revision history—including file contents, permissions, ownership, and symlinks—in
-a local VCS repository (Git, RCS, Fossil, SVN, or Mercurial), enables instant
+revision history (including file contents, permissions, ownership, and symlinks)
+in a local VCS repository (Git, RCS, Fossil, SVN, or Mercurial), enables instant
 rollback and recovery via `changetrack-ng revert`, and optionally dispatches
 notifications via email, HTTP webhook, OpenTelemetry (OTLP), or an append-only
 JSON log.

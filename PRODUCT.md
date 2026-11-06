@@ -10,7 +10,7 @@ For quick start and reference, see [README.md](README.md). For deployment and pa
 
 ## What It Does
 
-`changetrack-ng` provides automated, versioned configuration backup and change tracking for Linux systems. It monitors arbitrary files and directories for modifications, records complete revision history—including content, POSIX permissions, ownership, and symlinks—in a local version control system, and supports one-command rollback (`changetrack-ng revert <path> <rev>`) to restore broken or lost configurations. It optionally sends notifications when changes are detected and runs unattended via cron or systemd timer, providing an auditable record of configuration drift, unauthorized edits, or routine maintenance activity.
+`changetrack-ng` provides automated, versioned configuration backup and change tracking for Linux systems. It monitors arbitrary files and directories for modifications, records complete revision history (including content, POSIX permissions, ownership, and symlinks) in a local version control system, and supports one-command rollback (`changetrack-ng revert <path> <rev>`) to restore broken or lost configurations. It optionally sends notifications when changes are detected and runs unattended via cron or systemd timer, providing an auditable record of configuration drift, unauthorized edits, or routine maintenance activity.
 
 It is a complete rewrite of the original `changetrack` (last maintained 2009), combining per-file flexibility with `etckeeper`-style metadata tracking, ignore patterns, and multi-VCS support.
 
@@ -18,7 +18,7 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 
 ## Key Features
 
-- **Versioned backup & one-command recovery** — Preserves full revision history (contents, permissions, ownership, symlinks) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>`. Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
+- **Versioned backup & one-command recovery:** Preserves full revision history (contents, permissions, ownership, symlinks) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>`. Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
 - **Multi-VCS backends** — Git, RCS, Fossil, SVN, or Mercurial. Choose the tool your team already knows.
 - **Pluggable notifications** — Email, webhook (HTTP POST JSON), OTLP (OpenTelemetry logs), or local JSON file log. Multiple notifiers can be active simultaneously.
 - **Sensitive file protection** — Files without world-read permission are automatically flagged; diffs can be suppressed from notifications to prevent secret leakage.
