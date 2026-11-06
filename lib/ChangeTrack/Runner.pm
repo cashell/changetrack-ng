@@ -1388,7 +1388,7 @@ sub _warn_nested_mirror_repos {
     }, $root);
 
     for my $nested_path (sort @nested) {
-        my $msg = "Nested repository at $nested_path inside the mirror; files below it were not being committed. See README 'Recovering from a nested repository'.";
+        my $msg = "Nested repository at $nested_path inside the mirror; files below it were not being committed.";
         $self->_warn($msg);
         $report->add_warning($msg) if $report;
     }
