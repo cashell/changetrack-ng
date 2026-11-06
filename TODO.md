@@ -1,4 +1,4 @@
-# changetrack-ng — TODO / Issues / Improvements
+# changetrack-ng - TODO / Issues / Improvements
 
 Last updated: 2026-11-03
 
@@ -25,7 +25,7 @@ Items are prioritized by severity and grouped by category.
 - OPS-7: Expanded `Runner::_internal_exclude_paths()` to automatically exclude the SVN repository directory (`$output_dir-svnrepo`), `lock_path`, and enabled `file` notifier log paths from self-tracking.
 - OPS-8: Routed `Notify::Email::_send_one()` through `ChangeTrack::Util::run_cmd()` with `SIGPIPE` protection (`local $SIG{PIPE} = 'IGNORE'`) and applied `command_timeout` across all CLI subcommands (`status`, `diff`, `log`, `revert`, `init`).
 - CONF-2: `conf.d/*.conf` drop-in files can now override scalar `[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base config file while still rejecting conflicting definitions between multiple `conf.d/*.conf` drop-ins or duplicate keys within the same file.
-- NOTIFY-2: Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed — sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
+- NOTIFY-2: Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed - sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
 - DEBT-12: Removed unused `config_keys()` and duplicate `_sleep()` methods from notifier classes, unused `parse_claude_md()` from `tools/doc-lint`, and redundant `install` rules from `packaging/debian/rules`.
 - PERF-5: Cached `HEAD` existence in `ChangeTrack::VCS::Git` and removed redundant per-commit `crlf-glob` subprocess invocation in `ChangeTrack::VCS::Fossil::commit()`.
 - PKG-5: Fixed `make install-user-systemd` in `Makefile` to strip the root-only `@DEFAULTSDIR@` `EnvironmentFile` directive and rewrite `--system` to `--user`.
@@ -53,7 +53,7 @@ Items are prioritized by severity and grouped by category.
 - CORR-4: Implemented `remove($real_path)` across `ChangeTrack::VCS::Base` and all 5 backends (Git, SVN, Mercurial, Fossil, RCS), updating Runner to unlink mirror working copies and stage VCS deletions upon file removal.
 - CORR-5: Handled bidirectional file type transitions (`file` ↔ `symlink`, `empty` ↔ `content`, trackable ↔ non-trackable): updated `can_skip_content_diff()` to verify disk state before skipping diffs, updated `changed_since_load()` and `diff_summary()` to detect and report type changes, and trigger new checkin or VCS removal accordingly.
 - SEC-5: Insecure permission audit in `_warn_insecure_config_permissions()` now inspects all loaded configuration files returned by `ChangeTrack::Config->loaded_files` (including `conf.d/`, `notifier.d/`, `track.d/`, and `@include` files).
-- OPS-5: Subcommand debug and trace propagation — CLI subcommands (`status`, `diff`, `log`, `revert`) in `bin/changetrack-ng` forward `--debug` and `--trace` flags into Runner and activate `run_cmd` debug tracing.
+- OPS-5: Subcommand debug and trace propagation - CLI subcommands (`status`, `diff`, `log`, `revert`) in `bin/changetrack-ng` forward `--debug` and `--trace` flags into Runner and activate `run_cmd` debug tracing.
 - TEST-10: Comprehensive test coverage for bidirectional file type transitions (`t/36-type-transitions.t`) and directory deletion reconciliation & VCS removals (`t/35-vcs-removal.t`).
 - TEST-12: Added symlink capability probe to `t/03-metadata.t` to skip gracefully on restricted environments.
 - TEST-13: Fixed `IO::Uncompress::Gunzip` require and error variable typos in `t/19-notify-otlp.t`.
@@ -62,8 +62,8 @@ Items are prioritized by severity and grouped by category.
 ## Completed (2026-05-06)
 
 - TEST-11: Fixed `t/lib/ChangeTrack/Test/MockSendmail.pm` to derive `$VERSION` dynamically from `ChangeTrack::Version` instead of hardcoding.
-- PERF-1: Cached `/etc/machine-id` read in `Notify/OTLP.pm::_resource_attrs()` using a `state` variable — eliminates redundant file I/O on every OTLP export call.
-- PERF-2: Pass pre-computed mode integer from metadata record (`oct($rec->{mode})`) to `_resolve_sensitive()` — eliminates a redundant `stat()` syscall per tracked file.
+- PERF-1: Cached `/etc/machine-id` read in `Notify/OTLP.pm::_resource_attrs()` using a `state` variable - eliminates redundant file I/O on every OTLP export call.
+- PERF-2: Pass pre-computed mode integer from metadata record (`oct($rec->{mode})`) to `_resolve_sensitive()` - eliminates a redundant `stat()` syscall per tracked file.
 - DEBT-1: Each notifier class now declares `config_keys()`. `Runner::_build_notifier` filters the config arg pool to only the keys the target notifier accepts (plus the shared `sensitive_notify` key). Also surfaced and included `webhook_timeout` which was missing from the old monolithic build.
 - TEST-5: Added `t/21-report.t` with 52 tests covering `ChangeTrack::Report` construction, accumulation, `add_removed`, `add_warning`, `is_heartbeat_eligible`, `duration_ms`, and all `to_text` output cases (sensitive suppression, metadata-only changes, removals, warnings section). Also added the missing `start_time` / `end_time` accessors documented in POD but never implemented.
 - PKG-1: Makefile `install-systemd` and `install-hooks` targets perform `sed` substitution of `@BINDIR@` at install time.
@@ -126,11 +126,11 @@ Items are prioritized by severity and grouped by category.
 
 ### DEBT-13: Remove legacy Windows (`MSWin32`) shims and test skip guards (Very Low)
 
-**Issue:** Early development left behind scattered `$^O eq 'MSWin32'` branches, backslash path normalizations, and `MSWin32` test skip guards (e.g., `Metadata.pm`, `Runner.pm`, `t/30-run-cmd.t`). Because `changetrack-ng` is strictly a Unix/Linux system tool by design and is not intended to support Windows, these shims could eventually be pruned — very low priority, and we may not bother unless touching those areas anyway.
+**Issue:** Early development left behind scattered `$^O eq 'MSWin32'` branches, backslash path normalizations, and `MSWin32` test skip guards (e.g., `Metadata.pm`, `Runner.pm`, `t/30-run-cmd.t`). Because `changetrack-ng` is strictly a Unix/Linux system tool by design and is not intended to support Windows, these shims could eventually be pruned - very low priority, and we may not bother unless touching those areas anyway.
 
 ---
 
-## Closed — Won't Fix
+## Closed - Won't Fix
 
 These items have been deliberately decided against. They remain here for historical context and to prevent re-opening without new justification.
 
@@ -140,7 +140,7 @@ These items have been deliberately decided against. They remain here for histori
 
 ### DEBT-2: `eval "require $class"` pattern for dynamic loading
 
-**Reason:** Class names come from the hardcoded `%NOTIFY_CLASSES` dispatch table in Runner.pm — not from user input. The trust boundary is explicit and static. A comment in Runner.pm documents this. `Module::Load` would add no safety benefit.
+**Reason:** Class names come from the hardcoded `%NOTIFY_CLASSES` dispatch table in Runner.pm - not from user input. The trust boundary is explicit and static. A comment in Runner.pm documents this. `Module::Load` would add no safety benefit.
 
 ### FEAT-2: Per-track exclude patterns
 

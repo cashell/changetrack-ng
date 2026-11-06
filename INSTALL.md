@@ -13,8 +13,8 @@ For a project overview, see [README.md](README.md). For architecture and data fl
 
 ### Build-time-only requirements
 
-- `TOML::Tiny` (`libtoml-tiny-perl` on Debian/Ubuntu, `perl-TOML-Tiny` on RHEL+EPEL, or `cpanm TOML::Tiny`) — required only for `tools/manifest-query` and `make manifest-lint`.  Not needed for `make install` or runtime.
-- `pod2man` (included in standard Perl packages) — required for `make install-man`.
+- `TOML::Tiny` (`libtoml-tiny-perl` on Debian/Ubuntu, `perl-TOML-Tiny` on RHEL+EPEL, or `cpanm TOML::Tiny`) - required only for `tools/manifest-query` and `make manifest-lint`.  Not needed for `make install` or runtime.
+- `pod2man` (included in standard Perl packages) - required for `make install-man`.
 
 ## Basic Install
 
@@ -92,10 +92,10 @@ Ready-to-use example configs and drop-in templates are installed under
 
 | File | Purpose |
 |------|----------|
-| `changetrack-ng.conf-full` | Full reference — every option with detailed comments |
-| `changetrack-ng.conf-default` | Balanced defaults — all options with concise guidance |
-| `changetrack-ng.conf-minimal` | Quickstart — git + email + common system files |
-| `changetrack-ng.conf-user` | Non-root install — home directory paths and dotfiles |
+| `changetrack-ng.conf-full` | Full reference - every option with detailed comments |
+| `changetrack-ng.conf-default` | Balanced defaults - all options with concise guidance |
+| `changetrack-ng.conf-minimal` | Quickstart - git + email + common system files |
+| `changetrack-ng.conf-user` | Non-root install - home directory paths and dotfiles |
 | `conf.d/local-settings.conf` | Example `[global]` drop-in |
 | `track.d/system-core.conf` | Example `[track]` drop-in |
 | `notifier.d/email.conf` | Example email notifier drop-in |

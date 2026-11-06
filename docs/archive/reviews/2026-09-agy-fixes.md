@@ -3,7 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 -->
 
-# changetrack-ng — Implementation Guide & Fix Specifications (Hand-Off)
+# changetrack-ng - Implementation Guide & Fix Specifications (Hand-Off)
 
 > [!NOTE]
 > **HISTORICAL ARCHIVE:** This specification was prepared as a task hand-off for
@@ -336,11 +336,11 @@ When implementing these fixes, preserve the following non-negotiable project gua
 * **Root Cause**: Only `$self->{config_path}` is checked for `0004` permissions. If secrets are in `notifier.d/webhook.conf` or other drop-in files, world-readability on those files is never detected. Additionally, `ChangeTrack::Config` loads drop-in files via `_load_drop_ins()` but does not record which files were loaded.
 * **Solution**:
   1. In `ChangeTrack::Config`:
-     - In `_load_file()`, record every loaded file's absolute path in `$self->{_loaded_files}`:
+ - In `_load_file()`, record every loaded file's absolute path in `$self->{_loaded_files}`:
        ```perl
        push @{ $self->{_loaded_files} ||= [] }, $abs;
        ```
-     - Provide a public accessor method `loaded_files()`:
+ - Provide a public accessor method `loaded_files()`:
        ```perl
        sub loaded_files {
            my ($self) = @_;
@@ -348,8 +348,8 @@ When implementing these fixes, preserve the following non-negotiable project gua
        }
        ```
   2. In `lib/ChangeTrack/Runner.pm` (`_warn_insecure_config_permissions`):
-     - **Broader scope check**: When the overall configuration contains notifier secrets (webhook URLs or OTLP headers), check **all** loaded config files (from `$cfg->loaded_files()`, falling back to `$path`), rather than attempting complex per-file AST provenance tracking. Any world-readable file in a secret-bearing configuration represents an insecure posture.
-     - Inspect `$mode & 0004` on each file and warn if any config file in the loaded set is world-readable:
+ - **Broader scope check**: When the overall configuration contains notifier secrets (webhook URLs or OTLP headers), check **all** loaded config files (from `$cfg->loaded_files()`, falling back to `$path`), rather than attempting complex per-file AST provenance tracking. Any world-readable file in a secret-bearing configuration represents an insecure posture.
+ - Inspect `$mode & 0004` on each file and warn if any config file in the loaded set is world-readable:
        ```perl
        sub _warn_insecure_config_permissions {
            my ($self, $cfg, $path) = @_;
@@ -449,8 +449,8 @@ prove -l t/21-report.t
 prove -l t/22-verbose-debug.t
 
 # 3. Add new unit & integration test files
-#    - t/35-vcs-removal.t (verifies directory deletion reconciliation & VCS rm across backends)
-#    - t/36-type-transitions.t (verifies bidirectional file <-> symlink, special/binary <-> text)
+# - t/35-vcs-removal.t (verifies directory deletion reconciliation & VCS rm across backends)
+# - t/36-type-transitions.t (verifies bidirectional file <-> symlink, special/binary <-> text)
 
 # 4. Run documentation and configuration linters
 make config-lint

@@ -13,7 +13,7 @@
 ## Decisions
 
 - **Default `0` = unlimited.** Full diffs are preserved unless an operator opts into a cap. `full_diff` (the on/off switch for emitting diffs at all) is unchanged and orthogonal.
-- **Character-based cap.** `max_diff_bytes` caps the diff string length; for ASCII/single-byte config content this equals bytes. Truncation uses `substr`, which never splits a multibyte character. Documented as such — we do not split octets.
+- **Character-based cap.** `max_diff_bytes` caps the diff string length; for ASCII/single-byte config content this equals bytes. Truncation uses `substr`, which never splits a multibyte character. Documented as such - we do not split octets.
 - **Marker present only when truncated.** `config_change.diff_truncated` is emitted (true) only when truncation occurred; its absence means the diff is complete. Keeps records lean.
 - **Sensitive suppression wins.** Suppressed diffs (sensitive file, `sensitive_notify=suppress`) are replaced by a short placeholder *before* any truncation consideration and are never truncated.
 
@@ -21,7 +21,7 @@
 
 - **Perl 5.20+, zero non-core dependencies.** Core only. No CPAN.
 - **changetrack-ng is a SysAdmin config-change tracking tool, NOT a security/HIDS tool.** No hashes, no actor/detection fields.
-- **OTel output is not yet deployed** — format changes are NOT breaking. Update affected tests in the same task.
+- **OTel output is not yet deployed** - format changes are NOT breaking. Update affected tests in the same task.
 - **Preserve sensitive-file diff suppression** (`sensitive_notify`, `_diff_text_for`, `_sensitive_notify_allowed`). Truncation must never expose suppressed content.
 - **Never expose sensitive data** in logs/notifications/errors.
 - **Test runner:** `prove -lv t/NN-name.t` from project root. `Test::More` + `done_testing()`.
@@ -86,7 +86,7 @@ Append to `t/19-notify-otlp.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — `Can't locate object method "_truncate_diff"`.
+Expected: FAIL - `Can't locate object method "_truncate_diff"`.
 
 - [ ] **Step 3: Implement the helper in Base.pm**
 
@@ -180,7 +180,7 @@ Append to `t/19-notify-otlp.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — diff is full-length even with `max_diff_bytes => 50`; no marker.
+Expected: FAIL - diff is full-length even with `max_diff_bytes => 50`; no marker.
 
 - [ ] **Step 3: Implement in OTLP.pm**
 
@@ -286,7 +286,7 @@ Append to `t/09-notify-file.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/09-notify-file.t`
-Expected: FAIL — diff full-length, no marker.
+Expected: FAIL - diff full-length, no marker.
 
 - [ ] **Step 3: Implement in File.pm**
 
@@ -337,7 +337,7 @@ git commit -m "feat(file): configurable max_diff_bytes with diff_truncated marke
 
 ## Self-Review
 
-- **Spec coverage:** F6 (configurable `max_diff_bytes`, default 0=unlimited, `full_diff` preserved, `config_change.diff_truncated` marker, per-file cap, both notifiers) — Tasks 1-3. ✔
+- **Spec coverage:** F6 (configurable `max_diff_bytes`, default 0=unlimited, `full_diff` preserved, `config_change.diff_truncated` marker, per-file cap, both notifiers) - Tasks 1-3. ✔
 - **Placeholder scan:** Helper, both emission edits, and tests are concrete. Marker text is fixed and asserted by regex.
 - **Type consistency:** `_truncate_diff` returns `($text, $truncated)` in Task 1 and is consumed identically in Tasks 2-3. `config_change.diff_truncated` is boolValue (OTLP) / JSON true (File), emitted only when true in both.
-- **Constraint check:** Sensitive diffs go through `_diff_text_for` (File) or the `unless sensitive && !allowed` guard (OTLP) before truncation — suppressed content is never exposed or truncated. Default behavior (unlimited) preserves full diffs.
+- **Constraint check:** Sensitive diffs go through `_diff_text_for` (File) or the `unless sensitive && !allowed` guard (OTLP) before truncation - suppressed content is never exposed or truncated. Default behavior (unlimited) preserves full diffs.

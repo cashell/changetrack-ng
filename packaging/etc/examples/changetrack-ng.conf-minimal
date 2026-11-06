@@ -1,4 +1,4 @@
-# changetrack-ng — minimal starter configuration
+# changetrack-ng - minimal starter configuration
 #
 # Tracks common config files with git and sends email notifications.
 # Copy to /etc/changetrack-ng/changetrack-ng.conf and adjust.

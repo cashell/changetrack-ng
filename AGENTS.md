@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants (Claude, Copilot, Gemini, et
 
 ## What This Is
 
-`changetrack-ng` is a Perl 5.20+ system file change tracker — a modernized rewrite of the original `changetrack` (last maintained 2009). It monitors files/directories for changes and records them in a pluggable VCS (Git, RCS, Fossil, SVN, Mercurial), with optional notifications via email, webhook, OTLP, or JSON file log.
+`changetrack-ng` is a Perl 5.20+ system file change tracker - a modernized rewrite of the original `changetrack` (last maintained 2009). It monitors files/directories for changes and records them in a pluggable VCS (Git, RCS, Fossil, SVN, Mercurial), with optional notifications via email, webhook, OTLP, or JSON file log.
 
 ## Commands
 
@@ -25,20 +25,20 @@ make packages              # Build all release packages & SHA256SUMS into $(RELE
 make clean-build           # Clean out-of-tree build directory $(BUILD_DIR)/v$(VERSION)/
 ```
 
-No build step required — Perl modules are used directly from `lib/`.
+No build step required - Perl modules are used directly from `lib/`.
 
 ## Context Budget (Read This First)
 
 - Start with this file and only the files directly related to the user request.
 - Consult `ARCHITECTURE.md` for system design, data flow, and security model.
-- Consult `MANIFEST.toml` as the authoritative file index: every repo file is listed with its category, install path, dist targets, and tags — useful for navigation without grepping the filesystem.
+- Consult `MANIFEST.toml` as the authoritative file index: every repo file is listed with its category, install path, dist targets, and tags - useful for navigation without grepping the filesystem.
 - Do **not** read `docs/archive/PLAN.md` by default. It is a historical archive (52KB) and should be consulted only when roadmap/phase history is explicitly needed.
 - Prefer targeted symbol/file searches over reading large files end-to-end.
 - Keep responses concise: report only what changed, why, and how it was validated.
 
 ## Architecture Quick Reference
 
-**Entry point:** `bin/changetrack-ng` — dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `revert`, `update-ignore`). Default subcommand is `run`.
+**Entry point:** `bin/changetrack-ng` - dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `revert`, `update-ignore`). Default subcommand is `run`.
 
 **Core modules in `lib/ChangeTrack/`:**
 
@@ -53,34 +53,34 @@ No build step required — Perl modules are used directly from `lib/`.
 | `Version.pm` | Single-source version authority |
 
 **VCS backends (`lib/ChangeTrack/VCS/`):** all extend `Base.pm`.
-- `Git.pm` — Whole-repo mirror model; batch commit; optional `push_remote`
-- `RCS.pm` — Per-file model; colon-encoded flat layout; immediate `ci -l`
-- `Fossil.pm` — Whole-repo; uses `--chdir` flag (not Perl `chdir()`)
-- `SVN.pm` — Whole-repo; local file:// repo via `svnadmin create`
-- `Mercurial.pm` — Whole-repo; uses `hg -R` flag (no chdir)
+- `Git.pm` - Whole-repo mirror model; batch commit; optional `push_remote`
+- `RCS.pm` - Per-file model; colon-encoded flat layout; immediate `ci -l`
+- `Fossil.pm` - Whole-repo; uses `--chdir` flag (not Perl `chdir()`)
+- `SVN.pm` - Whole-repo; local file:// repo via `svnadmin create`
+- `Mercurial.pm` - Whole-repo; uses `hg -R` flag (no chdir)
 
 **Notifiers (`lib/ChangeTrack/Notify/`):** all extend `Base.pm`; all optional.
-- `Email.pm` — Pipes to sendmail; heartbeat always off (anti-spam)
-- `File.pm` — Appends JSON log; optional heartbeat
-- `Webhook.pm` — HTTP POST JSON; 3-attempt retry; TLS bypass option
-- `OTLP.pm` — OTLP/HTTP+JSON logs; gzip; env-var precedence; heartbeat default ON
+- `Email.pm` - Pipes to sendmail; heartbeat always off (anti-spam)
+- `File.pm` - Appends JSON log; optional heartbeat
+- `Webhook.pm` - HTTP POST JSON; 3-attempt retry; TLS bypass option
+- `OTLP.pm` - OTLP/HTTP+JSON logs; gzip; env-var precedence; heartbeat default ON
 
 **Data flow:** Config → Lock → File list → Per-file (stat + VCS diff) → Report → VCS commit → Metadata save → Notify dispatch
 
 ## Critical Implementation Details
 
 ### Command execution safety
-All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with list-form arguments (never shell interpolation). This is a deliberate security boundary — preserve it. When `$ChangeTrack::Util::DEBUG` is set (via `set_debug(1)`), `run_cmd()` emits `[DEBUG] exec:` lines to STDERR showing every command invoked.
+All external commands go through `Util::run_cmd()` which uses `IPC::Open3` with list-form arguments (never shell interpolation). This is a deliberate security boundary - preserve it. When `$ChangeTrack::Util::DEBUG` is set (via `set_debug(1)`), `run_cmd()` emits `[DEBUG] exec:` lines to STDERR showing every command invoked.
 
 ### Pluggable VCS backend invariants
 - **Whole-repo mirror model vs per-file colon-encoding:**
-  - `Git`, `Fossil`, `SVN`, and `Mercurial` mirror the target filesystem hierarchy inside the storage directory (`output_dir`) and commit full file trees or batched additions.
-  - `RCS` uses a flat directory layout where absolute paths are converted to colon-separated filenames (e.g., `/etc/hosts` becomes `:etc:hosts,v`). Commits are executed immediately per-file (`ci -l`).
+ - `Git`, `Fossil`, `SVN`, and `Mercurial` mirror the target filesystem hierarchy inside the storage directory (`output_dir`) and commit full file trees or batched additions.
+ - `RCS` uses a flat directory layout where absolute paths are converted to colon-separated filenames (e.g., `/etc/hosts` becomes `:etc:hosts,v`). Commits are executed immediately per-file (`ci -l`).
 - **Backend invocation rules:**
-  - `Fossil`: MUST use `--chdir <dir>` flag for every command (avoid calling Perl's process-global `chdir()`).
-  - `Mercurial`: MUST use `hg -R <dir>` on all command invocations (avoiding `chdir()`).
-  - `Subversion`: Creates local repos via `svnadmin create` and references working copies via `file://<repo_path>` syntax.
-  - `Git`: Executes commands using `--git-dir` and `--work-tree` or inside repository paths safely.
+ - `Fossil`: MUST use `--chdir <dir>` flag for every command (avoid calling Perl's process-global `chdir()`).
+ - `Mercurial`: MUST use `hg -R <dir>` on all command invocations (avoiding `chdir()`).
+ - `Subversion`: Creates local repos via `svnadmin create` and references working copies via `file://<repo_path>` syntax.
+ - `Git`: Executes commands using `--git-dir` and `--work-tree` or inside repository paths safely.
 
 ### Diagnostic output tiers
 Three levels, each implying the ones below it:
@@ -94,7 +94,7 @@ Three levels, each implying the ones below it:
 Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic output uses `warn` (STDERR) to keep STDOUT clean for subcommand data output (`diff`, `status`, `log`).
 
 ### Config data shapes
-- Array-valued `[global]` keys: `ignore`, `push_remote` — returned as arrayrefs; appended across multi-file loads
+- Array-valued `[global]` keys: `ignore`, `push_remote` - returned as arrayrefs; appended across multi-file loads
 - All other `[global]` keys return scalar strings; conflicting values across files are a fatal parse error
 - `[notifier:*]` keys are per-instance scalars stored in `$cfg->notifiers->{<type>}` as an arrayref of instance hashrefs
 - When adding a new global key, decide scalar vs array-valued and update `%ARRAY_GLOBAL_KEYS` accordingly
@@ -114,18 +114,18 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 
 ## Known Gaps to Fix (see TODO.md)
 
-- Notifier `headers` and `resource_attributes` (OTLP) are scalar strings; the parser in OTLP.pm handles scalar/arrayref polymorphically via `_parse_kv_config_value()` — this is fragile and worth hardening
+- Notifier `headers` and `resource_attributes` (OTLP) are scalar strings; the parser in OTLP.pm handles scalar/arrayref polymorphically via `_parse_kv_config_value()` - this is fragile and worth hardening
 - `sensitive_auto` is read by Runner but the relationship to notifier behavior could be clearer
 
 ## Key Design Constraints
 
-- **Zero non-core dependencies** — only Perl core modules. `HTTP::Tiny`, `JSON::PP`, `IO::Compress::Gzip` are all core ≥5.14.
-- **Modern and Idiomatic Perl** — readable, maintainable style. `strict`/`warnings`/`feature qw(say state)`. No subroutine signatures (not stable until 5.36).
-- **Perl 5.20 floor** — gets `JSON::PP`, `HTTP::Tiny`, `\h`/`\v`, `s///r` in core.
-- **Sensitive file protection** — auto-detected by mode; diff suppression in notifications.
-- **Locking** — `flock` pidfile; silently skip if locked (cron-safe).
+- **Zero non-core dependencies** - only Perl core modules. `HTTP::Tiny`, `JSON::PP`, `IO::Compress::Gzip` are all core ≥5.14.
+- **Modern and Idiomatic Perl** - readable, maintainable style. `strict`/`warnings`/`feature qw(say state)`. No subroutine signatures (not stable until 5.36).
+- **Perl 5.20 floor** - gets `JSON::PP`, `HTTP::Tiny`, `\h`/`\v`, `s///r` in core.
+- **Sensitive file protection** - auto-detected by mode; diff suppression in notifications.
+- **Locking** - `flock` pidfile; silently skip if locked (cron-safe).
 - **Per-file errors** skip with warning; VCS errors abort the run.
-- **Config validation** — strict key whitelist; unknown keys = fatal parse error.
+- **Config validation** - strict key whitelist; unknown keys = fatal parse error.
 
 ## Comment Style Guidelines
 
@@ -269,7 +269,7 @@ On every version bump, update **all 8** of the following in sync (automated via 
 
 ### Mandatory Release & Version-Bump Validation Gate
 
-1. **Confirm Target Version First:** Never assume SemVer increments (`major`, `minor`, or `patch`) or package build revisions — always confirm the exact target version (`x.y.z`) with the user before running `make bump-version`.
+1. **Confirm Target Version First:** Never assume SemVer increments (`major`, `minor`, or `patch`) or package build revisions - always confirm the exact target version (`x.y.z`) with the user before running `make bump-version`.
 2. **Pre-PR Validation Gate (In-Tree + Out-of-Tree Package Build):** Before committing a version bump, opening a release PR, or tagging a release, you **MUST** validate both the in-tree test suite and the full out-of-tree package build (`make packages`):
 
 ```bash
@@ -282,7 +282,7 @@ make clean-build
 make clean
 ```
 
-Never declare a release or version bump ready based solely on in-tree `make test` — `dpkg-buildpackage` and `rpmbuild` execute inside the unpacked release tarball (which excludes `dev_doc` files such as `AGENTS.md` and `TODO.md`), so `make packages` is required to verify that all release artifacts build and pass their embedded test suites cleanly. Do not delete or overwrite existing versioned directories under `~/dev/releases/changetrack-ng/` without explicit user confirmation.
+Never declare a release or version bump ready based solely on in-tree `make test` - `dpkg-buildpackage` and `rpmbuild` execute inside the unpacked release tarball (which excludes `dev_doc` files such as `AGENTS.md` and `TODO.md`), so `make packages` is required to verify that all release artifacts build and pass their embedded test suites cleanly. Do not delete or overwrite existing versioned directories under `~/dev/releases/changetrack-ng/` without explicit user confirmation.
 
 ### Post-Merge Tagging & GitHub Release Workflow
 
@@ -299,13 +299,13 @@ After the version-bump PR is merged into `main`:
 3. **Publish the GitHub Release (`gh release create`):**
    Always set the release title (`--title`) using the canonical prefixed format: `changetrack-ng vx.y.z` (e.g. `changetrack-ng v0.7.5`, never bare `vx.y.z`).
    Use the `[x.y.z]` section of `CHANGELOG.md` (with an `# changetrack-ng vx.y.z` heading and `## Artifact Verification` footer) as release notes, and attach the **10 canonical release assets** from `~/dev/releases/changetrack-ng/vx.y.z/` (excluding `.buildinfo` and `.changes`):
-   - `changetrack-ng-x.y.z.tar.gz` (full source tarball)
-   - `changetrack-ng-x.y.z-deploy.tar.gz` (production deployment tarball)
-   - `changetrack-ng-x.y.z-minimal.tar.gz` (minimal fatpacked tarball)
-   - `changetrack-ng-x.y.z.pl` (standalone FatPack script)
-   - `changetrack-ng_x.y.z-1_all.deb`, `changetrack-ng_x.y.z-1.dsc`, `changetrack-ng_x.y.z-1.debian.tar.xz` (Debian binary + `3.0 quilt` source)
-   - `changetrack-ng-x.y.z-1.noarch.rpm`, `changetrack-ng-x.y.z-1.src.rpm` (RHEL/Fedora binary + source RPMs)
-   - `SHA256SUMS` (checksums covering the 9 release artifacts above)
+ - `changetrack-ng-x.y.z.tar.gz` (full source tarball)
+ - `changetrack-ng-x.y.z-deploy.tar.gz` (production deployment tarball)
+ - `changetrack-ng-x.y.z-minimal.tar.gz` (minimal fatpacked tarball)
+ - `changetrack-ng-x.y.z.pl` (standalone FatPack script)
+ - `changetrack-ng_x.y.z-1_all.deb`, `changetrack-ng_x.y.z-1.dsc`, `changetrack-ng_x.y.z-1.debian.tar.xz` (Debian binary + `3.0 quilt` source)
+ - `changetrack-ng-x.y.z-1.noarch.rpm`, `changetrack-ng-x.y.z-1.src.rpm` (RHEL/Fedora binary + source RPMs)
+ - `SHA256SUMS` (checksums covering the 9 release artifacts above)
 
 ## Copyright and Licensing
 

@@ -1,4 +1,4 @@
-# changetrack-ng — Architecture and Design
+# changetrack-ng - Architecture and Design
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
@@ -17,7 +17,7 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
 
 | Principle | Implementation |
 |-----------|---------------|
-| Zero non-core dependencies | Only Perl core modules (`HTTP::Tiny`, `JSON::PP`, `IO::Compress::Gzip` — all core ≥5.14) |
+| Zero non-core dependencies | Only Perl core modules (`HTTP::Tiny`, `JSON::PP`, `IO::Compress::Gzip` - all core ≥5.14) |
 | Pluggable architecture | VCS and Notifier backends implement abstract Base interfaces |
 | Cron/timer friendly | `flock`-based locking; silent skip if already running |
 | Fail-safe per-file | Per-file errors warn and continue; VCS-level errors abort |
@@ -169,7 +169,7 @@ The `type` field is the single source of truth for file classification:
 
 Change detection compares live `lstat()` against the immutable "original" snapshot loaded at run start.
 The fast path (`can_skip_content_diff`) skips all further processing when mtime+size are unchanged
-(for regular file types) or symlink target is unchanged — no file I/O or VCS calls needed.
+(for regular file types) or symlink target is unchanged - no file I/O or VCS calls needed.
 
 ---
 
@@ -182,7 +182,7 @@ INI format with three section types: `[global]` (key=value settings), `[notifier
 - Recognized `[global]` keys (whitelist, `Config.pm`): `vcs`, `output_dir`, `push_remote`, `ignore`, `sensitive_auto`, `sensitive_notify`, `warn_special_files`, `interval`, `lock_path`, `lock_timeout`
 - Array-valued `[global]` keys (`ignore`, `push_remote`) are split on whitespace → arrayrefs; all other `[global]` keys return scalar strings
 - Values are type-coerced/validated by class: booleans (`sensitive_auto`, `warn_special_files`), integers (`lock_timeout`, `interval`), paths (`output_dir`, `lock_path`), enums (`vcs` ∈ {rcs,git,fossil,svn,hg,mercurial}; `sensitive_notify` ∈ {suppress,allow})
-- **Dead key:** `interval` is whitelisted and integer-validated (`Config.pm`) but never read anywhere in the codebase — it is accepted silently and has no effect. Scheduling is driven entirely by the systemd timer / cron entry, not this key.
+- **Dead key:** `interval` is whitelisted and integer-validated (`Config.pm`) but never read anywhere in the codebase - it is accepted silently and has no effect. Scheduling is driven entirely by the systemd timer / cron entry, not this key.
 - `[notifier:*]` keys are per-instance scalars validated against a per-type whitelist (`email`/`webhook`/`file`/`otlp`); the `enabled` key is required in every notifier section; `email.to` and `webhook.url` are array-valued
 - `HOSTNAME` in values is replaced with the system FQDN at parse time; `${VAR}` performs environment-variable expansion (an undefined variable is a fatal error)
 - Strict key validation: unknown keys cause a fatal parse error (fail-fast)
@@ -236,9 +236,9 @@ Heartbeat is only sent when: no changes detected AND the run completed without e
 - Auto-detection: file is "sensitive" if `(mode & 0004) == 0` (no world-read); overridable per `[track]` entry
 - Controlled by `sensitive_auto` (toggle detection) and `sensitive_notify` (`suppress`|`allow` diffs)
 - Suppression behavior differs by notifier (it is not uniform):
-  - **Email** — diff body replaced with a placeholder line (`[diff suppressed -- sensitive file ...]`)
-  - **File** — `config_change.diff` field carries the placeholder string (and is never subject to `max_diff_bytes` truncation)
-  - **OTLP** and **Webhook** — the diff key is omitted from the payload entirely (no placeholder)
+ - **Email** - diff body replaced with a placeholder line (`[diff suppressed -- sensitive file ...]`)
+ - **File** - `config_change.diff` field carries the placeholder string (and is never subject to `max_diff_bytes` truncation)
+ - **OTLP** and **Webhook** - the diff key is omitted from the payload entirely (no placeholder)
 
 ### 6.4 Structured event model (File and OTLP)
 
@@ -272,10 +272,10 @@ All external commands are executed via `ChangeTrack::Util::run_cmd()`:
 
 VCS backend working-directory management differs by backend:
 - All backends operate without changing the process working directory:
-  - **Git** (`git -C`) and **Mercurial** (`hg -R`) use native repository-path flags.
-  - **Fossil** uses its native `--chdir` flag (no Perl `chdir`); it also sets `FOSSIL_HOME` when `HOME` is unset.
-  - **SVN** passes absolute working-copy paths directly to all SVN commands (no `chdir`).
-  - **RCS** operates directly on per-file archive paths in `output_dir`.
+ - **Git** (`git -C`) and **Mercurial** (`hg -R`) use native repository-path flags.
+ - **Fossil** uses its native `--chdir` flag (no Perl `chdir`); it also sets `FOSSIL_HOME` when `HOME` is unset.
+ - **SVN** passes absolute working-copy paths directly to all SVN commands (no `chdir`).
+ - **RCS** operates directly on per-file archive paths in `output_dir`.
 
 ### 7.2 Trust boundaries
 
@@ -375,15 +375,15 @@ CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `
 
 ### 9.1 Makefile
 
-- `make test` — runs `prove -l t/`
-- `make install` — PREFIX-aware install with shebang/use-lib rewriting
-- `make install-hooks` — auto-detects package manager, installs hooks with `@BINDIR@` templating
-- `make install-systemd` / `make install-cron` — install scheduler units with `@BINDIR@` templating
-- `make install-user` (+ `-systemd`/`-cron`/`-uninstall`) — per-user (non-root) install variants
-- `make dist` / `dist-minimal` / `dist-deploy` — release tarballs; the file lists are read from `MANIFEST.toml` via `tools/manifest-query --dist <target>` (no longer hardcoded in the Makefile)
-- `make manifest-lint` / `make manifest-extra` — validate that listed files exist / find on-disk files missing from the manifest
-- `make fatpack` — single-file standalone (via App::FatPacker)
-- `make man` — render man pages
+- `make test` - runs `prove -l t/`
+- `make install` - PREFIX-aware install with shebang/use-lib rewriting
+- `make install-hooks` - auto-detects package manager, installs hooks with `@BINDIR@` templating
+- `make install-systemd` / `make install-cron` - install scheduler units with `@BINDIR@` templating
+- `make install-user` (+ `-systemd`/`-cron`/`-uninstall`) - per-user (non-root) install variants
+- `make dist` / `dist-minimal` / `dist-deploy` - release tarballs; the file lists are read from `MANIFEST.toml` via `tools/manifest-query --dist <target>` (no longer hardcoded in the Makefile)
+- `make manifest-lint` / `make manifest-extra` - validate that listed files exist / find on-disk files missing from the manifest
+- `make fatpack` - single-file standalone (via App::FatPacker)
+- `make man` - render man pages
 
 ### 9.4 Manifest subsystem
 
@@ -418,7 +418,7 @@ Metadata tracks symlink targets via `readlink()`, while `sync_mirror_path()` wri
 
 ### 10.3 Config key drift potential
 
-The `%KNOWN_GLOBAL_KEYS` whitelist enforces valid keys at parse time, which is strong. However, it also accepts the `interval` key, which is type-validated as an integer but **never read by any code** — a dead key that silently does nothing (scheduling is external, via the systemd timer or cron). The relationship between `sensitive_auto` and the notifier-level `sensitive_notify` is also indirect rather than enforced.
+The `%KNOWN_GLOBAL_KEYS` whitelist enforces valid keys at parse time, which is strong. However, it also accepts the `interval` key, which is type-validated as an integer but **never read by any code** - a dead key that silently does nothing (scheduling is external, via the systemd timer or cron). The relationship between `sensitive_auto` and the notifier-level `sensitive_notify` is also indirect rather than enforced.
 
 ### 10.4 Config validation scope
 

@@ -1,4 +1,4 @@
-# changetrack-ng — 5-Minute Quickstart Guide
+# changetrack-ng - 5-Minute Quickstart Guide
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 

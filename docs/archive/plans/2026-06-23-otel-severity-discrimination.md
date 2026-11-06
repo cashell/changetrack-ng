@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give the OTLP and File notifiers configurable, semantically meaningful log severities per record class — change events default to INFO, heartbeats to DEBUG, warnings to WARN — instead of emitting everything at the same level.
+**Goal:** Give the OTLP and File notifiers configurable, semantically meaningful log severities per record class - change events default to INFO, heartbeats to DEBUG, warnings to WARN - instead of emitting everything at the same level.
 
 **Architecture:** A small text→number severity map lives on `Notify/Base.pm` (`_severity_for($name)` → `(number, text)`). Three config keys (`severity_change`, `severity_heartbeat`, `severity_warning`) hold severity *names* with sensible defaults; each notifier resolves them through the shared map when building a record. The OTLP notifier emits `severityNumber`+`severityText`; the File notifier emits `severity_number`+`severity_text`.
 
@@ -20,7 +20,7 @@
 
 - **Perl 5.20+, zero non-core dependencies.** Core only. No CPAN.
 - **changetrack-ng is a SysAdmin config-change tracking tool, NOT a security/HIDS tool.** No hashes, no actor/detection fields.
-- **OTel output is not yet deployed** — format changes are NOT breaking. Update affected tests in the same task.
+- **OTel output is not yet deployed** - format changes are NOT breaking. Update affected tests in the same task.
 - **Preserve sensitive-file diff suppression.** Unchanged by this plan.
 - **Validate external input.** Severity config values are validated through the map; invalid values fall back to the default rather than producing an out-of-range severityNumber.
 - **Test runner:** `prove -lv t/NN-name.t` from project root. `Test::More` + `done_testing()`.
@@ -56,8 +56,8 @@
 
 **Interfaces:**
 - Produces:
-  - `($number, $text) = $self->_severity_for($name)` — maps a severity name (case-insensitive) to its OTel number and canonical text. Unknown/undef name → returns `(0, 'UNSPECIFIED')` so callers can detect "not a valid name".
-  - `($number, $text) = $self->_severity_cfg($config_key, $default_name)` — reads `$self->{$config_key}`, resolves it via `_severity_for`; if the configured value is missing or unknown, resolves `$default_name` instead.
+ - `($number, $text) = $self->_severity_for($name)` - maps a severity name (case-insensitive) to its OTel number and canonical text. Unknown/undef name → returns `(0, 'UNSPECIFIED')` so callers can detect "not a valid name".
+ - `($number, $text) = $self->_severity_cfg($config_key, $default_name)` - reads `$self->{$config_key}`, resolves it via `_severity_for`; if the configured value is missing or unknown, resolves `$default_name` instead.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -92,7 +92,7 @@ Append to `t/19-notify-otlp.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — `Can't locate object method "_severity_for"`.
+Expected: FAIL - `Can't locate object method "_severity_for"`.
 
 - [ ] **Step 3: Implement on Base.pm**
 
@@ -214,7 +214,7 @@ Append to `t/19-notify-otlp.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — heartbeat currently INFO(9); change records use a fixed severity; overrides ignored.
+Expected: FAIL - heartbeat currently INFO(9); change records use a fixed severity; overrides ignored.
 
 - [ ] **Step 3: Implement in OTLP.pm**
 
@@ -329,7 +329,7 @@ Append to `t/09-notify-file.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/09-notify-file.t`
-Expected: FAIL — severities fixed / heartbeat not DEBUG / override ignored.
+Expected: FAIL - severities fixed / heartbeat not DEBUG / override ignored.
 
 - [ ] **Step 3: Implement in File.pm**
 
@@ -389,8 +389,8 @@ git commit -m "feat(file): configurable per-class severity (change/heartbeat/war
 
 ## Self-Review
 
-- **Spec coverage:** F8 (semantically meaningful, configurable per-class severity; heartbeat DEBUG / change INFO / warning WARN defaults; both notifiers; both wire formats) — Tasks 1-3. ✔
+- **Spec coverage:** F8 (semantically meaningful, configurable per-class severity; heartbeat DEBUG / change INFO / warning WARN defaults; both notifiers; both wire formats) - Tasks 1-3. ✔
 - **Placeholder scan:** Map, resolver, both notifier edits, and tests are concrete with exact numbers (5/9/13/17) and names. No TBDs.
-- **Type consistency:** `_severity_for`/`_severity_cfg` return `($number, $text)` in Task 1 and are consumed identically in Tasks 2-3. OTLP fields are `severityNumber`/`severityText`; File fields are `severity_number`/`severity_text` — consistent with the attribute-model and reshape plans respectively.
-- **Constraint check:** Invalid config values fall back to defaults (no out-of-range severityNumber) — satisfies input-validation guardrail. Single source of truth on Base; no duplicated literals. The heartbeat default moves from INFO(9) to DEBUG(5), so the pre-existing heartbeat severity assertion is updated within Tasks 2 and 3 (noted explicitly) — the tree never goes red across the commit boundary.
+- **Type consistency:** `_severity_for`/`_severity_cfg` return `($number, $text)` in Task 1 and are consumed identically in Tasks 2-3. OTLP fields are `severityNumber`/`severityText`; File fields are `severity_number`/`severity_text` - consistent with the attribute-model and reshape plans respectively.
+- **Constraint check:** Invalid config values fall back to defaults (no out-of-range severityNumber) - satisfies input-validation guardrail. Single source of truth on Base; no duplicated literals. The heartbeat default moves from INFO(9) to DEBUG(5), so the pre-existing heartbeat severity assertion is updated within Tasks 2 and 3 (noted explicitly) - the tree never goes red across the commit boundary.
 - **Cross-plan note:** This plan changes the heartbeat severity default that the attribute-model plan's heartbeat test asserts (9→5). Whichever plan runs second owns updating that assertion; both Task 2 and Task 3 call this out.

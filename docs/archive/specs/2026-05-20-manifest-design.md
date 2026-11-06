@@ -1,4 +1,4 @@
-# Design: MANIFEST.toml — File Inventory for changetrack-ng
+# Design: MANIFEST.toml - File Inventory for changetrack-ng
 
 **Date:** 2026-05-20
 **Status:** Approved
@@ -11,10 +11,10 @@
 Create an authoritative, structured file inventory (`MANIFEST.toml`) for the
 changetrack-ng project that serves two purposes simultaneously:
 
-1. **Human reference** — developers, packagers, and contributors can consult
+1. **Human reference** - developers, packagers, and contributors can consult
    it to understand every file in the repository: what it is, where it installs,
    which distribution tarballs include it, and how it relates to other files.
-2. **Build automation input** — a `tools/manifest-query` Perl script reads the
+2. **Build automation input** - a `tools/manifest-query` Perl script reads the
    manifest via TOML::Tiny and answers structured queries (file lists by dist
    target, install paths, packaging dependency lines), allowing the Makefile to
    derive file lists rather than maintain them by hand.
@@ -63,7 +63,7 @@ Scalar fields at the top of the file:
 | `license` | `"GPL-3.0-or-later"` |
 | `min_perl` | `"5.20"` |
 
-### `[[meta.deps]]` — Dependency records
+### `[[meta.deps]]` - Dependency records
 
 Each dependency is one `[[meta.deps]]` array entry. Fields:
 
@@ -205,14 +205,14 @@ or "all notifiers."
 
 | Category | Contents |
 |---|---|
-| `program` | `bin/changetrack-ng` — the main CLI executable |
+| `program` | `bin/changetrack-ng` - the main CLI executable |
 | `library` | Core `lib/ChangeTrack/*.pm` modules (Config, Lock, Metadata, Report, Runner, Util, Version) |
-| `library_vcs` | `lib/ChangeTrack/VCS/` — Base abstract class + 5 VCS backends |
-| `library_notify` | `lib/ChangeTrack/Notify/` — Base abstract class + 4 notifier implementations |
+| `library_vcs` | `lib/ChangeTrack/VCS/` - Base abstract class + 5 VCS backends |
+| `library_notify` | `lib/ChangeTrack/Notify/` - Base abstract class + 4 notifier implementations |
 | `test` | All `t/*.t` test files |
 | `test_support` | `t/lib/` test helpers and `t/fixtures/` data files |
-| `config` | `etc/changetrack-ng.conf` — deployed default system configuration |
-| `example` | `packaging/etc/examples/` — example configs and drop-in fragments for docs |
+| `config` | `etc/changetrack-ng.conf` - deployed default system configuration |
+| `example` | `packaging/etc/examples/` - example configs and drop-in fragments for docs |
 | `man` | `man/changetrack-ng.8`, `man/changetrack-ng.conf.5` (pod2man sources; `.gz` variants are generated) |
 | `doc` | User-facing documentation: README, CHANGELOG, INSTALL, CONTRIBUTING, ARCHITECTURE, PRODUCT |
 | `dev_doc` | Internal developer docs: PLAN.md, TODO.md, CLAUDE.md |
@@ -267,7 +267,7 @@ tools/manifest-query --validate          # verify every listed file exists on di
 
 ---
 
-## Makefile Integration — Two Phases
+## Makefile Integration - Two Phases
 
 ### Phase 1: Lint target (in this work)
 
@@ -296,7 +296,7 @@ own commit/review.
 - **Adding or removing a file:** update `MANIFEST.toml` in the same commit.
 - **Version bumps:** update `[meta] version` and `updated` alongside `Version.pm`,
   `Makefile`, and `CHANGELOG.md`. Add to the version bump checklist in `CLAUDE.md`.
-- **Drift detection:** `make manifest-lint` — checks that every file listed in
+- **Drift detection:** `make manifest-lint` - checks that every file listed in
   the manifest exists on disk. Reverse check (files on disk missing from the
   manifest) is a future enhancement; note it in `TODO.md`.
 

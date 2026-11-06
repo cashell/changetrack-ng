@@ -8,187 +8,187 @@ All notable changes will be documented here.
 ### Added
 
 - **Default self-configuration tracking:**
-  - Added `DIRECTORY /etc/changetrack-ng` to default configuration templates so changes to changetrack-ng's own configuration and drop-ins are automatically tracked and versioned out of the box.
+ - Added `DIRECTORY /etc/changetrack-ng` to default configuration templates so changes to changetrack-ng's own configuration and drop-ins are automatically tracked and versioned out of the box.
 - **Logrotate configuration and packaging:**
-  - Added logrotate configuration for `/var/log/changetrack-ng.jsonl` with monthly rotation and retention, integrated into Debian packaging, RPM spec, and installation targets.
+ - Added logrotate configuration for `/var/log/changetrack-ng.jsonl` with monthly rotation and retention, integrated into Debian packaging, RPM spec, and installation targets.
 
 ### Changed
 
 - **Tracked path deduplication:**
-  - Deduplicated tracked files during scan expansion in `ChangeTrack::Runner`, preventing redundant `stat()` calls, duplicate notifications, or multiple processing when individual files overlap with tracked directories or when paths are specified multiple times.
+ - Deduplicated tracked files during scan expansion in `ChangeTrack::Runner`, preventing redundant `stat()` calls, duplicate notifications, or multiple processing when individual files overlap with tracked directories or when paths are specified multiple times.
 - **Default file notifier enabled:**
-  - Enabled the local JSONL file notifier (`[notifier:file:default]`) by default in standard configurations pointing to `/var/log/changetrack-ng.jsonl` with `full_diff = 0` (metadata and change summary without raw diff payload), providing an immediate local audit log out of the box.
+ - Enabled the local JSONL file notifier (`[notifier:file:default]`) by default in standard configurations pointing to `/var/log/changetrack-ng.jsonl` with `full_diff = 0` (metadata and change summary without raw diff payload), providing an immediate local audit log out of the box.
 - **Documentation accentuating versioned backup and revert:**
-  - Updated README, Product Overview, Quickstart guide, man pages, and distribution package descriptions to emphasize changetrack-ng's role as an automated, versioned configuration backup system preserving complete historical revisions (content, POSIX permissions, ownership, symlinks) with point-in-time recovery via `revert`.
+ - Updated README, Product Overview, Quickstart guide, man pages, and distribution package descriptions to emphasize changetrack-ng's role as an automated, versioned configuration backup system preserving complete historical revisions (content, POSIX permissions, ownership, symlinks) with point-in-time recovery via `revert`.
 
 ## [0.7.5] - 2026-11-03
 ### Added
 
 - **Packaging documentation coverage:**
-  - Added [SECURITY.md](SECURITY.md), [docs/QUICKSTART.md](docs/QUICKSTART.md), and [docs/COOKBOOK.md](docs/COOKBOOK.md) to Debian (`dh_installdocs`) and RPM (`%doc`) package manifests.
-  - Expanded [.reuse/dep5](.reuse/dep5) patterns to recursively cover all documentation and packaging directories.
+ - Added [SECURITY.md](SECURITY.md), [docs/QUICKSTART.md](docs/QUICKSTART.md), and [docs/COOKBOOK.md](docs/COOKBOOK.md) to Debian (`dh_installdocs`) and RPM (`%doc`) package manifests.
+ - Expanded [.reuse/dep5](.reuse/dep5) patterns to recursively cover all documentation and packaging directories.
 
 ### Changed
 
 - **Maintainer contact address:**
-  - Updated project maintainer contact email address across repository files.
+ - Updated project maintainer contact email address across repository files.
 - **Atomic `.gitignore` updates in `update-ignore`:**
-  - `bin/changetrack-ng` (`_update_gitignore`) now writes `output_dir/.gitignore` via a mode-`0600` sibling temporary file and atomic `rename()`, matching `ChangeTrack::Metadata::save()`.
+ - `bin/changetrack-ng` (`_update_gitignore`) now writes `output_dir/.gitignore` via a mode-`0600` sibling temporary file and atomic `rename()`, matching `ChangeTrack::Metadata::save()`.
 - **Consolidated `--debug` config redaction:**
-  - Deduplicated `[global]` and notifier `--debug` config-dump masking in `ChangeTrack::Runner` into `_redacted_config_value()` and expanded the secret key matcher to cover `key`, `auth`, `bearer`, and `credential`.
+ - Deduplicated `[global]` and notifier `--debug` config-dump masking in `ChangeTrack::Runner` into `_redacted_config_value()` and expanded the secret key matcher to cover `key`, `auth`, `bearer`, and `credential`.
 - **Mirror isolation for foreign VCS control paths:**
-  - Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`), `.git` submodule/worktree files, Fossil checkout databases (`.fslckout`, `_FOSSIL_`), and internal excluded directories are now pruned during directory traversal instead of being mirrored or walked.
+ - Foreign VCS control directories (`.git`, `.hg`, `.svn`, `CVS`, `.bzr`, `_darcs`), `.git` submodule/worktree files, Fossil checkout databases (`.fslckout`, `_FOSSIL_`), and internal excluded directories are now pruned during directory traversal instead of being mirrored or walked.
 - **Versioned release and build staging directories:**
-  - Updated `tools/build-packages` (`make packages`, `make deb`, `make rpm`, `make clean-build`) to stage build trees and release artifacts under versioned subdirectories (`~/dev/build/changetrack-ng/v<version>/` and `~/dev/releases/changetrack-ng/v<version>/`) so historical release builds are preserved cleanly.
-  - Updated `generate_checksums()` in `tools/build-packages` to exclude `.buildinfo` and `.changes` metadata files from `SHA256SUMS` so checksums match the published release assets, and cleaned temporary in-tree tarballs/fatpack scripts and `rpmbuild` subdirectories during builds.
-  - Documented the mandatory pre-release package build verification gate (`make packages`), version-confirmation discipline, annotated Git tagging (`git tag -a vx.y.z`), and GitHub Release publication workflow (`gh release create`) with the 10 canonical release assets in `AGENTS.md` and `CONTRIBUTING.md`.
+ - Updated `tools/build-packages` (`make packages`, `make deb`, `make rpm`, `make clean-build`) to stage build trees and release artifacts under versioned subdirectories (`~/dev/build/changetrack-ng/v<version>/` and `~/dev/releases/changetrack-ng/v<version>/`) so historical release builds are preserved cleanly.
+ - Updated `generate_checksums()` in `tools/build-packages` to exclude `.buildinfo` and `.changes` metadata files from `SHA256SUMS` so checksums match the published release assets, and cleaned temporary in-tree tarballs/fatpack scripts and `rpmbuild` subdirectories during builds.
+ - Documented the mandatory pre-release package build verification gate (`make packages`), version-confirmation discipline, annotated Git tagging (`git tag -a vx.y.z`), and GitHub Release publication workflow (`gh release create`) with the 10 canonical release assets in `AGENTS.md` and `CONTRIBUTING.md`.
 
 ### Fixed
 
 - **Run lock enforcement on `revert`:**
-  - `ChangeTrack::Runner::revert_path()` now acquires the advisory run lock (`lock_path` / `lock_timeout`) before modifying the VCS mirror or live file, refusing if another run holds the lock without ever stealing a live run's lock under `--force`.
+ - `ChangeTrack::Runner::revert_path()` now acquires the advisory run lock (`lock_path` / `lock_timeout`) before modifying the VCS mirror or live file, refusing if another run holds the lock without ever stealing a live run's lock under `--force`.
 - **Retained metadata on failed VCS removals:**
-  - `ChangeTrack::Runner` now stages `$vcs->remove()` before marking a vanished (or newly non-trackable) file as removed in `.changetrack-metadata` and the run report, preserving the metadata record on error so the removal is retried on the next run.
+ - `ChangeTrack::Runner` now stages `$vcs->remove()` before marking a vanished (or newly non-trackable) file as removed in `.changetrack-metadata` and the run report, preserving the metadata record on error so the removal is retried on the next run.
 - **Honest permission-tightening failure warning:**
-  - `ChangeTrack::Runner::_enforce_output_permissions()` now checks the return value of `chmod()` and logs `"Cannot tighten insecure permissions..."` when `chmod()` fails instead of falsely reporting success.
+ - `ChangeTrack::Runner::_enforce_output_permissions()` now checks the return value of `chmod()` and logs `"Cannot tighten insecure permissions..."` when `chmod()` fails instead of falsely reporting success.
 - **Unbounded `run_cmd()` stdin write on hung subprocesses:**
-  - `ChangeTrack::Util::run_cmd()` now enforces `command_timeout` while writing and flushing `input` to a child process's stdin pipe, preventing a stalled `sendmail` or external command from blocking past the timeout and holding the run lock indefinitely.
+ - `ChangeTrack::Util::run_cmd()` now enforces `command_timeout` while writing and flushing `input` to a child process's stdin pipe, preventing a stalled `sendmail` or external command from blocking past the timeout and holding the run lock indefinitely.
 - **Silent tracking failure on etckeeper and nested-repository trees:**
-  - Files inside a tracked directory containing another tool's VCS repository (such as `/etc/.git` on `etckeeper` hosts, `.svn/`, or `.hg/`) were previously mirrored along with the foreign control directory, causing whole-repo backends to treat the subtree as a nested repository and silently skip committing changes below it. Added a startup warning for pre-existing nested repositories inside `output_dir`, and silently purge stale foreign-VCS records from `.changetrack-metadata`.
+ - Files inside a tracked directory containing another tool's VCS repository (such as `/etc/.git` on `etckeeper` hosts, `.svn/`, or `.hg/`) were previously mirrored along with the foreign control directory, causing whole-repo backends to treat the subtree as a nested repository and silently skip committing changes below it. Added a startup warning for pre-existing nested repositories inside `output_dir`, and silently purge stale foreign-VCS records from `.changetrack-metadata`.
 - **Tracked ignore and attributes file interference:**
-  - Whole-repo backends now isolate mirror commits from VCS ignore and attribute files inside tracked trees (`git add -f --`, `.git/info/attributes` neutralization of `text`/`eol`/`ident`/`filter`/`diff`, `svn add --no-ignore`, `hg status -A` for `.hgignore`-matched paths, and `fossil add --force`).
+ - Whole-repo backends now isolate mirror commits from VCS ignore and attribute files inside tracked trees (`git add -f --`, `.git/info/attributes` neutralization of `text`/`eol`/`ident`/`filter`/`diff`, `svn add --no-ignore`, `hg status -A` for `.hgignore`-matched paths, and `fossil add --force`).
 
 ## [0.7.4] - 2026-10-24
 ### Added
 
 - **Documentation additions:**
-  - Added [SECURITY.md](SECURITY.md) covering supported release branches, responsible vulnerability disclosure process (`topher+github@zyp.org`), and architectural threat boundaries.
-  - Added [docs/COOKBOOK.md](docs/COOKBOOK.md) providing production recipes for host integrity, Nginx/reverse proxy team routing, OpenTelemetry (OTLP) enterprise monitoring, multi-destination audit logging, user dotfile tracking, and central remote Git backups.
-  - Added [docs/QUICKSTART.md](docs/QUICKSTART.md) with a 5-minute practical onboarding walkthrough.
-  - Added a comprehensive Documentation Index table and reciprocal cross-links across `README.md`, `PRODUCT.md`, `INSTALL.md`, `ARCHITECTURE.md`, and `CONTRIBUTING.md`.
+ - Added [SECURITY.md](SECURITY.md) covering supported release branches, responsible vulnerability disclosure process (`topher+github@zyp.org`), and architectural threat boundaries.
+ - Added [docs/COOKBOOK.md](docs/COOKBOOK.md) providing production recipes for host integrity, Nginx/reverse proxy team routing, OpenTelemetry (OTLP) enterprise monitoring, multi-destination audit logging, user dotfile tracking, and central remote Git backups.
+ - Added [docs/QUICKSTART.md](docs/QUICKSTART.md) with a 5-minute practical onboarding walkthrough.
+ - Added a comprehensive Documentation Index table and reciprocal cross-links across `README.md`, `PRODUCT.md`, `INSTALL.md`, `ARCHITECTURE.md`, and `CONTRIBUTING.md`.
 - **Automated documentation verification tooling:**
-  - Enhanced `tools/doc-lint` to validate POD syntax across all modules and manual pages via `Pod::Checker`, and verify that all relative markdown links resolve to existing files.
+ - Enhanced `tools/doc-lint` to validate POD syntax across all modules and manual pages via `Pod::Checker`, and verify that all relative markdown links resolve to existing files.
 
 ### Changed
 
 - **Configuration drop-in inheritance:**
-  - `conf.d/*.conf` drop-in files can now override scalar `[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base config file while still rejecting conflicting definitions between multiple `conf.d/*.conf` drop-ins or duplicate keys within the same file.
+ - `conf.d/*.conf` drop-in files can now override scalar `[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base config file while still rejecting conflicting definitions between multiple `conf.d/*.conf` drop-ins or duplicate keys within the same file.
 - **Structured notification event consolidation:**
-  - Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed — sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
+ - Consolidated OpenTelemetry change-event normalization into `ChangeTrack::Notify::Base::_build_change_event()`, ensuring `Notify::File` and `Notify::OTLP` emit identical attributes and consistently emit the `'[diff suppressed - sensitive file; view via VCS log]'` placeholder when `sensitive_notify = suppress`.
 - **Codebase pruning and dead code elimination:**
-  - Removed unused `config_keys()` and duplicate `_sleep()` methods from notifier classes, unused `parse_claude_md()` from `tools/doc-lint`, and redundant `install` rules from `packaging/debian/rules`.
+ - Removed unused `config_keys()` and duplicate `_sleep()` methods from notifier classes, unused `parse_claude_md()` from `tools/doc-lint`, and redundant `install` rules from `packaging/debian/rules`.
 - **VCS execution optimizations:**
-  - Cached `HEAD` existence in `ChangeTrack::VCS::Git` and removed redundant per-commit `crlf-glob` subprocess invocation in `ChangeTrack::VCS::Fossil::commit()`.
+ - Cached `HEAD` existence in `ChangeTrack::VCS::Git` and removed redundant per-commit `crlf-glob` subprocess invocation in `ChangeTrack::VCS::Fossil::commit()`.
 - **Documentation de-duplication and separation of concerns:**
-  - Streamlined `README.md` by delegating detailed OTLP/File attribute tables to `man/changetrack-ng.conf.5` and `ARCHITECTURE.md`, and delegating full Makefile variable override tables to `INSTALL.md`.
-  - Streamlined `PRODUCT.md` by delegating raw filesystem layout paths to `INSTALL.md` and exit code definitions to `man/changetrack-ng.8` and `ARCHITECTURE.md`.
+ - Streamlined `README.md` by delegating detailed OTLP/File attribute tables to `man/changetrack-ng.conf.5` and `ARCHITECTURE.md`, and delegating full Makefile variable override tables to `INSTALL.md`.
+ - Streamlined `PRODUCT.md` by delegating raw filesystem layout paths to `INSTALL.md` and exit code definitions to `man/changetrack-ng.8` and `ARCHITECTURE.md`.
 - **Legacy documentation archival:**
-  - Archived pre-v0.3.0 implementation plan `PLAN.md` to `docs/archive/PLAN.md` with historical archive notice.
-  - Archived `docs/agy-fixes.md` to `docs/archive/reviews/2026-09-agy-fixes.md`.
-  - Consolidated completed feature design specifications and execution plans from `docs/superpowers/` into `docs/archive/plans/` and `docs/archive/specs/`.
+ - Archived pre-v0.3.0 implementation plan `PLAN.md` to `docs/archive/PLAN.md` with historical archive notice.
+ - Archived `docs/agy-fixes.md` to `docs/archive/reviews/2026-09-agy-fixes.md`.
+ - Consolidated completed feature design specifications and execution plans from `docs/superpowers/` into `docs/archive/plans/` and `docs/archive/specs/`.
 
 ### Fixed
 
 - **VCS non-mutation during read-only commands:**
-  - Made `diff()` (and `is_dirty()`) non-mutating across all 5 VCS backends (`Git`, `RCS`, `SVN`, `Mercurial`, `Fossil`) via `ChangeTrack::VCS::Base::_with_temp_mirror_sync()`, preventing read-only `status`, `diff`, and `run --dry-run` invocations from altering the VCS mirror or masking changes from subsequent runs.
+ - Made `diff()` (and `is_dirty()`) non-mutating across all 5 VCS backends (`Git`, `RCS`, `SVN`, `Mercurial`, `Fossil`) via `ChangeTrack::VCS::Base::_with_temp_mirror_sync()`, preventing read-only `status`, `diff`, and `run --dry-run` invocations from altering the VCS mirror or masking changes from subsequent runs.
 - **RCS revert safety and path traversal protection:**
-  - Fixed `ChangeTrack::VCS::RCS::revert()` to use `co -p<rev>` instead of `co -r<rev> -l`, preventing RCS lock corruption on subsequent check-ins, and routed `RCS::output_path()` through `_mirror_rel()` to reject `..` path traversal.
+ - Fixed `ChangeTrack::VCS::RCS::revert()` to use `co -p<rev>` instead of `co -r<rev> -l`, preventing RCS lock corruption on subsequent check-ins, and routed `RCS::output_path()` through `_mirror_rel()` to reject `..` path traversal.
 - **File truncation diffs and metadata-only status reporting:**
-  - Fixed `run`, `status`, and `diff` to capture unified diffs when a tracked non-empty file is truncated to 0 bytes, and updated `status` to report metadata-only changes (`chmod`/`chown`) with `(meta: ...)`.
+ - Fixed `run`, `status`, and `diff` to capture unified diffs when a tracked non-empty file is truncated to 0 bytes, and updated `status` to report metadata-only changes (`chmod`/`chown`) with `(meta: ...)`.
 - **Deleted file history and revert operations:**
-  - Fixed `Mercurial::log_history()`, `SVN::log_history()`, and `SVN::revert()` to support files that have been deleted from the working tree.
+ - Fixed `Mercurial::log_history()`, `SVN::log_history()`, and `SVN::revert()` to support files that have been deleted from the working tree.
 - **Self-tracking exclusion boundaries:**
-  - Expanded `Runner::_internal_exclude_paths()` to automatically exclude the SVN repository directory (`$output_dir-svnrepo`), `lock_path`, and enabled `file` notifier log paths from self-tracking.
+ - Expanded `Runner::_internal_exclude_paths()` to automatically exclude the SVN repository directory (`$output_dir-svnrepo`), `lock_path`, and enabled `file` notifier log paths from self-tracking.
 - **Subcommand timeouts and email delivery protection:**
-  - Routed `Notify::Email::_send_one()` through `ChangeTrack::Util::run_cmd()` with `SIGPIPE` protection (`local $SIG{PIPE} = 'IGNORE'`) and applied `command_timeout` across all CLI subcommands (`status`, `diff`, `log`, `revert`, `init`).
+ - Routed `Notify::Email::_send_one()` through `ChangeTrack::Util::run_cmd()` with `SIGPIPE` protection (`local $SIG{PIPE} = 'IGNORE'`) and applied `command_timeout` across all CLI subcommands (`status`, `diff`, `log`, `revert`, `init`).
 - **User systemd unit packaging:**
-  - Fixed `make install-user-systemd` in `Makefile` to strip the root-only `@DEFAULTSDIR@` `EnvironmentFile` directive and rewrite `--system` to `--user`.
+ - Fixed `make install-user-systemd` in `Makefile` to strip the root-only `@DEFAULTSDIR@` `EnvironmentFile` directive and rewrite `--system` to `--user`.
 - **Documentation technical accuracy and defects:**
-  - Corrected `man/changetrack-ng.conf.5` sensitive file auto-detection formula from `(mode & 0044 == 0)` to `(mode & 0004 == 0)` (no world-read bit) to accurately reflect `Runner.pm`.
-  - Removed invalid per-notifier `sensitive_notify` override from `man/changetrack-ng.conf.5` which was rejected as an unknown key by `Config.pm`.
-  - Documented missing `max_diff_bytes` option under `HTTP Webhook notifier` in `man/changetrack-ng.conf.5`.
-  - Documented `OTEL_EXPORTER_OTLP_HEADERS` in `=head1 ENVIRONMENT` in `man/changetrack-ng.conf.5`.
-  - Removed nonexistent exit code `75` from `man/changetrack-ng.8` and documented `--system` and `--user` options.
-  - Fixed POD syntax error in `lib/ChangeTrack/Notify/Base.pm` (missing `=back` before `=head1 SUBCLASS HELPERS`).
-  - Fixed single-test command examples in `README.md` and `CONTRIBUTING.md` referencing non-existent `t/01-config*.t` files to use `t/06-vcs-git.t`.
+ - Corrected `man/changetrack-ng.conf.5` sensitive file auto-detection formula from `(mode & 0044 == 0)` to `(mode & 0004 == 0)` (no world-read bit) to accurately reflect `Runner.pm`.
+ - Removed invalid per-notifier `sensitive_notify` override from `man/changetrack-ng.conf.5` which was rejected as an unknown key by `Config.pm`.
+ - Documented missing `max_diff_bytes` option under `HTTP Webhook notifier` in `man/changetrack-ng.conf.5`.
+ - Documented `OTEL_EXPORTER_OTLP_HEADERS` in `=head1 ENVIRONMENT` in `man/changetrack-ng.conf.5`.
+ - Removed nonexistent exit code `75` from `man/changetrack-ng.8` and documented `--system` and `--user` options.
+ - Fixed POD syntax error in `lib/ChangeTrack/Notify/Base.pm` (missing `=back` before `=head1 SUBCLASS HELPERS`).
+ - Fixed single-test command examples in `README.md` and `CONTRIBUTING.md` referencing non-existent `t/01-config*.t` files to use `t/06-vcs-git.t`.
 
 ## [0.7.3] - 2026-10-12
 
 ### Added
 
 - **Automated package building tooling:**
-  - Added `tools/build-packages` to orchestrate isolated out-of-tree builds for release tarballs, standalone FatPack script, Debian packages (`3.0 quilt`), and RPM packages (`.noarch.rpm` and `.src.rpm`).
-  - Added `make deb`, `make rpm`, `make packages` (alias `make release-artifacts`), and `make clean-build` targets to root `Makefile`.
+ - Added `tools/build-packages` to orchestrate isolated out-of-tree builds for release tarballs, standalone FatPack script, Debian packages (`3.0 quilt`), and RPM packages (`.noarch.rpm` and `.src.rpm`).
+ - Added `make deb`, `make rpm`, `make packages` (alias `make release-artifacts`), and `make clean-build` targets to root `Makefile`.
 
 ### Fixed
 
 - **Defaults environment file installation in packages and Makefile:**
-  - `Makefile`'s `install` target now installs `_install_defaults` (`/etc/default/changetrack-ng` on Debian/Ubuntu or `/etc/sysconfig/changetrack-ng` on RHEL/Fedora).
-  - `packaging/debian/rules` explicitly installs `/etc/default/changetrack-ng` and marks it as a conffile.
-  - `packaging/rpm/changetrack-ng.spec` passes `DEFAULTSDIR=%{_sysconfdir}/sysconfig` and registers `/etc/sysconfig/changetrack-ng` as `%config(noreplace)`.
+ - `Makefile`'s `install` target now installs `_install_defaults` (`/etc/default/changetrack-ng` on Debian/Ubuntu or `/etc/sysconfig/changetrack-ng` on RHEL/Fedora).
+ - `packaging/debian/rules` explicitly installs `/etc/default/changetrack-ng` and marks it as a conffile.
+ - `packaging/rpm/changetrack-ng.spec` passes `DEFAULTSDIR=%{_sysconfdir}/sysconfig` and registers `/etc/sysconfig/changetrack-ng` as `%config(noreplace)`.
 - **Debian source format compliance:**
-  - Switched Debian source format from `3.0 (native)` to standard `3.0 (quilt)` in `packaging/debian/source/format` for Debian and Ubuntu distribution readiness.
+ - Switched Debian source format from `3.0 (native)` to standard `3.0 (quilt)` in `packaging/debian/source/format` for Debian and Ubuntu distribution readiness.
 - **Release tarball test resilience:**
-  - Made `CLAUDE.md` presence check conditional in `tools/doc-lint` so that `make test` executed inside unpacked release tarballs passes cleanly without requiring repository-internal developer docs.
+ - Made `CLAUDE.md` presence check conditional in `tools/doc-lint` so that `make test` executed inside unpacked release tarballs passes cleanly without requiring repository-internal developer docs.
 - **RPM spec documentation manifest completeness:**
-  - Added `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `PRODUCT.md` to `MANIFEST.toml` full distribution target so `%doc` declarations in `changetrack-ng.spec` succeed during `rpmbuild`.
+ - Added `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `PRODUCT.md` to `MANIFEST.toml` full distribution target so `%doc` declarations in `changetrack-ng.spec` succeed during `rpmbuild`.
 
 ## [0.7.2] - 2026-10-11
 
 ### Security
 
 - **Enforce private permissions and restrictive umask.**
-  - `bin/changetrack-ng` initializes with `umask(0077)` so all created files, repositories, mirrors, and temp files are created with private permissions.
-  - `ChangeTrack::Runner` inspects the permissions of `output_dir` and sibling repositories (`output_dir.fossil`, `output_dir-svnrepo`), tightening permissions (`chmod $mode & ~0077`) when group or world access is detected, and records a warning in both logger and run report.
-  - `Makefile` and `packaging/rpm/changetrack-ng.spec` configure `/var/lib/changetrack-ng` with `0700` permissions on installation.
+ - `bin/changetrack-ng` initializes with `umask(0077)` so all created files, repositories, mirrors, and temp files are created with private permissions.
+ - `ChangeTrack::Runner` inspects the permissions of `output_dir` and sibling repositories (`output_dir.fossil`, `output_dir-svnrepo`), tightening permissions (`chmod $mode & ~0077`) when group or world access is detected, and records a warning in both logger and run report.
+ - `Makefile` and `packaging/rpm/changetrack-ng.spec` configure `/var/lib/changetrack-ng` with `0700` permissions on installation.
 
 ### Fixed
 
 - **Prevent permanent loss of changes on VCS and file processing failures.**
-  - `ChangeTrack::Runner` rolls back in-memory metadata records to their loaded state (or deletes newly tracked records) when `_process_file` encounters an error, preventing updated mtime/size from being written to the sidecar.
-  - Metadata sidecar persistence is sequenced to occur after whole-repo VCS commit completes, ensuring failed commits do not advance the metadata snapshot.
-  - VCS backends (`Git`, `Mercurial`, `SVN`, `Fossil`) now croak with stderr details when `diff()` commands fail, preventing failed VCS executions from being treated as "unchanged".
+ - `ChangeTrack::Runner` rolls back in-memory metadata records to their loaded state (or deletes newly tracked records) when `_process_file` encounters an error, preventing updated mtime/size from being written to the sidecar.
+ - Metadata sidecar persistence is sequenced to occur after whole-repo VCS commit completes, ensuring failed commits do not advance the metadata snapshot.
+ - VCS backends (`Git`, `Mercurial`, `SVN`, `Fossil`) now croak with stderr details when `diff()` commands fail, preventing failed VCS executions from being treated as "unchanged".
 - **Packaging template placeholder substitutions.**
-  - `packaging/debian/rules` now substitutes `@BINDIR@` and `@DEFAULTSDIR@` in `packaging/hooks/apt-pre`, `packaging/hooks/apt-post`, and `packaging/cron/changetrack-ng`.
-  - `packaging/debian/changetrack-ng.service` is synced with `packaging/systemd/changetrack-ng.service` (`EnvironmentFile`, `WorkingDirectory`, `--system`, and `$CHANGETRACK_EXTRA_ARGS`).
-  - `packaging/rpm/changetrack-ng.spec` substitutes `@DEFAULTSDIR@` with `%{_sysconfdir}/sysconfig` in service, cron, and dnf plugin files.
+ - `packaging/debian/rules` now substitutes `@BINDIR@` and `@DEFAULTSDIR@` in `packaging/hooks/apt-pre`, `packaging/hooks/apt-post`, and `packaging/cron/changetrack-ng`.
+ - `packaging/debian/changetrack-ng.service` is synced with `packaging/systemd/changetrack-ng.service` (`EnvironmentFile`, `WorkingDirectory`, `--system`, and `$CHANGETRACK_EXTRA_ARGS`).
+ - `packaging/rpm/changetrack-ng.spec` substitutes `@DEFAULTSDIR@` with `%{_sysconfdir}/sysconfig` in service, cron, and dnf plugin files.
 - **Non-blocking DNF hook execution.**
-  - `packaging/hooks/dnf/changetrack_ng.py` executes pre-install hook with `required=False` and outputs warnings to `sys.stderr` on hook exit failures rather than raising `dnf.exceptions.Error`, preventing changetrack failures from blocking package manager transactions.
+ - `packaging/hooks/dnf/changetrack_ng.py` executes pre-install hook with `required=False` and outputs warnings to `sys.stderr` on hook exit failures rather than raising `dnf.exceptions.Error`, preventing changetrack failures from blocking package manager transactions.
 - **Atomic temporary-file-and-rename for revert restore operations.**
-  - `ChangeTrack::Util::restore_mirror_path` restores regular files via a temporary file in the destination directory (`File::Temp::tempfile`) and atomic `rename`, preventing truncation of live system files during restore. Preserves existing file mode and ownership prior to rename and unlinks the temporary file on error.
+ - `ChangeTrack::Util::restore_mirror_path` restores regular files via a temporary file in the destination directory (`File::Temp::tempfile`) and atomic `rename`, preventing truncation of live system files during restore. Preserves existing file mode and ownership prior to rename and unlinks the temporary file on error.
 - **Dead stubs removed and config key deprecation documented.**
-  - Removed unused stubs `ChangeTrack::Metadata::import_from_v1_statistics` and `ChangeTrack::Runner::_glob_match`. Documented deprecation of `interval` global configuration key (scheduling handled by systemd timer or cron).
+ - Removed unused stubs `ChangeTrack::Metadata::import_from_v1_statistics` and `ChangeTrack::Runner::_glob_match`. Documented deprecation of `interval` global configuration key (scheduling handled by systemd timer or cron).
 - **Notifier error propagation and report context.**
-  - `ChangeTrack::Report` supports `vcs` and `message` fields, initialized by `Runner` to ensure notifiers receive VCS type and commit message metadata.
-  - `ChangeTrack::Notify::Base::send` bubbles errors from `send_changes` to `Runner`, which catches notifier exceptions and records actionable warnings in the report.
-  - `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` now die on terminal failure after 3 failed attempts in `_post_with_retry`.
-  - `ChangeTrack::Notify::Email` dies if the sendmail delivery pipe fails to close cleanly.
+ - `ChangeTrack::Report` supports `vcs` and `message` fields, initialized by `Runner` to ensure notifiers receive VCS type and commit message metadata.
+ - `ChangeTrack::Notify::Base::send` bubbles errors from `send_changes` to `Runner`, which catches notifier exceptions and records actionable warnings in the report.
+ - `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` now die on terminal failure after 3 failed attempts in `_post_with_retry`.
+ - `ChangeTrack::Notify::Email` dies if the sendmail delivery pipe fails to close cleanly.
 
 ### Performance
 
 - **Lazy DNS resolution in configuration loader.**
-  - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
+ - `ChangeTrack::Config` only evaluates `_config_hostname()` (and invokes DNS lookups) when a parsed configuration value contains the `\bHOSTNAME\b` token, avoiding unnecessary DNS queries on systems where HOSTNAME interpolation is not used.
 - **Single-pass lstat and stat caching in metadata processing (PERF-4).**
-  - `ChangeTrack::Metadata` methods `can_skip_content_diff`, `changed_since_load`, `update_from_stat`, and `diff_summary` accept an optional `$stat_ref` arrayref parameter (with `_classify_file` handling optional `$stat_ref`), maintaining full backward compatibility by falling back to `lstat($path)` when omitted.
-  - `ChangeTrack::Runner::_process_file` executes a single `lstat` call per tracked file at entry, using the result for vanished-file detection, passing the stat buffer into `Metadata` check and update routines, and forwarding the pre-extracted file mode integer to `_resolve_sensitive` to eliminate redundant filesystem stat operations.
+ - `ChangeTrack::Metadata` methods `can_skip_content_diff`, `changed_since_load`, `update_from_stat`, and `diff_summary` accept an optional `$stat_ref` arrayref parameter (with `_classify_file` handling optional `$stat_ref`), maintaining full backward compatibility by falling back to `lstat($path)` when omitted.
+ - `ChangeTrack::Runner::_process_file` executes a single `lstat` call per tracked file at entry, using the result for vanished-file detection, passing the stat buffer into `Metadata` check and update routines, and forwarding the pre-extracted file mode integer to `_resolve_sensitive` to eliminate redundant filesystem stat operations.
 
 ### Changed
 
 - **VCS backend consolidation and Subversion modernization.**
-  - Hoisted default implementations of `output_path`, `_rel_path`, `checkin`, and `is_dirty` into `ChangeTrack::VCS::Base`.
-  - Removed duplicate method implementations across whole-repo backends (`Git`, `Mercurial`, `Fossil`, `SVN`).
-  - Removed redundant `eval` error handling wrapper around `run_cmd` in `ChangeTrack::VCS::Fossil::_run`.
-  - Modernized `ChangeTrack::VCS::SVN` to use native absolute working-copy paths (`$mirror`, `$output_dir`) across all SVN commands, eliminating the process-wide `getcwd()` and `chdir()` context switching.
+ - Hoisted default implementations of `output_path`, `_rel_path`, `checkin`, and `is_dirty` into `ChangeTrack::VCS::Base`.
+ - Removed duplicate method implementations across whole-repo backends (`Git`, `Mercurial`, `Fossil`, `SVN`).
+ - Removed redundant `eval` error handling wrapper around `run_cmd` in `ChangeTrack::VCS::Fossil::_run`.
+ - Modernized `ChangeTrack::VCS::SVN` to use native absolute working-copy paths (`$mirror`, `$output_dir`) across all SVN commands, eliminating the process-wide `getcwd()` and `chdir()` context switching.
 - **Runner non-trackable file handling deduplicated.**
-  - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
+ - Extracted shared helper `_handle_non_trackable` in `ChangeTrack::Runner` to deduplicate VCS removal staging, change reporting, and logging across `special`, `unreadable`, and `binary` file types.
 - **Consolidate HTTP retry and backoff in notification base class (DEBT-11).**
-  - Hoisted shared HTTP request retry helper `_http_post_with_retry` and fallback `_sleep` into `ChangeTrack::Notify::Base`.
-  - Consolidated 3-attempt exponential backoff logic between `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` while preserving notifier-specific JSON encoding, gzip compression, header resolution, and test-mockable `_sleep` overrides.
+ - Hoisted shared HTTP request retry helper `_http_post_with_retry` and fallback `_sleep` into `ChangeTrack::Notify::Base`.
+ - Consolidated 3-attempt exponential backoff logic between `ChangeTrack::Notify::Webhook` and `ChangeTrack::Notify::OTLP` while preserving notifier-specific JSON encoding, gzip compression, header resolution, and test-mockable `_sleep` overrides.
 
 ### Documentation
 
 - **Developer and architecture documentation reconciliation.**
-  - Reconciled `CLAUDE.md`, `ARCHITECTURE.md`, and manual pages (`man/changetrack-ng.8`, `man/changetrack-ng.conf.5`) with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, Subversion backend absolute working-copy paths, private 0700 storage permissions, removal of legacy v1 config auto-detection reference, and updated test suite count (1,043 tests across 36 files).
+ - Reconciled `CLAUDE.md`, `ARCHITECTURE.md`, and manual pages (`man/changetrack-ng.8`, `man/changetrack-ng.conf.5`) with codebase implementation: configurable `command_timeout` (default 120s), Fossil backend `--chdir` command flags, Subversion backend absolute working-copy paths, private 0700 storage permissions, removal of legacy v1 config auto-detection reference, and updated test suite count (1,043 tests across 36 files).
 
 ## [0.7.1] - 2026-09-18
 
@@ -401,10 +401,10 @@ phased implementation and per-finding status.
   processed in sorted order.  Non-existent directories are silently skipped.
 - **`@include` directives.** Three include forms are supported in any config
   file:
-  - `@include <path>` — include a file or directory (inherits parent
+ - `@include <path>` - include a file or directory (inherits parent
     restriction)
-  - `@include-track <path>` — restrict included content to `[track]` sections
-  - `@include-notifier <path>` — restrict included content to `[notifier:*]`
+ - `@include-track <path>` - restrict included content to `[track]` sections
+ - `@include-notifier <path>` - restrict included content to `[notifier:*]`
     sections
 
   Directory paths process all `*.conf` files in sorted order.  A visited-paths
@@ -420,10 +420,10 @@ phased implementation and per-finding status.
 
 ### Added
 - `--system` and `--user` flags to explicitly declare which config scope to load.
-  - `--system` (default): `/etc/changetrack-ng/changetrack-ng.conf`
-  - `--user`: `$HOME/.config/changetrack-ng/changetrack-ng.conf`
-  - The two flags are mutually exclusive; specifying both exits with code 64.
-  - `--user` without `HOME` set exits with code 64 and an actionable error.
+ - `--system` (default): `/etc/changetrack-ng/changetrack-ng.conf`
+ - `--user`: `$HOME/.config/changetrack-ng/changetrack-ng.conf`
+ - The two flags are mutually exclusive; specifying both exits with code 64.
+ - `--user` without `HOME` set exits with code 64 and an actionable error.
 - `CHANGETRACK_CONFIG` environment variable: when set, overrides the default config
   location. Takes precedence over `--system`/`--user` but is superseded by an explicit
   `-c`/`--config` argument. Useful for per-invocation config overrides in scripts.
@@ -445,16 +445,16 @@ phased implementation and per-finding status.
 
 ### Added
 - Three-tier diagnostic system with `--verbose/-v`, `--debug/-d`, and `--trace/-t` flags.
-  - `--verbose`: high-level run structure — config path, VCS backend, lock lifecycle, file
+ - `--verbose`: high-level run structure - config path, VCS backend, lock lifecycle, file
     counts, commit/notify milestones, and run summary.
-  - `--debug`: every external command run (via `run_cmd`), effective config values (keys
+ - `--debug`: every external command run (via `run_cmd`), effective config values (keys
     matching `header`, `secret`, `token`, or `password` redacted as `***REDACTED***`),
     per-file actions taken (new/changed/removed only), and notification outcomes.
-  - `--trace`: per-file disposition for **all** tracked paths (O(N) output): fast-path
+ - `--trace`: per-file disposition for **all** tracked paths (O(N) output): fast-path
     skips, type classifications, ignore-pattern and internal-path exclusions.
-  - Implication chain: `--trace` implies `--debug`; `--debug` implies `--verbose`.
+ - Implication chain: `--trace` implies `--debug`; `--debug` implies `--verbose`.
     Chain is enforced at both the CLI layer (`bin/changetrack-ng`) and in `Runner::new()`.
-  - All diagnostic output uses STDERR (`warn`); STDOUT remains clean for subcommand data
+ - All diagnostic output uses STDERR (`warn`); STDOUT remains clean for subcommand data
     (`diff`, `status`, `log`), making it safe to pipe.
 - `Util::set_debug($bool)` and `$ChangeTrack::Util::DEBUG` package variable. `run_cmd()`
   emits `[DEBUG] exec: <cmd>` to STDERR before each subprocess, and on non-zero exit.
@@ -558,27 +558,27 @@ Initial release.  Clean Perl rewrite of the original `changetrack` tool
 - Sensitive file auto-detection by mode (no group/world read bit); diff suppression in notifications
 
 **VCS backends**
-- RCS — per-file `,v` files in output directory (back-compatible layout)
-- Git — whole-repo mirror tree; optional push to remotes
-- Fossil — whole-repo mirror; fossil open/commit/diff
-- SVN — whole-repo mirror; svn add/commit/diff
-- Mercurial — whole-repo mirror; hg add/commit/diff
+- RCS - per-file `,v` files in output directory (back-compatible layout)
+- Git - whole-repo mirror tree; optional push to remotes
+- Fossil - whole-repo mirror; fossil open/commit/diff
+- SVN - whole-repo mirror; svn add/commit/diff
+- Mercurial - whole-repo mirror; hg add/commit/diff
 
 **Subcommands**
-- `run` — scan, commit, notify (default)
-- `init` — explicit VCS initialization
-- `status` — list changed files (exit 1 if any)
-- `diff [path]` — show pending unified diff
-- `log [path]` — show VCS history
-- `revert <path> <rev>` — restore file from a revision
-- `update-ignore` — write/refresh VCS-native ignore file
-- `migrate-config` — convert v1 config to v2 format
+- `run` - scan, commit, notify (default)
+- `init` - explicit VCS initialization
+- `status` - list changed files (exit 1 if any)
+- `diff [path]` - show pending unified diff
+- `log [path]` - show VCS history
+- `revert <path> <rev>` - restore file from a revision
+- `update-ignore` - write/refresh VCS-native ignore file
+- `migrate-config` - convert v1 config to v2 format
 
 **Notification channels**
-- Email — pipes to sendmail; per-file recipient lists in track section
-- Webhook — HTTP POST via `HTTP::Tiny`; optional full diff; optional heartbeat
-- OTLP/OpenTelemetry — OTLP/HTTP+JSON; gzip; env-var endpoint precedence; 3-attempt retry backoff; heartbeat ON by default
-- File — append-only JSON log; optional heartbeat
+- Email - pipes to sendmail; per-file recipient lists in track section
+- Webhook - HTTP POST via `HTTP::Tiny`; optional full diff; optional heartbeat
+- OTLP/OpenTelemetry - OTLP/HTTP+JSON; gzip; env-var endpoint precedence; 3-attempt retry backoff; heartbeat ON by default
+- File - append-only JSON log; optional heartbeat
 
 **Integration**
 - systemd oneshot service + hourly timer with `Persistent=true`
@@ -589,7 +589,7 @@ Initial release.  Clean Perl rewrite of the original `changetrack` tool
 - `make dist` produces a release tarball
 
 **Documentation**
-- `man/changetrack-ng.8` — CLI reference (POD source)
-- `man/changetrack-ng.conf.5` — config reference (POD source)
-- `README.md` — overview and quickstart
-- `INSTALL.md` — install paths, scheduling, distro notes
+- `man/changetrack-ng.8` - CLI reference (POD source)
+- `man/changetrack-ng.conf.5` - config reference (POD source)
+- `README.md` - overview and quickstart
+- `INSTALL.md` - install paths, scheduling, distro notes

@@ -1,4 +1,4 @@
-# changetrack-ng — user-level configuration
+# changetrack-ng - user-level configuration
 #
 # For an unprivileged (non-root) install: make install-user
 # Copy to ~/.config/changetrack-ng/changetrack-ng.conf and adjust.

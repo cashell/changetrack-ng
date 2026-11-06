@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Distinguish *when the change occurred* (the file's mtime) from *when changetrack-ng observed it* (the scan time) in both notifiers — OTLP `timeUnixNano`/`observedTimeUnixNano` and the File notifier's `timestamp`/`observed_timestamp`.
+**Goal:** Distinguish *when the change occurred* (the file's mtime) from *when changetrack-ng observed it* (the scan time) in both notifiers - OTLP `timeUnixNano`/`observedTimeUnixNano` and the File notifier's `timestamp`/`observed_timestamp`.
 
 **Architecture:** The scan time (`$report->{start_time}`) is the observed time for every record. For change records, the occurred time is the file's mtime (already plumbed as `file_meta.mtime` by the attribute-model plan); records without a file mtime (heartbeats, warnings, removed files) fall back to the observed time. Timestamps are encoded at nanosecond resolution; sub-second precision (Time::HiRes) is explicitly out of scope (see Decisions).
 
@@ -13,14 +13,14 @@
 ## Decisions
 
 - **Occurred = file mtime, Observed = scan time.** This is the OTLP-recommended split (`observedTimeUnixNano` is when the collector/agent saw the record; `timeUnixNano` is when the event happened).
-- **Whole-second values, nanosecond encoding.** mtime and scan time are whole seconds (`stat`/`time()`), multiplied to nanoseconds for the wire format. Real sub-second observed time would require `ChangeTrack::Report` to capture a `Time::HiRes` start; that is **out of scope** — the occurred-vs-observed *distinction* is the value here, not sub-second resolution. Note it as a future option only.
+- **Whole-second values, nanosecond encoding.** mtime and scan time are whole seconds (`stat`/`time()`), multiplied to nanoseconds for the wire format. Real sub-second observed time would require `ChangeTrack::Report` to capture a `Time::HiRes` start; that is **out of scope** - the occurred-vs-observed *distinction* is the value here, not sub-second resolution. Note it as a future option only.
 - **Fallback.** Heartbeats, warnings, and removed files have no usable mtime → occurred == observed (scan time).
 
 ## Global Constraints
 
 - **Perl 5.20+, zero non-core dependencies.** Only core modules. No CPAN.
 - **changetrack-ng is a SysAdmin config-change tracking tool, NOT a security/HIDS tool.** No hashes, no actor/detection fields.
-- **OTel output is not yet deployed** — format changes are NOT breaking. Update affected tests in the same task.
+- **OTel output is not yet deployed** - format changes are NOT breaking. Update affected tests in the same task.
 - **Preserve sensitive-file diff suppression** (`sensitive_notify`, `_diff_text_for`). Unchanged by this plan.
 - **Test runner:** `prove -lv t/NN-name.t` from project root. `Test::More` + `done_testing()`.
 
@@ -111,7 +111,7 @@ Append to `t/19-notify-otlp.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — current builder sets `timeUnixNano == observedTimeUnixNano == scan` for change records, so `timeUnixNano = mtime` assertion fails.
+Expected: FAIL - current builder sets `timeUnixNano == observedTimeUnixNano == scan` for change records, so `timeUnixNano = mtime` assertion fails.
 
 - [ ] **Step 3: Implement per-record occurred/observed in `_build_payload`**
 
@@ -121,7 +121,7 @@ In `lib/ChangeTrack/Notify/OTLP.pm`, rename the run-level timestamp variable. Re
     my $observed_nano = sprintf('%d000000000', $report->{start_time} // time());
 ```
 
-(this is the line introduced by the attribute-model plan; if that plan still has it named `$ts_nano`, rename here) — and update the **heartbeat** record to use `$observed_nano` for both `timeUnixNano` and `observedTimeUnixNano`.
+(this is the line introduced by the attribute-model plan; if that plan still has it named `$ts_nano`, rename here) - and update the **heartbeat** record to use `$observed_nano` for both `timeUnixNano` and `observedTimeUnixNano`.
 
 In the change-record loop, immediately after `for my $c (@{ $report->changes }) {`, add:
 
@@ -194,7 +194,7 @@ Append to `t/09-notify-file.t` before `done_testing()`:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `prove -lv t/09-notify-file.t`
-Expected: FAIL — no `observed_timestamp`; `timestamp` currently equals scan time, not mtime.
+Expected: FAIL - no `observed_timestamp`; `timestamp` currently equals scan time, not mtime.
 
 - [ ] **Step 3: Implement in `_build_records`**
 
@@ -251,7 +251,7 @@ git commit -m "feat(file): add observed_timestamp; timestamp reflects file mtime
 
 ## Self-Review
 
-- **Spec coverage:** F5 (occurred=mtime, observed=scan, nanosecond encoding, fallback when no file) — Tasks 1 (OTLP) and 2 (File). Sub-second Time::HiRes explicitly deferred (Decisions). ✔
+- **Spec coverage:** F5 (occurred=mtime, observed=scan, nanosecond encoding, fallback when no file) - Tasks 1 (OTLP) and 2 (File). Sub-second Time::HiRes explicitly deferred (Decisions). ✔
 - **Placeholder scan:** Both tasks give exact old→new lines and concrete expected ISO/ns values. No TBDs.
 - **Type consistency:** OTLP nanos are string-encoded int64 (`sprintf '%d000000000'`) consistent with the existing wire format and the `timeUnixNano encoded as JSON string` test. File timestamps are ISO8601 Z strings consistent with the reshape plan.
 - **Constraint check:** No new dependencies. Sensitive handling untouched.

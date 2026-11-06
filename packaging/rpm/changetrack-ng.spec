@@ -45,7 +45,7 @@ cron.hourly, and package manager hooks (apt, pacman, dnf).
 
 
 %build
-# pure Perl — nothing to compile
+# pure Perl - nothing to compile
 
 
 %install
