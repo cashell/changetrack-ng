@@ -541,6 +541,8 @@ sub _expand_track_path {
         unless $path =~ m{^/};
     croak "Config error in $src line $lineno: track path may not contain '..': '$path'"
         if grep { $_ eq '..' } split m{/+}, $path;
+    $path =~ s{/+}{/}g;
+    $path =~ s{/$}{} if length($path) > 1;
     return $path;
 }
 

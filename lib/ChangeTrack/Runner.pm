@@ -606,16 +606,73 @@ sub _handle_non_trackable {
 # File list building
 ########################################################################
 
+# _merge_file_entry -- Merge a resolved file path into the deduplicated table.
+# Inputs: by_path hashref, path, sensitive option, recipients arrayref, from_file flag.
+sub _merge_file_entry {
+    my ($by_path, $p, $opt_sensitive, $recips, $from_file) = @_;
+
+    if (!$by_path->{$p}) {
+        my @unique_recips;
+        my %seen;
+        for my $r (@{ $recips || [] }) {
+            next unless defined $r && length $r;
+            push @unique_recips, $r unless $seen{$r}++;
+        }
+        $by_path->{$p} = {
+            path       => $p,
+            sensitive  => $opt_sensitive,
+            recipients => \@unique_recips,
+            _from_file => $from_file,
+        };
+        return;
+    }
+
+    my $existing = $by_path->{$p};
+
+    # Merge recipients preserving order without duplicates
+    my %seen = map { $_ => 1 } @{ $existing->{recipients} || [] };
+    for my $r (@{ $recips || [] }) {
+        next unless defined $r && length $r;
+        push @{ $existing->{recipients} }, $r unless $seen{$r}++;
+    }
+
+    # Resolve sensitive option precedence
+    if ($from_file && !$existing->{_from_file}) {
+        if (defined $opt_sensitive && $opt_sensitive ne 'auto') {
+            $existing->{sensitive}  = $opt_sensitive;
+            $existing->{_from_file} = 1;
+        }
+    } elsif ($existing->{_from_file} && !$from_file) {
+        my $cur = $existing->{sensitive};
+        my $cur_explicit = (defined $cur && ($cur eq 'yes' || $cur eq 'no')) ? 1 : 0;
+        my $new_explicit = (defined $opt_sensitive && ($opt_sensitive eq 'yes' || $opt_sensitive eq 'no')) ? 1 : 0;
+        if (!$cur_explicit && $new_explicit) {
+            $existing->{sensitive} = $opt_sensitive;
+        }
+    } else {
+        # Both have the same _from_file flag
+        my $cur = $existing->{sensitive};
+        my $cur_explicit = (defined $cur && ($cur eq 'yes' || $cur eq 'no')) ? 1 : 0;
+        my $new_explicit = (defined $opt_sensitive && ($opt_sensitive eq 'yes' || $opt_sensitive eq 'no')) ? 1 : 0;
+        if (!$cur_explicit && $new_explicit) {
+            $existing->{sensitive} = $opt_sensitive;
+        } elsif ($cur_explicit && $new_explicit) {
+            if ($opt_sensitive eq 'yes' && $cur ne 'yes') {
+                $existing->{sensitive} = 'yes';
+            }
+        }
+    }
+}
+
 # _build_file_list -- Resolve all track entries into a sorted list of
 # { path, sensitive, recipients } hashrefs, applying ignore and exclude
 # patterns.  Directory entries are expanded recursively via File::Find.
 # When $md is provided, reconciles deleted files from tracked directories.
 sub _build_file_list {
     my ($self, $tracks, $ignore_pats, $exclude_paths, $md) = @_;
-    my @entries;
+    my %by_path;
     $exclude_paths ||= [];
 
-    my %live_paths;
     my %dir_opts;
 
     for my $track (@$tracks) {
@@ -639,12 +696,32 @@ sub _build_file_list {
                 $self->_trace("$p: excluded (internal path)");
                 next;
             }
-            $live_paths{$p} = 1;
-            push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
+            _merge_file_entry(\%by_path, $p, $opt_sensitive, $recips, 1);
 
         } elsif ($track->{kind} eq 'directory') {
             my $dir = $track->{path};
-            $dir_opts{$dir} = { sensitive => $opt_sensitive, recipients => $recips };
+            if (!$dir_opts{$dir}) {
+                $dir_opts{$dir} = {
+                    sensitive  => $opt_sensitive,
+                    recipients => [ @$recips ],
+                };
+            } else {
+                my %seen = map { $_ => 1 } @{ $dir_opts{$dir}{recipients} || [] };
+                for my $r (@$recips) {
+                    push @{ $dir_opts{$dir}{recipients} }, $r unless $seen{$r}++;
+                }
+                my $cur = $dir_opts{$dir}{sensitive};
+                my $cur_explicit = (defined $cur && ($cur eq 'yes' || $cur eq 'no')) ? 1 : 0;
+                my $new_explicit = (defined $opt_sensitive && ($opt_sensitive eq 'yes' || $opt_sensitive eq 'no')) ? 1 : 0;
+                if (!$cur_explicit && $new_explicit) {
+                    $dir_opts{$dir}{sensitive} = $opt_sensitive;
+                } elsif ($cur_explicit && $new_explicit) {
+                    if ($opt_sensitive eq 'yes' && $cur ne 'yes') {
+                        $dir_opts{$dir}{sensitive} = 'yes';
+                    }
+                }
+            }
+
             next unless -d $dir;
             next if _is_excluded_path($dir, $exclude_paths);
             if (_is_foreign_vcs_path($dir)) {
@@ -676,8 +753,7 @@ sub _build_file_list {
                         $self->_trace("$p: excluded (internal path)");
                         return;
                     }
-                    $live_paths{$p} = 1;
-                    push @entries, { path => $p, sensitive => $opt_sensitive, recipients => $recips };
+                    _merge_file_entry(\%by_path, $p, $opt_sensitive, $recips, 0);
                 },
                 no_chdir => 1,
             }, $dir);
@@ -691,7 +767,7 @@ sub _build_file_list {
                 $md->mark_removed($stored_path);
                 next;
             }
-            next if $live_paths{$stored_path};
+            next if $by_path{$stored_path};
             next if -e $stored_path || -l $stored_path;
 
             # Check if stored path falls under an actively tracked directory
@@ -709,16 +785,18 @@ sub _build_file_list {
             next if _should_ignore($stored_path, basename($stored_path), $ignore_pats);
             next if _is_excluded_path($stored_path, $exclude_paths);
 
-            push @entries, {
+            $by_path{$stored_path} = {
                 path       => $stored_path,
                 sensitive  => $dir_opts{$matched_dir}{sensitive},
-                recipients => $dir_opts{$matched_dir}{recipients},
+                recipients => [ @{ $dir_opts{$matched_dir}{recipients} || [] } ],
             };
         }
     }
 
-    @entries = sort { $a->{path} cmp $b->{path} } @entries;
-    return @entries;
+    for my $entry (values %by_path) {
+        delete $entry->{_from_file};
+    }
+    return map { $by_path{$_} } sort keys %by_path;
 }
 
 # _internal_exclude_paths -- Return paths that should never be tracked
