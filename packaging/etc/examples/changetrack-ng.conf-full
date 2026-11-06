@@ -268,7 +268,7 @@ heartbeat = 1
 ##########################
 #
 [notifier:file:default]
-enabled = false
+enabled = true
 
 # Path to the append-only JSON log file.  Required.
 path = /var/log/changetrack-ng.jsonl
