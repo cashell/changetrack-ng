@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-This guide walks you through installing, configuring, and testing `changetrack-ng` in under five minutes.
+This guide walks you through installing, configuring, and testing `changetrack-ng` in under five minutes. You will learn how to track configuration files, browse revision history (`status`, `diff`, `log`), and restore a prior revision with one command (`revert`).
 
 ---
 
@@ -82,7 +82,7 @@ sudo changetrack-ng diff
 
 ---
 
-## Step 6: Commit the Changes
+## Step 6: Commit and Browse History
 
 Run `changetrack-ng run` to capture the modifications into version control:
 
@@ -90,15 +90,19 @@ Run `changetrack-ng run` to capture the modifications into version control:
 sudo changetrack-ng run -m "manual edit: added test entry"
 ```
 
-Verify the commit log:
+Browse the historical revisions recorded for the file:
 
 ```sh
 sudo changetrack-ng log /etc/hosts
 ```
 
+The `log` subcommand displays the revision history, timestamps, and commit messages for any tracked file, letting you pinpoint changes across time.
+
 ---
 
-## Step 7: Test Reversion
+## Step 7: Test Reversion (Restoring Configurations)
+
+`changetrack-ng` functions as a local, versioned configuration backup. If an edit breaks a service or a file is corrupted or accidentally deleted, you can roll back to any historical revision with a single command.
 
 Restore `/etc/hosts` to its original revision:
 
@@ -107,7 +111,7 @@ Restore `/etc/hosts` to its original revision:
 sudo changetrack-ng revert /etc/hosts HEAD~1
 ```
 
-Confirm that the test line was removed from `/etc/hosts`:
+The `revert` subcommand restores both the file content and its recorded metadata (permissions, ownership, symlinks). Confirm that the test line was removed from `/etc/hosts`:
 
 ```sh
 tail -n 3 /etc/hosts
