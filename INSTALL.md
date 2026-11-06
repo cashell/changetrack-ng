@@ -23,6 +23,8 @@ make test            # verify the test suite passes
 sudo make install    # installs to /usr/local by default
 ```
 
+`make install` installs the binary, library modules, default configuration, and `/etc/logrotate.d/changetrack-ng`.
+
 To install system-wide (binary in `/usr/bin`, config in `/etc`):
 
 ```sh
@@ -202,6 +204,14 @@ Auto-detects the package manager and installs the appropriate hooks:
 | apt | apt.conf.d directives | `/etc/apt/apt.conf.d/80changetrack-ng-{pre,post}` |
 | dnf | Python plugin hooks | `/etc/dnf/plugins/changetrack_ng.{py,conf}` |
 | pacman | ALPM hooks | `/usr/share/libalpm/hooks/changetrack-ng-{pre,post}.hook` |
+
+## Log Rotation
+
+```sh
+sudo make install-logrotate
+```
+
+Installs logrotate configuration to `/etc/logrotate.d/changetrack-ng` to manage `/var/log/changetrack-ng.jsonl` and `/var/log/changetrack-ng.log` (also installed automatically by `make install`).
 
 ## Man Pages
 

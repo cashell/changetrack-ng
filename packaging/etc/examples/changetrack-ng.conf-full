@@ -268,7 +268,7 @@ heartbeat = 1
 ##########################
 #
 [notifier:file:default]
-enabled = false
+enabled = true
 
 # Path to the append-only JSON log file.  Required.
 path = /var/log/changetrack-ng.jsonl
@@ -327,3 +327,6 @@ heartbeat = 0
 #   /etc/hosts
 #   DIRECTORY /etc/nginx : admin@example.com
 #   DIRECTORY /etc/ssl/private : security@example.com sensitive=yes
+
+# Track changetrack-ng's own configuration directory
+DIRECTORY /etc/changetrack-ng

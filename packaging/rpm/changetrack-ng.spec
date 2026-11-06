@@ -28,15 +28,16 @@ Suggests:       subversion
 Suggests:       mercurial
 
 %description
-changetrack-ng tracks changes to system files and directories using a
-pluggable VCS backend (RCS, Git, Fossil, SVN, or Mercurial) and sends
-notifications via email, HTTP webhook, OpenTelemetry (OTLP), or an
-append-only JSON log.
+changetrack-ng provides automated, versioned configuration backup and change
+tracking for system files and directories using a pluggable VCS backend
+(RCS, Git, Fossil, SVN, or Mercurial) and sends notifications via email,
+HTTP webhook, OpenTelemetry (OTLP), or an append-only JSON log.
 
-It combines the per-file flexibility of the original changetrack (last
-maintained 2009) with the modern VCS and package-manager integration of
-etckeeper.  Supports systemd timer, cron.hourly, and package manager
-hooks (apt, pacman, dnf).
+It preserves full revision history (contents, permissions, ownership, and
+symlinks) with point-in-time rollback via the revert subcommand.  Combines
+the per-file flexibility of the original changetrack with the modern VCS
+and package-manager integration of etckeeper.  Supports systemd timer,
+cron.hourly, and package manager hooks (apt, pacman, dnf).
 
 
 %prep
@@ -98,6 +99,7 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 %dir %{_sysconfdir}/%{name}/notifier.d
 %config(noreplace) %{_sysconfdir}/%{name}/%{name}.conf
 %config(noreplace) %{_sysconfdir}/sysconfig/%{name}
+%config(noreplace) %{_sysconfdir}/logrotate.d/%{name}
 
 %dir %attr(0700,root,root) %{_localstatedir}/lib/%{name}
 

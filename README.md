@@ -6,10 +6,17 @@ A modernized rewrite of the `changetrack` system file change tracker.
 
 ## Overview
 
-`changetrack-ng` watches a list of files and directories for changes, records
-each change in a VCS repository (RCS, Git, Fossil, SVN, or Mercurial), and
-optionally sends notifications via email, HTTP webhook, OpenTelemetry (OTLP),
-or an append-only JSON log.
+`changetrack-ng` provides automated, versioned configuration backup and change
+tracking for Linux systems. It watches files and directories, records full
+revision history—including file contents, permissions, ownership, and symlinks—in
+a local VCS repository (Git, RCS, Fossil, SVN, or Mercurial), enables instant
+rollback and recovery via `changetrack-ng revert`, and optionally dispatches
+notifications via email, HTTP webhook, OpenTelemetry (OTLP), or an append-only
+JSON log.
+
+Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and logs
+structured events to `/var/log/changetrack-ng.jsonl` with automated logrotate
+support, protecting configuration state with zero manual setup.
 
 It combines the per-file flexibility of the original
 [changetrack](https://sourceforge.net/projects/changetrack/) with the
@@ -18,7 +25,8 @@ modern VCS and package-manager integration of
 
 **Why not just use etckeeper?**
 etckeeper is purpose-built for `/etc`; changetrack-ng tracks arbitrary paths,
-supports per-file email recipients, and adds OTLP/observability integration.
+preserves full history with point-in-time `revert`, supports per-file email
+recipients, and adds OTLP/observability integration.
 
 **Why not just use the original changetrack?**
 The original (last maintained 2009) is broken on Perl 5.26+ and relies on
@@ -27,8 +35,9 @@ compatibility debt.
 
 ## Features
 
+- **Versioned Config Backup & Rollback:** Acts as a continuous, versioned configuration backup system preserving complete historical revisions (contents, POSIX permissions, ownership, and symlink targets). Easily audit changes with `diff` and `log`, or restore broken or deleted files with a single command (`changetrack-ng revert <path> <rev>`).
 - **Five VCS backends:** Choose RCS for per-file versioning or Git, Fossil, SVN, and Mercurial for global tree mirrors.
-- **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log. 
+- **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log (enabled out-of-the-box to `/var/log/changetrack-ng.jsonl` with logrotate). 
 - **Sensitive File Protection:** Automatic mode-based detection. Files without world-read permission (`(mode & 0004) == 0`, e.g. `0600` or `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
 - **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
 - **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).

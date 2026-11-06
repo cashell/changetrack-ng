@@ -34,3 +34,4 @@ to      = root@localhost
 /etc/hostname
 /etc/fstab
 DIRECTORY /etc/ssh
+DIRECTORY /etc/changetrack-ng

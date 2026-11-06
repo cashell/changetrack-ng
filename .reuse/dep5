@@ -6,7 +6,7 @@ Files: *.md docs/* docs/**/*
 Copyright: 2026 Christopher Cashell <topher+github@zyp.org>
 License: GPL-3.0-or-later
 
-Files: etc/* packaging/cron/* packaging/systemd/* packaging/hooks/* packaging/etc/* packaging/etc/**/*
+Files: etc/* packaging/cron/* packaging/systemd/* packaging/logrotate/* packaging/hooks/* packaging/etc/* packaging/etc/**/*
 Copyright: 2026 Christopher Cashell <topher+github@zyp.org>
 License: GPL-3.0-or-later
 

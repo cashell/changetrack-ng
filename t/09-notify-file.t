@@ -43,6 +43,11 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
     my $n = ChangeTrack::Notify::File->new(path => "$dir/test.log");
     ok(!$n->heartbeat_enabled, 'heartbeat default off');
     is($n->name, 'file', 'name returns file');
+
+    my $bare = ChangeTrack::Notify::File->new;
+    is($bare->{path}, '/var/log/changetrack-ng.jsonl',
+        'path defaults to /var/log/changetrack-ng.jsonl');
+    is($bare->{full_diff}, 0, 'full_diff defaults to 0');
 }
 
 ########################################################################
@@ -87,6 +92,7 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
     is($r->{attributes}{'file.mode'}, '0644',            'attributes file.mode');
     is($r->{attributes}{'file.size'}, 42,                'attributes file.size');
     ok(defined $r->{attributes}{'changetrack.run_duration_ms'}, 'run_duration_ms present');
+    ok(!exists $r->{attributes}{'config_change.diff'}, 'config_change.diff omitted by default');
 }
 
 ########################################################################
@@ -142,7 +148,7 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
 {
     my $log = "$dir/sensitive.log";
     my $n   = ChangeTrack::Notify::File->new(
-        path => $log, sensitive_notify => 'suppress');
+        path => $log, sensitive_notify => 'suppress', full_diff => 1);
 
     my $report = ChangeTrack::Report->new(start_time => time());
     $report->add_change(
@@ -212,7 +218,7 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
     my $log1 = "$dir/notrunc.log";
     my $r1 = ChangeTrack::Report->new(start_time => 1000000000);
     $r1->add_change(path => '/etc/big.conf', diff => [split /\n/, $big]);
-    ChangeTrack::Notify::File->new(path => $log1)->send($r1);
+    ChangeTrack::Notify::File->new(path => $log1, full_diff => 1)->send($r1);
     my $rec1 = last_record($log1);
     ok(!exists $rec1->{attributes}{'config_change.diff_truncated'}, 'default: no marker');
     is(length($rec1->{attributes}{'config_change.diff'}), length($big), 'default: full diff');
@@ -221,7 +227,8 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
     my $log2 = "$dir/trunc.log";
     my $r2 = ChangeTrack::Report->new(start_time => 1000000000);
     $r2->add_change(path => '/etc/big.conf', diff => [split /\n/, $big]);
-    ChangeTrack::Notify::File->new(path => $log2, max_diff_bytes => 50)->send($r2);
+    ChangeTrack::Notify::File->new(
+        path => $log2, max_diff_bytes => 50, full_diff => 1)->send($r2);
     my $rec2 = last_record($log2);
     ok($rec2->{attributes}{'config_change.diff_truncated'}, 'cap: marker true');
     like($rec2->{attributes}{'config_change.diff'}, qr/diff truncated/, 'cap: marker text in diff');
