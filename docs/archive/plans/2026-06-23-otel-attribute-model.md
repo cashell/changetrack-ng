@@ -4,7 +4,7 @@
 
 **Goal:** Replace the ad-hoc `ct.*` OTLP attributes with OpenTelemetry semantic-convention-aligned names, add an `event.name` discriminator, propagate file stat metadata (`file.mode/owner/group/size`) into change records, and emit recipient lists as an opt-in attribute.
 
-**Architecture:** A small data-plumbing spine carries stat metadata from the place it is already collected (`Metadata.pm`) through `Report::add_change` into the OTLP notifier. The OTLP payload builder is rewritten to emit the canonical attribute set below. This is the foundational plan — Plans 2–5 (File-notifier reshape, timestamps, diff truncation, severity) build on the names and `file_meta` structure established here.
+**Architecture:** A small data-plumbing spine carries stat metadata from the place it is already collected (`Metadata.pm`) through `Report::add_change` into the OTLP notifier. The OTLP payload builder is rewritten to emit the canonical attribute set below. This is the foundational plan - Plans 2–5 (File-notifier reshape, timestamps, diff truncation, severity) build on the names and `file_meta` structure established here.
 
 **Tech Stack:** Perl 5.20+, `JSON::PP`, `File::Basename` (all core). Tests: `Test::More` + `prove`, with a forking mock OTLP/HTTP receiver (already present in `t/19-notify-otlp.t`).
 
@@ -12,32 +12,32 @@
 
 - **Perl 5.20+, zero non-core dependencies.** Only core modules: `JSON::PP`, `HTTP::Tiny`, `IO::Compress::Gzip`, `POSIX`, `Fcntl`, `Carp`, `File::Basename`, `Time::HiRes`. No CPAN.
 - **changetrack-ng is a SysAdmin config-change tracking tool, NOT a security/HIDS tool.** Do not frame output as security telemetry. Do NOT add content hashes (the VCS backend is the integrity record). Do NOT add actor/detection-provenance fields.
-- **OTel output is not yet deployed** — attribute/format renames are NOT breaking changes. Rename freely; update the affected tests in the *same* task so the tree is never left red.
+- **OTel output is not yet deployed** - attribute/format renames are NOT breaking changes. Rename freely; update the affected tests in the *same* task so the tree is never left red.
 - **Preserve sensitive-file diff suppression.** `sensitive_notify` (suppress|allow) gates diff emission via `_diff_text_for`/`_sensitive_notify_allowed` in `Notify/Base.pm`. Never emit a suppressed diff.
 - **Never expose sensitive data** in logs/notifications/errors (recipient PII, suppressed diffs). Recipient emission is opt-in and defaults OFF.
 - **File headers** on any new file: the vim modeline + perltidy line + SPDX block exactly as in existing `lib/ChangeTrack/Notify/*.pm`.
 - **Test runner:** `prove -lv t/NN-name.t` from the changetrack-ng project root. All tests use `Test::More` + `done_testing()`.
 
-### Canonical attribute naming (authoritative — every plan in this series uses these exact keys)
+### Canonical attribute naming (authoritative - every plan in this series uses these exact keys)
 
 | Current (`ct.*`) | New key | OTLP value type | Notes |
 |---|---|---|---|
 | `ct.path` | `file.path` | stringValue | absolute path |
-| — | `file.name` | stringValue | basename (this plan) |
-| — | `file.directory` | stringValue | dirname (this plan) |
+| - | `file.name` | stringValue | basename (this plan) |
+| - | `file.directory` | stringValue | dirname (this plan) |
 | `ct.is_new` + `ct.is_removed` | `config_change.type` | stringValue enum | `created` \| `modified` \| `removed` |
 | `ct.is_sensitive` | `config_change.sensitive` | boolValue | |
 | `ct.meta_change` | `config_change.meta_summary` | stringValue | omit when empty |
 | `ct.diff` | `config_change.diff` | stringValue | omit when empty/suppressed |
-| — | `config_change.diff_truncated` | boolValue | Plan 4 (otel-diff-truncation) only |
-| — | `config_change.notified` | arrayValue&lt;stringValue&gt; | this plan / F7, behind `emit_recipients` (default off) |
-| — | `file.mode` | stringValue | e.g. `0644` (this plan) |
-| — | `file.owner.name` | stringValue | (this plan) |
-| — | `file.group.name` | stringValue | (this plan) |
-| — | `file.size` | intValue | bytes (this plan) |
+| - | `config_change.diff_truncated` | boolValue | Plan 4 (otel-diff-truncation) only |
+| - | `config_change.notified` | arrayValue&lt;stringValue&gt; | this plan / F7, behind `emit_recipients` (default off) |
+| - | `file.mode` | stringValue | e.g. `0644` (this plan) |
+| - | `file.owner.name` | stringValue | (this plan) |
+| - | `file.group.name` | stringValue | (this plan) |
+| - | `file.size` | intValue | bytes (this plan) |
 | `ct.files_tracked` | `changetrack.files_tracked` | intValue | common attr |
 | `ct.run_duration_ms` | `changetrack.run_duration_ms` | intValue | common attr |
-| `ct.heartbeat` | *(removed)* | — | discriminate via `event.name` instead |
+| `ct.heartbeat` | *(removed)* | - | discriminate via `event.name` instead |
 
 ### Canonical `event.name` values (this plan / F3)
 
@@ -111,7 +111,7 @@ Add to the end of `t/21-report.t`, before `done_testing()`:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `prove -lv t/21-report.t`
-Expected: FAIL — `file_meta` key does not exist (`Use of uninitialized value` / `is` mismatches).
+Expected: FAIL - `file_meta` key does not exist (`Use of uninitialized value` / `is` mismatches).
 
 - [ ] **Step 3: Implement `file_meta` normalization**
 
@@ -184,12 +184,12 @@ git commit -m "feat(report): carry stat metadata as file_meta on change records"
 - Test: `t/04-runner-rcs.t` (existing runner integration test)
 
 **Interfaces:**
-- Consumes: `$rec = $md->record_for($real_path)` — already in scope at line 401 in `_process_file`.
-- Produces: every `add_change` call passes `stat => $rec`, so `file_meta` is populated for real files. `add_removed` (line 378) is unchanged — the file is gone, no stat is available.
+- Consumes: `$rec = $md->record_for($real_path)` - already in scope at line 401 in `_process_file`.
+- Produces: every `add_change` call passes `stat => $rec`, so `file_meta` is populated for real files. `add_removed` (line 378) is unchanged - the file is gone, no stat is available.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to the end of `t/04-runner-rcs.t`, before `done_testing()`. This drives a real file through the runner and asserts `file_meta` reaches the report. (Adapt the harness names — `make_runner`/temp-dir setup — to match the helpers already defined at the top of `t/04-runner-rcs.t`; the assertion block below is the new content.)
+Add to the end of `t/04-runner-rcs.t`, before `done_testing()`. This drives a real file through the runner and asserts `file_meta` reaches the report. (Adapt the harness names - `make_runner`/temp-dir setup - to match the helpers already defined at the top of `t/04-runner-rcs.t`; the assertion block below is the new content.)
 
 ```perl
 # file_meta flows from Runner through to the change report
@@ -211,7 +211,7 @@ Add to the end of `t/04-runner-rcs.t`, before `done_testing()`. This drives a re
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `prove -lv t/04-runner-rcs.t`
-Expected: FAIL — `file_meta.mode` undef because Runner does not yet pass `stat`.
+Expected: FAIL - `file_meta.mode` undef because Runner does not yet pass `stat`.
 
 - [ ] **Step 3: Add `stat => $rec` to each `add_change` call**
 
@@ -327,7 +327,7 @@ with:
 
 - [ ] **Step 2: Replace the `ct.heartbeat`-discriminator block (lines 294-312)**
 
-The `ct.heartbeat=false on change record` assertion no longer applies — discrimination is via `event.name`. Replace the whole block (the `# Ct.Heartbeat=False On Change Records` section, lines 291-312) with an `event.name` discrimination check:
+The `ct.heartbeat=false on change record` assertion no longer applies - discrimination is via `event.name`. Replace the whole block (the `# Ct.Heartbeat=False On Change Records` section, lines 291-312) with an `event.name` discrimination check:
 
 ```perl
 ########################################################################
@@ -406,7 +406,7 @@ Replace each `ct.diff` with `config_change.diff` (key name only; logic unchanged
 - [ ] **Step 6: Run tests to verify they now FAIL against current code**
 
 Run: `prove -lv t/19-notify-otlp.t`
-Expected: FAIL — current `OTLP.pm` still emits `ct.*`, so the renamed-key assertions miss.
+Expected: FAIL - current `OTLP.pm` still emits `ct.*`, so the renamed-key assertions miss.
 
 - [ ] **Step 7: Commit the test changes**
 
@@ -683,7 +683,7 @@ git commit -m "feat(otlp): emit OTel semantic-convention attributes, event.name,
 
 ## Self-Review
 
-- **Spec coverage:** F2 (canonical names + `config_change.type` enum) — Tasks 3-4. F3 (`event.name`) — Tasks 3-4. F4 (`file.*` propagation) — Tasks 1-2 plumbing + Task 4 emission. F7 (opt-in recipients) — Task 4, default OFF. ✔
-- **Placeholder scan:** Task 2 references existing `t/04-runner-rcs.t` helpers (`setup_tracked_dir`/`write_file`/`run_once`) by name — confirm exact helper names when implementing; the assertion block is concrete. No TBDs.
+- **Spec coverage:** F2 (canonical names + `config_change.type` enum) - Tasks 3-4. F3 (`event.name`) - Tasks 3-4. F4 (`file.*` propagation) - Tasks 1-2 plumbing + Task 4 emission. F7 (opt-in recipients) - Task 4, default OFF. ✔
+- **Placeholder scan:** Task 2 references existing `t/04-runner-rcs.t` helpers (`setup_tracked_dir`/`write_file`/`run_once`) by name - confirm exact helper names when implementing; the assertion block is concrete. No TBDs.
 - **Type consistency:** `file_meta` keys (`mode/owner/group/size/mtime`) defined in Task 1 are exactly the keys read in Task 4 Step 3. `config_change.notified` uses `arrayValue.values[].stringValue`, asserted identically in Task 4 Step 6.
 - **Constraint check:** No hashes, no actor fields. Sensitive-diff suppression preserved verbatim in Task 4 Step 3. Recipients default OFF (PII guardrail).

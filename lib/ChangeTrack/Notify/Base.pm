@@ -114,7 +114,7 @@ sub _sensitive_notify_allowed {
 sub _diff_text_for {
     my ($self, $change) = @_;
     if ($change->{is_sensitive} && !$self->_sensitive_notify_allowed) {
-        return ('[diff suppressed — sensitive file; view via VCS log]');
+        return ('[diff suppressed -- sensitive file; view via VCS log]');
     }
     return @{ $change->{diff} // [] };
 }
@@ -206,7 +206,7 @@ sub _build_change_event {
 
     my ($diff_text, $diff_truncated);
     if ($is_sensitive && (($self->{sensitive_notify} // 'suppress') eq 'suppress')) {
-        $diff_text      = "[diff suppressed \x{2014} sensitive file; view via VCS log]";
+        $diff_text      = "[diff suppressed -- sensitive file; view via VCS log]";
         $diff_truncated = 0;
     } elsif (ref($change->{diff}) eq 'ARRAY' && @{ $change->{diff} }) {
         my ($cut, $trunc) = $self->_truncate_diff(join("\n", @{ $change->{diff} }));

@@ -1,4 +1,4 @@
-# changetrack-ng — Product Overview
+# changetrack-ng - Product Overview
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
@@ -10,7 +10,7 @@ For quick start and reference, see [README.md](README.md). For deployment and pa
 
 ## What It Does
 
-`changetrack-ng` provides automated, versioned configuration backup and change tracking for Linux systems. It monitors arbitrary files and directories for modifications, records complete revision history—including content, POSIX permissions, ownership, and symlinks—in a local version control system, and supports one-command rollback (`changetrack-ng revert <path> <rev>`) to restore broken or lost configurations. It optionally sends notifications when changes are detected and runs unattended via cron or systemd timer, providing an auditable record of configuration drift, unauthorized edits, or routine maintenance activity.
+`changetrack-ng` provides automated, versioned configuration backup and change tracking for Linux systems. It monitors arbitrary files and directories for modifications, records complete revision history (including content, POSIX permissions, ownership, and symlinks) in a local version control system, and supports one-command rollback (`changetrack-ng revert <path> <rev>`) to restore broken or lost configurations. It optionally sends notifications when changes are detected and runs unattended via cron or systemd timer, providing an auditable record of configuration drift, unauthorized edits, or routine maintenance activity.
 
 It is a complete rewrite of the original `changetrack` (last maintained 2009), combining per-file flexibility with `etckeeper`-style metadata tracking, ignore patterns, and multi-VCS support.
 
@@ -18,18 +18,18 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 
 ## Key Features
 
-- **Versioned backup & one-command recovery** — Preserves full revision history (contents, permissions, ownership, symlinks) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>`. Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
-- **Multi-VCS backends** — Git, RCS, Fossil, SVN, or Mercurial. Choose the tool your team already knows.
-- **Pluggable notifications** — Email, webhook (HTTP POST JSON), OTLP (OpenTelemetry logs), or local JSON file log. Multiple notifiers can be active simultaneously.
-- **Sensitive file protection** — Files without world-read permission are automatically flagged; diffs can be suppressed from notifications to prevent secret leakage.
-- **Metadata tracking** — Records ownership, permissions, file type, and symlink targets alongside content history.
-- **Ignore patterns** — Glob-based exclusions to skip noisy or irrelevant files within tracked directories.
-- **Package manager hooks** — Pre/post-transaction snapshots for apt, dnf, and pacman annotate commits with package operations.
-- **Heartbeat signaling** — Configurable "no changes" heartbeats for monitoring systems that alert on silence.
-- **Zero non-core dependencies** — Runs on any Perl 5.20+ system with no CPAN modules required.
-- **Execution watchdog** — Bounded external command execution (`command_timeout`, default 120s) with automatic process termination to prevent runaway subprocesses from stalling scheduled runs.
-- **Cron-safe locking** — `flock`-based; overlapping invocations silently skip rather than corrupt state.
-- **Flexible config loading** — explicit `-c` path, `$CHANGETRACK_CONFIG` env var, `--system`/`--user` scope flags, or convention-based defaults. Cron, systemd, and package manager hooks source a distro-native defaults file (`/etc/default/changetrack-ng` or `/etc/sysconfig/changetrack-ng`) so admins can override config path or add extra flags without editing unit or hook files.
+- **Versioned backup & one-command recovery:** Preserves full revision history (contents, permissions, ownership, symlinks) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>`. Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
+- **Multi-VCS backends** - Git, RCS, Fossil, SVN, or Mercurial. Choose the tool your team already knows.
+- **Pluggable notifications** - Email, webhook (HTTP POST JSON), OTLP (OpenTelemetry logs), or local JSON file log. Multiple notifiers can be active simultaneously.
+- **Sensitive file protection** - Files without world-read permission are automatically flagged; diffs can be suppressed from notifications to prevent secret leakage.
+- **Metadata tracking** - Records ownership, permissions, file type, and symlink targets alongside content history.
+- **Ignore patterns** - Glob-based exclusions to skip noisy or irrelevant files within tracked directories.
+- **Package manager hooks** - Pre/post-transaction snapshots for apt, dnf, and pacman annotate commits with package operations.
+- **Heartbeat signaling** - Configurable "no changes" heartbeats for monitoring systems that alert on silence.
+- **Zero non-core dependencies** - Runs on any Perl 5.20+ system with no CPAN modules required.
+- **Execution watchdog** - Bounded external command execution (`command_timeout`, default 120s) with automatic process termination to prevent runaway subprocesses from stalling scheduled runs.
+- **Cron-safe locking** - `flock`-based; overlapping invocations silently skip rather than corrupt state.
+- **Flexible config loading** - explicit `-c` path, `$CHANGETRACK_CONFIG` env var, `--system`/`--user` scope flags, or convention-based defaults. Cron, systemd, and package manager hooks source a distro-native defaults file (`/etc/default/changetrack-ng` or `/etc/sysconfig/changetrack-ng`) so admins can override config path or add extra flags without editing unit or hook files.
 
 ---
 
@@ -39,7 +39,7 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 |---------|---------|
 | `run` (default) | Full scan → commit → notify cycle |
 | `init` | Initialize the VCS output directory |
-| `status` | Show files with pending changes — including content modifications and metadata-only changes (chmod/chown) — without modifying the VCS mirror (exit 1 if any) |
+| `status` | Show files with pending changes - including content modifications and metadata-only changes (chmod/chown) - without modifying the VCS mirror (exit 1 if any) |
 | `diff [path]` | Show unified diff for pending or historical changes |
 | `log [path]` | Show VCS history for a tracked file |
 | `revert <path> <rev>` | Restore a file to a specific historical revision |
@@ -156,9 +156,9 @@ Three levels of diagnostic output are available, all written to STDERR (keeping 
 
 | Flag | Level | Implies | What it shows |
 |------|-------|---------|---------------|
-| `-v, --verbose` | `[VERBOSE]` | — | High-level run structure: config file path used, VCS backend and output directory, lock status, resolved path count, commit and notification milestones, run summary |
+| `-v, --verbose` | `[VERBOSE]` | - | High-level run structure: config file path used, VCS backend and output directory, lock status, resolved path count, commit and notification milestones, run summary |
 | `-d, --debug` | `[DEBUG]` | verbose | Every external VCS command with full arguments, effective config values (secrets redacted), files where action is taken (new/changed/removed), notification send outcomes |
-| `-t, --trace` | `[TRACE]` | debug | Per-file disposition for every tracked file — fast-path skips (mtime+size unchanged), type classifications, ignore-pattern matches. Produces O(N) output for N tracked files. Use for diagnosing why a specific file is or isn't being tracked. |
+| `-t, --trace` | `[TRACE]` | debug | Per-file disposition for every tracked file - fast-path skips (mtime+size unchanged), type classifications, ignore-pattern matches. Produces O(N) output for N tracked files. Use for diagnosing why a specific file is or isn't being tracked. |
 
 Examples:
 

@@ -222,7 +222,7 @@ dist-deploy:
 	        --files-from=-
 
 # Minimal deployment tarball: fatpacked single-file script + support files.
-# Binary modules (bin/, lib/) are replaced by the fatpacked .pl — not listed in manifest's
+# Binary modules (bin/, lib/) are replaced by the fatpacked .pl - not listed in manifest's
 # "minimal" dist so they are excluded automatically.
 dist-minimal: fatpack
 	@perl -e 'use TOML::Tiny' 2>/dev/null || \

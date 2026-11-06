@@ -31,15 +31,15 @@
 | Name | `changetrack-ng` |
 | Language | Perl, target 5.20+ |
 | Approach | Clean rewrite (not a patch of original) |
-| VCS backends | RCS, Git, Fossil, SVN, Mercurial — all required |
+| VCS backends | RCS, Git, Fossil, SVN, Mercurial - all required |
 | Hard deps | Perl core only (`HTTP::Tiny`, `JSON::PP`, `IO::Compress::Gzip` are core ≥5.14) |
-| Soft deps | `IPC::Run`, `Capture::Tiny`, `Path::Tiny` — used if available, fallback otherwise |
+| Soft deps | `IPC::Run`, `Capture::Tiny`, `Path::Tiny` - used if available, fallback otherwise |
 | Config format | INI v2, with v1 (original) auto-detection and one-shot migration |
 | Init behavior | Implicit on first run; `--no-auto-init` to disable |
 | Output dir layout | RCS: flat `:`-separated (back-compat); whole-repo VCS: mirror tree |
 | Metadata | JSONL sidecar (`.changetrack-metadata`), one file per line |
-| Sensitive handling | Auto-detect by mode (no world read — triggers on 0600 and 0640) → suppress diff in notifications; per-entry override |
-| Notifications | Email (sendmail pipe), Webhook (HTTP::Tiny), OTLP (HTTP+JSON, gzip), File (log append) — modular, all optional, all zero-dep |
+| Sensitive handling | Auto-detect by mode (no world read - triggers on 0600 and 0640) → suppress diff in notifications; per-entry override |
+| Notifications | Email (sendmail pipe), Webhook (HTTP::Tiny), OTLP (HTTP+JSON, gzip), File (log append) - modular, all optional, all zero-dep |
 | Webhook payload | Summary by default; full diff opt-in via `webhook_full_diff = 1` |
 | OTLP signal | Logs (one record per file change); summary by default, full diff opt-in via `otlp_full_diff = 1` |
 | Heartbeat | Per-notifier opt-in. OTLP defaults ON (monitoring use case); Webhook/File default OFF; Email forced OFF (anti-spam). Heartbeat = single "no changes" record per run, lets monitoring distinguish silence from agent failure. |
@@ -277,7 +277,7 @@ DIRECTORY /etc/ssl/private sensitive=yes
 
 ---
 
-### Phase 2: Core MVP — RCS Backend
+### Phase 2: Core MVP - RCS Backend
 
 **Goal:** End-to-end tracking with RCS only. No notifications yet (output to stdout). Tool is functionally usable for a single-user setup.
 
@@ -293,17 +293,17 @@ DIRECTORY /etc/ssl/private sensitive=yes
 
 ```perl
 package ChangeTrack::VCS::Base;
-sub new           { ... }       # ($class, %args) — args: output_dir, options (push_remote, etc.)
-sub init          { die 'unimpl' }   # ($self) — set up output_dir for tracking
-sub is_initialized { die 'unimpl' }  # ($self) — bool
-sub output_path   { die 'unimpl' }   # ($self, $real_path) — where to copy the working file
-sub checkin       { die 'unimpl' }   # ($self, $real_path, $msg) — record current state
-sub add           { die 'unimpl' }   # ($self, $real_path) — stage new file (no-op for RCS)
-sub commit        { die 'unimpl' }   # ($self, $msg) — finalize batch (no-op for RCS)
-sub diff          { die 'unimpl' }   # ($self, $real_path) — return arrayref of diff lines
-sub log_history   { die 'unimpl' }   # ($self, $real_path) — return arrayref of log lines
+sub new           { ... }       # ($class, %args) - args: output_dir, options (push_remote, etc.)
+sub init          { die 'unimpl' }   # ($self) - set up output_dir for tracking
+sub is_initialized { die 'unimpl' }  # ($self) - bool
+sub output_path   { die 'unimpl' }   # ($self, $real_path) - where to copy the working file
+sub checkin       { die 'unimpl' }   # ($self, $real_path, $msg) - record current state
+sub add           { die 'unimpl' }   # ($self, $real_path) - stage new file (no-op for RCS)
+sub commit        { die 'unimpl' }   # ($self, $msg) - finalize batch (no-op for RCS)
+sub diff          { die 'unimpl' }   # ($self, $real_path) - return arrayref of diff lines
+sub log_history   { die 'unimpl' }   # ($self, $real_path) - return arrayref of log lines
 sub revert        { die 'unimpl' }   # ($self, $real_path, $rev)
-sub is_dirty      { die 'unimpl' }   # ($self, $real_path) — bool
+sub is_dirty      { die 'unimpl' }   # ($self, $real_path) - bool
 sub model         { die 'unimpl' }   # 'per-file' or 'whole-repo'
 ```
 
@@ -341,15 +341,15 @@ JSONL line schema:
 5. Load `.changetrack-metadata` (or empty if first run)
 6. Build file list from track entries (expand globs and DIRECTORY entries via `File::Find`); apply ignore patterns; resolve sensitive flag (auto-detect or explicit override)
 7. For each file:
-   - Skip if backup file (`~`), unsafe filename, directory (unless DIRECTORY mode), special, unreadable
-   - If not in metadata → mark new, copy to VCS, record metadata
-   - Else: compare metadata → record meta_changes; compare content via `diff` → record diff
-   - If anything changed: `$vcs->checkin(...)`, update report
+ - Skip if backup file (`~`), unsafe filename, directory (unless DIRECTORY mode), special, unreadable
+ - If not in metadata → mark new, copy to VCS, record metadata
+ - Else: compare metadata → record meta_changes; compare content via `diff` → record diff
+ - If anything changed: `$vcs->checkin(...)`, update report
 8. After loop: write metadata sidecar, `$vcs->commit($msg)` with batch message
 9. Return `$report`
 10. Phase 2 only: print report to stdout (notifications come in Phase 3)
 
-**Commit message format:** `changetrack-ng run @ 2026-04-27T14:00:00 [hook: apt-pre install nginx]` — second bracket only if `-m` / `--message` provided.
+**Commit message format:** `changetrack-ng run @ 2026-04-27T14:00:00 [hook: apt-pre install nginx]` - second bracket only if `-m` / `--message` provided.
 
 **Exit criteria:**
 - [x] `changetrack-ng run -c t/fixtures/config-v2-basic.ini` works on a temp tree, commits to RCS, prints summary
@@ -357,7 +357,7 @@ JSONL line schema:
 - [x] Modifying a file's permissions only is detected and committed (metadata change with empty content diff)
 - [x] Modifying file content is detected and committed
 - [x] New file appears in tracked output dir with `,v` history
-- [x] Removed file (file vanishes from disk between runs) reported correctly — design choice: log removal in metadata diff, but don't delete VCS history
+- [x] Removed file (file vanishes from disk between runs) reported correctly - design choice: log removal in metadata diff, but don't delete VCS history
 - [x] `t/04-runner-rcs.t` exercises all of the above end-to-end with a real `rcs`/`ci`/`co` (skip_all if not installed)
 
 ---
@@ -377,10 +377,10 @@ JSONL line schema:
 
 ```perl
 sub new            { ... }   # %args from config
-sub send           { ... }   # ($self, $report) — best-effort, never dies; dispatches to send_changes/send_heartbeat
-sub send_changes   { ... }   # ($self, $report) — required; report has at least one file
-sub send_heartbeat { ... }   # ($self, $report) — optional; default no-op
-sub heartbeat_enabled { ... } # ($self) — bool from config; default class method returns 0
+sub send           { ... }   # ($self, $report) - best-effort, never dies; dispatches to send_changes/send_heartbeat
+sub send_changes   { ... }   # ($self, $report) - required; report has at least one file
+sub send_heartbeat { ... }   # ($self, $report) - optional; default no-op
+sub heartbeat_enabled { ... } # ($self) - bool from config; default class method returns 0
 sub name           { ... }   # for logging
 ```
 
@@ -389,7 +389,7 @@ The `send` dispatcher in `Base`:
 - Else if `$self->heartbeat_enabled`: call `send_heartbeat($report)`
 - Else: no-op (this is the default for Email)
 
-This keeps the heartbeat decision local to each notifier and prevents email noise by default. The `Report` exposes `has_changes()` (bool: any file changed) and `is_heartbeat_eligible()` (bool: clean run, no errors — heartbeats only fire on successful clean runs, not on aborts).
+This keeps the heartbeat decision local to each notifier and prevents email noise by default. The `Report` exposes `has_changes()` (bool: any file changed) and `is_heartbeat_eligible()` (bool: clean run, no errors - heartbeats only fire on successful clean runs, not on aborts).
 
 **Sensitive logic** lives in `Runner`, not `Notify`. The `Report` object stores per-file `sensitive => 1` and the `Notify::*` modules check this flag and replace `diff_text` with a placeholder string when set:
 
@@ -397,14 +397,14 @@ This keeps the heartbeat decision local to each notifier and prevents email nois
 [diff suppressed -- sensitive file (no world read)]
 ```
 
-The `Report` itself has full diff content; suppression is applied only when serializing for notifications. This means if `sensitive_notify = allow` is set globally, full diffs are sent — explicit opt-out path.
+The `Report` itself has full diff content; suppression is applied only when serializing for notifications. This means if `sensitive_notify = allow` is set globally, full diffs are sent - explicit opt-out path.
 
 **Sensitive auto-detection:**
 - Trigger: file has `mode & 0004 == 0` (no world read; catches 0600 and 0640)
 - Per-entry `options.sensitive`:
-  - `auto` (default): use the auto-detect rule
-  - `yes` / `1`: force sensitive regardless of mode
-  - `no` / `0`: force not sensitive regardless of mode
+ - `auto` (default): use the auto-detect rule
+ - `yes` / `1`: force sensitive regardless of mode
+ - `no` / `0`: force not sensitive regardless of mode
 - A metadata change to make a previously-sensitive file world-readable is **always** notified prominently (this is the security-relevant event)
 
 **Email notifier:**
@@ -414,13 +414,13 @@ The `Report` itself has full diff content; suppression is applied only when seri
 - Body: per-file blocks, each with metadata change summary + diff (or sensitive placeholder)
 - Sendmail pipe: detect `/usr/sbin/sendmail` first, then `/usr/lib/sendmail`, fall back to `sendmail` in PATH; die gracefully with notification-skipped warning if none found
 - Per-file recipients in track entries (from v1) are merged with `[global]` `email_to` (if added later) and any `--mail-to` CLI flag
-- **Heartbeat: forced off.** `heartbeat_enabled` always returns false regardless of any config key. Email is anti-spam by design — silence means no changes, period. Monitoring "is the agent alive" is the OTLP/Webhook channel's job.
+- **Heartbeat: forced off.** `heartbeat_enabled` always returns false regardless of any config key. Email is anti-spam by design - silence means no changes, period. Monitoring "is the agent alive" is the OTLP/Webhook channel's job.
 
 **File notifier:**
 - Append-only to `notify_log_path`
-- One JSON object per run (entire report) — single line for grep-ability, but pretty-print mode optional
+- One JSON object per run (entire report) - single line for grep-ability, but pretty-print mode optional
 - Locking via `flock` to handle concurrent runs (paranoia)
-- **Heartbeat:** controlled by `file_heartbeat = 0|1`, default `0`. When enabled, every run appends a record (even with no changes) — useful for log-shipper-based monitoring (Loki/Splunk/etc. tailing the file). The heartbeat record has `"heartbeat": true` and an empty `files` array.
+- **Heartbeat:** controlled by `file_heartbeat = 0|1`, default `0`. When enabled, every run appends a record (even with no changes) - useful for log-shipper-based monitoring (Loki/Splunk/etc. tailing the file). The heartbeat record has `"heartbeat": true` and an empty `files` array.
 
 **Exit criteria:**
 - [x] Email notifier produces correct mail when tested with mock sendmail (verifies headers, recipient batching, body content)
@@ -434,7 +434,7 @@ The `Report` itself has full diff content; suppression is applied only when seri
 
 ---
 
-### Phase 4: Whole-Repo VCS — Git Backend
+### Phase 4: Whole-Repo VCS - Git Backend
 
 **Goal:** Validate the abstraction holds for whole-repo backends. Single Git backend exercises every interface concern that Fossil/SVN/Hg will later replicate.
 
@@ -447,7 +447,7 @@ The `Report` itself has full diff content; suppression is applied only when seri
 - `init()` creates `$output_dir`, runs `git init`, sets `user.email`/`user.name` from config (defaults: `changetrack-ng@hostname` / `changetrack-ng`)
 - `add()` copies real file to mirror path (creating intermediate dirs), then `git add $mirror_path`
 - `checkin()` is just `add()` (deferred commit)
-- `commit()` runs `git commit -m "$msg"` — but only if there's something staged (`git diff --cached --quiet`)
+- `commit()` runs `git commit -m "$msg"` - but only if there's something staged (`git diff --cached --quiet`)
 - `diff()` runs `git diff --no-color HEAD -- $mirror_path` for already-tracked, or computes diff of new file vs `/dev/null`
 - `is_dirty()` is `git status --porcelain $mirror_path`
 - `revert($file, $rev)` is `git checkout $rev -- $mirror_path` then copy back to real location (with confirmation prompt)
@@ -455,8 +455,8 @@ The `Report` itself has full diff content; suppression is applied only when seri
 - After successful commit: if `push_remote` set, run `git push $remote` for each (best-effort, log warning on fail)
 
 **Cross-cutting changes in this phase:**
-- `Runner` learns to call `add()` for new files separately from `checkin()` (or merge them — design decision: `checkin` is the universal verb, internal to each backend whether it stages or commits)
-- Metadata sidecar location: for Git, write to `$output_dir/.changetrack-metadata` and let Git track it as a normal file (excluded from .gitignore — it's tracked content)
+- `Runner` learns to call `add()` for new files separately from `checkin()` (or merge them - design decision: `checkin` is the universal verb, internal to each backend whether it stages or commits)
+- Metadata sidecar location: for Git, write to `$output_dir/.changetrack-metadata` and let Git track it as a normal file (excluded from .gitignore - it's tracked content)
 - Switching `vcs` value between runs without a fresh `output_dir` is a hard error (different on-disk layouts)
 
 **Exit criteria:**
@@ -529,7 +529,7 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 - Retry: 3 attempts with exponential backoff for transient failures (5xx, network errors)
 - 4xx responses are not retried (assume permanent client error, log warning)
 - TLS verification on by default; `webhook_insecure = 1` to disable for self-signed certs (with a loud warning)
-- **Heartbeat:** controlled by `webhook_heartbeat = 0|1`, default `0` (preserves traditional "send only on change" behavior). When enabled, every clean run produces a POST — receivers can detect agent silence as "missing heartbeats" rather than ambiguous "no traffic". Heartbeats use the same retry/timeout policy as change payloads.
+- **Heartbeat:** controlled by `webhook_heartbeat = 0|1`, default `0` (preserves traditional "send only on change" behavior). When enabled, every clean run produces a POST - receivers can detect agent silence as "missing heartbeats" rather than ambiguous "no traffic". Heartbeats use the same retry/timeout policy as change payloads.
 
 **Test approach:** spin up a tiny server in a forked child via `IO::Socket::INET` (core), accept one POST, verify body, exit. No external test deps.
 
@@ -546,7 +546,7 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 
 ---
 
-### Phase 6: Polish — Ignore, Pre-commit Checks, Locking
+### Phase 6: Polish - Ignore, Pre-commit Checks, Locking
 
 **Goal:** Operational robustness features. After this phase, the tool is production-deployable for the RCS+Git use case.
 
@@ -555,10 +555,10 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 **6a. Ignore patterns** (`Runner` + new `update-ignore` subcommand)
 - Apply ignore globs during `File::Find` traversal (skip matching paths)
 - Built-in defaults applied on top of user `ignore` list (with built-ins overridable):
-  - Editor temp: `*.swp`, `*~`, `#*#`, `.*.sw?`
-  - Package manager: `*.dpkg-*`, `*.dpkg-old`, `*.rpmnew`, `*.rpmsave`, `*.pacnew`, `*.pacorig`, `*.pacsave`, `*.apk-new`
-  - System runtime: `mtab`, `mtab.fuselock`, `ld.so.cache`, `prelink.cache`, `adjtime`, `udev/hwdb.bin`, `lvm/cache`, `lvm/archive`, `network/run`, `.pwd.lock`
-  - Misc: `*.pyc`, `*.pyo`, `*.elc`, `init.d/.depend.*`
+ - Editor temp: `*.swp`, `*~`, `#*#`, `.*.sw?`
+ - Package manager: `*.dpkg-*`, `*.dpkg-old`, `*.rpmnew`, `*.rpmsave`, `*.pacnew`, `*.pacorig`, `*.pacsave`, `*.apk-new`
+ - System runtime: `mtab`, `mtab.fuselock`, `ld.so.cache`, `prelink.cache`, `adjtime`, `udev/hwdb.bin`, `lvm/cache`, `lvm/archive`, `network/run`, `.pwd.lock`
+ - Misc: `*.pyc`, `*.pyo`, `*.elc`, `init.d/.depend.*`
 - New subcommand `changetrack-ng update-ignore` writes VCS-native ignore file (`.gitignore`, `.hgignore`, `.fossil-ignore`) for whole-repo backends, with `# managed by changetrack-ng` markers like etckeeper
 
 **6b. Pre-commit checks** (port from `etckeeper/pre-commit.d/20warn-problem-files`)
@@ -600,7 +600,7 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 **Notable per-backend quirks:**
 
 - **Fossil:** repo is a single `.fossil` file outside the working dir; need to track repo-file path separately from working dir. Use `fossil init <repo>` then `fossil open <repo>` in the mirror tree. Ignore via `fossil settings ignore-glob`. No native ignore file but a `.fossil-settings/ignore-glob` directory works.
-- **SVN:** local repo via `svnadmin create` + `svn checkout file://...` into mirror tree. Ignore via `svn:ignore` property — set with `svn propset`. Push: `svn commit` already pushes (unlike git/hg/fossil).
+- **SVN:** local repo via `svnadmin create` + `svn checkout file://...` into mirror tree. Ignore via `svn:ignore` property - set with `svn propset`. Push: `svn commit` already pushes (unlike git/hg/fossil).
 - **Mercurial:** `hg init` in mirror tree. Ignore via `.hgignore` (regex by default; we'll use `syntax: glob` header). Push via `hg push <remote>`.
 
 **Exit criteria for each backend:**
@@ -618,14 +618,14 @@ The `heartbeat` boolean is always present (even on changes payloads), so receive
 **Goal:** User-facing operations beyond `run`.
 
 **Subcommands to implement:**
-- `run` (already done) — scan and commit; default action
-- `init` — explicit initialization (already implicit; add the explicit form)
-- `status` — show files that would be committed without committing
-- `diff [path]` — show pending diff for one file (or all)
-- `log [path]` — show history (delegates to backend)
-- `revert <path> <rev>` — restore a file from a specific revision (with confirmation)
+- `run` (already done) - scan and commit; default action
+- `init` - explicit initialization (already implicit; add the explicit form)
+- `status` - show files that would be committed without committing
+- `diff [path]` - show pending diff for one file (or all)
+- `log [path]` - show history (delegates to backend)
+- `revert <path> <rev>` - restore a file from a specific revision (with confirmation)
 - `update-ignore` (already done in 6a)
-- `migrate-config <v1-path> [<v2-output>]` — convert v1 config to v2
+- `migrate-config <v1-path> [<v2-output>]` - convert v1 config to v2
 
 **`migrate-config` notes:**
 - Reads v1 grammar, emits v2 INI
@@ -664,14 +664,14 @@ All required Perl modules are already core in 5.14+ (well within our 5.20 floor)
 | `IO::Compress::Gzip` | gzip body compression | 5.10 |
 | `IO::Socket::SSL` | HTTPS (already needed for webhook) | not core, but de-facto present |
 
-→ **Zero additional Perl module dependencies.** OTLP support sits at the same dependency tier as the webhook notifier — if webhook works, OTLP works. Documented in INSTALL.md alongside the webhook note about `IO::Socket::SSL` for HTTPS.
+→ **Zero additional Perl module dependencies.** OTLP support sits at the same dependency tier as the webhook notifier - if webhook works, OTLP works. Documented in INSTALL.md alongside the webhook note about `IO::Socket::SSL` for HTTPS.
 
 **Transport choice:** OTLP/HTTP with JSON encoding only.
-- OTLP/gRPC requires `Grpc::XS` — non-core, heavy, excluded.
-- OTLP/HTTP+protobuf requires `Google::ProtocolBuffers` — non-core, excluded.
+- OTLP/gRPC requires `Grpc::XS` - non-core, heavy, excluded.
+- OTLP/HTTP+protobuf requires `Google::ProtocolBuffers` - non-core, excluded.
 - OTLP/HTTP+JSON is officially supported by all major collectors and is the natural fit for a Perl tool.
 
-**Telemetry signal:** Logs (one OTLP `LogRecord` per file change). Per-run metrics (counters, run-duration histogram) and traces (run-as-trace, file-as-span) considered as v0.4 stretch goals — see notes below.
+**Telemetry signal:** Logs (one OTLP `LogRecord` per file change). Per-run metrics (counters, run-duration histogram) and traces (run-as-trace, file-as-span) considered as v0.4 stretch goals - see notes below.
 
 **New files:**
 - `lib/ChangeTrack/Notify/OTLP.pm`
@@ -706,14 +706,14 @@ otlp_heartbeat           = 1                      # default ON: send beacon each
 | `host.id` | `/etc/machine-id` if readable, else absent |
 | `os.type` | `lc(uname -s)` |
 
-`otlp_resource_attributes` from config is merged on top — user values win on conflict.
+`otlp_resource_attributes` from config is merged on top - user values win on conflict.
 
 **Log record schema (one per file change):**
 
 ```json
 {
-  "timeUnixNano": "<ns since epoch — when the change occurred>",
-  "observedTimeUnixNano": "<ns since epoch — when changetrack-ng noticed>",
+  "timeUnixNano": "<ns since epoch - when the change occurred>",
+  "observedTimeUnixNano": "<ns since epoch - when changetrack-ng noticed>",
   "severityNumber": 9,
   "severityText": "INFO",
   "body": {"stringValue": "File changed: /etc/passwd"},
@@ -735,7 +735,7 @@ otlp_heartbeat           = 1                      # default ON: send beacon each
 
 The full export wraps these in OTLP's `resourceLogs[].scopeLogs[].logRecords[]` envelope (a single resource per export, single scope `changetrack-ng`).
 
-**Heartbeat log record** (only sent when `otlp_heartbeat=1` AND no changes detected — default behavior):
+**Heartbeat log record** (only sent when `otlp_heartbeat=1` AND no changes detected - default behavior):
 
 ```json
 {
@@ -753,9 +753,9 @@ The full export wraps these in OTLP's `resourceLogs[].scopeLogs[].logRecords[]` 
 }
 ```
 
-The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular change records, so dashboards can filter `ct.heartbeat = true` to chart "agent alive" signals separately from change events. The `ct.files_tracked` and `ct.run_duration_ms` attributes are present on both kinds of records — useful for spotting "agent silently stopped tracking some files" via dashboard alerts on the count gauge.
+The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular change records, so dashboards can filter `ct.heartbeat = true` to chart "agent alive" signals separately from change events. The `ct.files_tracked` and `ct.run_duration_ms` attributes are present on both kinds of records - useful for spotting "agent silently stopped tracking some files" via dashboard alerts on the count gauge.
 
-**Why heartbeat defaults ON for OTLP:** OTLP is specifically a monitoring/observability protocol. The whole reason to ship telemetry to a collector is so that monitoring systems can alert on conditions including absence-of-events. Without heartbeats, `no logs from $hostname for 24h` is ambiguous (no changes? agent dead? config broken? collector outage?). With heartbeats at the configured `interval`, missing heartbeats are unambiguously bad — the canonical "alert on absence" pattern. Users wanting to suppress can set `otlp_heartbeat=0`.
+**Why heartbeat defaults ON for OTLP:** OTLP is specifically a monitoring/observability protocol. The whole reason to ship telemetry to a collector is so that monitoring systems can alert on conditions including absence-of-events. Without heartbeats, `no logs from $hostname for 24h` is ambiguous (no changes? agent dead? config broken? collector outage?). With heartbeats at the configured `interval`, missing heartbeats are unambiguously bad - the canonical "alert on absence" pattern. Users wanting to suppress can set `otlp_heartbeat=0`.
 
 **Severity mapping:**
 
@@ -768,18 +768,18 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 | Hardlinked file detected (`nlink > 1`) | 13 | WARN |
 | VCS error during run | 17 | ERROR |
 
-**Sensitive file handling:** identical contract to webhook (Phase 5). The `ct.diff` attribute is omitted for sensitive files even when `otlp_full_diff=1`. The change itself is still reported — `ct.path`, `ct.is_sensitive=true`, line counts, metadata change. Suppression applies only to diff content. `sensitive_notify = allow` overrides as with email/webhook.
+**Sensitive file handling:** identical contract to webhook (Phase 5). The `ct.diff` attribute is omitted for sensitive files even when `otlp_full_diff=1`. The change itself is still reported - `ct.path`, `ct.is_sensitive=true`, line counts, metadata change. Suppression applies only to diff content. `sensitive_notify = allow` overrides as with email/webhook.
 
 **Compression:** when `otlp_compression = gzip`, the JSON body is gzipped via `IO::Compress::Gzip` and `Content-Encoding: gzip` is set. Honored by all standard OTLP collectors; significant size reduction for full-diff payloads.
 
 **Headers and auth:**
 - `otlp_headers` parsed as space-separated `key=value` pairs with backslash-escaped spaces inside values.
-- Environment variable `OTEL_EXPORTER_OTLP_HEADERS` (comma-separated `k=v` pairs, per OpenTelemetry spec) takes precedence over config — enables CI / secret-manager integration without putting tokens in the config file.
+- Environment variable `OTEL_EXPORTER_OTLP_HEADERS` (comma-separated `k=v` pairs, per OpenTelemetry spec) takes precedence over config - enables CI / secret-manager integration without putting tokens in the config file.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` env vars also honored, matching the spec.
 
 **Endpoint normalization:** the OTLP/HTTP spec requires the path component `/v1/logs`. If `otlp_endpoint` doesn't end in `/v1/logs`, append it (with a warning on first run so the user can fix their config).
 
-**Retry / failure behavior:** identical to webhook — 3 retries with exponential backoff for 5xx and network errors; no retry for 4xx; failures are warnings, never abort the run. Failed exports never block VCS commits.
+**Retry / failure behavior:** identical to webhook - 3 retries with exponential backoff for 5xx and network errors; no retry for 4xx; failures are warnings, never abort the run. Failed exports never block VCS commits.
 
 **Tests** (`t/19-notify-otlp.t`):
 - Forked HTTP server (~50 lines using core `IO::Socket::INET`) acts as a mock OTLP receiver
@@ -817,7 +817,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 
 ---
 
-### Phase 10: Integration — Hooks, Systemd, Cron
+### Phase 10: Integration - Hooks, Systemd, Cron
 
 **Goal:** First-class integration with system tooling.
 
@@ -826,15 +826,15 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 **10a. Package manager hooks**
 - Hook files in `packaging/hooks/` directory (apt/pacman shell hook formats, plus dnf Python plugin)
 - `make install-hooks`: detects active package manager from `/etc/os-release` or presence of binaries (`apt`, `dnf`, `pacman`, `zypper`), installs into the appropriate location:
-  - apt: `/etc/apt/apt.conf.d/80changetrack-ng`
-  - dnf: `/etc/dnf/plugins/changetrack_ng.py` + `/etc/dnf/plugins/changetrack_ng.conf`
-  - pacman: `/usr/share/libalpm/hooks/changetrack-ng-pre.hook` + `-post.hook`
-  - zypper: `/etc/zypp/zypper.d/changetrack-ng` (zypper plugin mechanism is more involved; may defer)
+ - apt: `/etc/apt/apt.conf.d/80changetrack-ng`
+ - dnf: `/etc/dnf/plugins/changetrack_ng.py` + `/etc/dnf/plugins/changetrack_ng.conf`
+ - pacman: `/usr/share/libalpm/hooks/changetrack-ng-pre.hook` + `-post.hook`
+ - zypper: `/etc/zypp/zypper.d/changetrack-ng` (zypper plugin mechanism is more involved; may defer)
 - Each hook just calls `changetrack-ng run -m "pre-install: $PACKAGE"` (or post-)
 
 **10b. Systemd timer**
 - `packaging/systemd/changetrack-ng.service`: oneshot type, runs `/usr/local/bin/changetrack-ng run`
-- `packaging/systemd/changetrack-ng.timer`: `OnCalendar=hourly` (or whatever `interval` config says — but the timer file is static; if user changes interval they re-`make install-systemd` or override with a drop-in)
+- `packaging/systemd/changetrack-ng.timer`: `OnCalendar=hourly` (or whatever `interval` config says - but the timer file is static; if user changes interval they re-`make install-systemd` or override with a drop-in)
 - `make install-systemd`: copies units, runs `systemctl daemon-reload`, suggests `systemctl enable --now changetrack-ng.timer`
 
 **10c. Cron**
@@ -845,7 +845,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 - [x] Hook scripts manually verifiable: invoke them with mock env vars and confirm `changetrack-ng run` is called with right args
 - [x] `make install-systemd` installs units and prints next-steps
 - [x] `make install-cron` and `make install-systemd` are mutually exclusive (or at least, the cron script no-ops when the timer is enabled)
-- [x] One distro-specific install verified end-to-end (likely Debian, given availability) — manual test, not automated
+- [x] One distro-specific install verified end-to-end (likely Debian, given availability) - manual test, not automated
 
 ---
 
@@ -855,12 +855,12 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 
 **Sub-tasks:**
 
-- `man/changetrack-ng.8` — POD source committed; converted to roff at build time via `pod2man`
-- `man/changetrack-ng.conf.5` — same
-- `README.md` — full overview, quickstart, comparison with original changetrack and etckeeper
-- `INSTALL.md` — install paths, dependency notes, distro-specific gotchas
-- `CHANGELOG.md` — `0.3.0` entry summarizing initial features
-- `Makefile` `dist` target — produces `changetrack-ng-0.3.0.tar.gz` with all source + docs
+- `man/changetrack-ng.8` - POD source committed; converted to roff at build time via `pod2man`
+- `man/changetrack-ng.conf.5` - same
+- `README.md` - full overview, quickstart, comparison with original changetrack and etckeeper
+- `INSTALL.md` - install paths, dependency notes, distro-specific gotchas
+- `CHANGELOG.md` - `0.3.0` entry summarizing initial features
+- `Makefile` `dist` target - produces `changetrack-ng-0.3.0.tar.gz` with all source + docs
 - POD documentation in every `lib/ChangeTrack/*.pm` (extracted by `perldoc`)
 
 **Optional (deferred to v0.4 or v1.0):**
@@ -903,7 +903,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 
 ### 6.3 Security
 
-- **Filename sanitization:** existing changetrack already rejects filenames with control chars and shell metas — preserved. Extend to reject NUL bytes, non-UTF-8 sequences (warning, configurable strictness).
+- **Filename sanitization:** existing changetrack already rejects filenames with control chars and shell metas - preserved. Extend to reject NUL bytes, non-UTF-8 sequences (warning, configurable strictness).
 - **Subprocess execution:** never use `system($string)` or backticks with interpolated paths. All external commands invoked via array form (`system(@args)` or `IPC::Run::run(\@args, ...)`).
 - **Sensitive files:** auto-detect by mode (see Phase 3). Diffs of sensitive files never leave the local system via notification, only persist to the local VCS repo.
 - **Output dir permissions:** `init()` creates dir with mode `0700` (root) or `0750` (user) by default. Tracked content can include sensitive material.
@@ -913,7 +913,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 
 - Single-process, single-threaded per run
 - Locking prevents overlapping runs (see Phase 6c)
-- Notifications happen at the end of the run, after all VCS operations — failed notifications never corrupt the VCS state
+- Notifications happen at the end of the run, after all VCS operations - failed notifications never corrupt the VCS state
 - VCS backends that are themselves not safe under concurrent access (RCS without proper locks) rely on the changetrack-ng lock to prevent issues
 
 ### 6.5 Forward compatibility
@@ -928,7 +928,7 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 ## 7. Open Questions / Deferred to Future
 
 - **Removed file handling:** when a tracked file disappears, current proposal is to log it in metadata and leave VCS history intact. Should there be an option to also explicitly mark "file removed" in the VCS commit (e.g. `git rm` for the mirror tree)? Defer to user feedback after Phase 4.
-- **Diff size limits:** very large file changes can produce huge diffs, painful in email. Add `max_diff_lines` config option in v0.4 — truncate diff with `[... N more lines ...]` marker if exceeded.
+- **Diff size limits:** very large file changes can produce huge diffs, painful in email. Add `max_diff_lines` config option in v0.4 - truncate diff with `[... N more lines ...]` marker if exceeded.
 - **Encryption at rest:** out of scope for v0.3. Users wanting encrypted history can use git-crypt / equivalent on top.
 - **GUI / web UI:** out of scope. Possibly a separate companion project later.
 - **Centralized server mode:** out of scope. The webhook notifier is the integration point for any centralized aggregator.
@@ -941,20 +941,20 @@ The `ct.heartbeat` boolean attribute is also present (set to `false`) on regular
 
 ```
 Phase 1 (Foundation)
-    └─→ Phase 2 (Core MVP — RCS)
+    └─→ Phase 2 (Core MVP - RCS)
             ├─→ Phase 3 (Notifications + Sensitive)
             │       ├─→ Phase 5 (Webhook)
             │       │       └─→ Phase 9 (OTLP)
             │       └─→ (Phase 9 also depends on Phase 5 patterns)
             └─→ Phase 4 (Git backend)
-                    └─→ Phase 6 (Polish — Ignore, Precommit, Lock)
+                    └─→ Phase 6 (Polish - Ignore, Precommit, Lock)
                             └─→ Phase 7 (Remaining VCS: Fossil, SVN, Hg)
                                     └─→ Phase 8 (Subcommands)
                                             └─→ Phase 10 (Integration: Hooks, Systemd, Cron)
                                                     └─→ Phase 11 (Distribution + Docs)
 ```
 
-Phases 3 and 4 are independent of each other after Phase 2 — could be parallelized if desired, but the natural session-by-session progression is sequential. Phase 9 (OTLP) reuses the HTTP transport patterns established in Phase 5 (Webhook) and can technically be done any time after Phase 5; placement after Phase 8 is purely a feature-priority ordering, not a hard dependency.
+Phases 3 and 4 are independent of each other after Phase 2 - could be parallelized if desired, but the natural session-by-session progression is sequential. Phase 9 (OTLP) reuses the HTTP transport patterns established in Phase 5 (Webhook) and can technically be done any time after Phase 5; placement after Phase 8 is purely a feature-priority ordering, not a hard dependency.
 
 **Estimated effort** (single-developer, focused part-time work):
 - Phase 1: 1–2 sessions
@@ -965,7 +965,7 @@ Phases 3 and 4 are independent of each other after Phase 2 — could be parallel
 - Phase 6: 2 sessions
 - Phase 7: 2–3 sessions (one per backend, mostly mechanical)
 - Phase 8: 1–2 sessions
-- Phase 9: 1–2 sessions (OTLP — schema work + mock-receiver test harness is the bulk)
+- Phase 9: 1–2 sessions (OTLP - schema work + mock-receiver test harness is the bulk)
 - Phase 10: 2 sessions
 - Phase 11: 1 session
 

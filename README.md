@@ -8,8 +8,8 @@ A modernized rewrite of the `changetrack` system file change tracker.
 
 `changetrack-ng` provides automated, versioned configuration backup and change
 tracking for Linux systems. It watches files and directories, records full
-revision history—including file contents, permissions, ownership, and symlinks—in
-a local VCS repository (Git, RCS, Fossil, SVN, or Mercurial), enables instant
+revision history (including file contents, permissions, ownership, and symlinks)
+in a local VCS repository (Git, RCS, Fossil, SVN, or Mercurial), enables instant
 rollback and recovery via `changetrack-ng revert`, and optionally dispatches
 notifications via email, HTTP webhook, OpenTelemetry (OTLP), or an append-only
 JSON log.
@@ -41,7 +41,7 @@ compatibility debt.
 - **Sensitive File Protection:** Automatic mode-based detection. Files without world-read permission (`(mode & 0004) == 0`, e.g. `0600` or `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
 - **Package Manager Integration:** Automatic pre- and post-install hooks for `apt`, `dnf`, and `pacman` ensure system changes by package updates are logically bundled and committed together.
 - **Zero External Dependencies:** Built safely on Perl core modules natively (requiring only `HTTP::Tiny`, `JSON::PP`, and `IO::Compress::Gzip` across Perl ≥ 5.20+).
-- **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage—all execution is polling-based or hook-driven.
+- **Flexible Execution:** Deploy via `cron.hourly`, `systemd` timers, explicit CLI invocations, or event-driven pipelines. Note there is no daemon to manage - all execution is polling-based or hook-driven.
 - **Configurable Tracking:** Track arbitrary files and directories, with per-file/per-directory overrides for notification recipients, sensitive-file flags, and ignore patterns.
 - **System and User Modes:** Run as root to track system paths, or as an unprivileged user to track home directories.  Each mode has its own config and VCS repo.
 
@@ -102,7 +102,7 @@ $HOME/.local/bin/changetrack-ng run
 For this mode, edit `$HOME/.config/changetrack-ng/changetrack-ng.conf` and set
 `output_dir` under your home directory.
 
-Minimal config — track /etc with Git and no notifications:
+Minimal config - track /etc with Git and no notifications:
 
 ```ini
 [global]
@@ -127,7 +127,7 @@ Config uses a single INI format with `[global]`, `[track]`, and
 Ready-to-use template configurations (`changetrack-ng.conf-full`, `-minimal`,
 `-user`) and drop-in examples are installed under `/usr/share/doc/changetrack-ng/examples/`
 and available in `packaging/etc/examples/` (see [INSTALL.md](INSTALL.md#config)).
-Comments start with `#` or `;` — either as a full line or inline after a
+Comments start with `#` or `;` - either as a full line or inline after a
 value (when preceded by whitespace, e.g. `timeout = 10  # seconds`).
 
 Security notes:
@@ -255,9 +255,9 @@ All diagnostic output (`--verbose`, `--debug`, `--trace`) goes to **STDERR**. ST
 
 The config file is selected in this priority order (highest wins):
 
-1. `-c <path>` / `--config <path>` — explicit path on the command line
-2. `$CHANGETRACK_CONFIG` — environment variable (useful in scripts and hook overrides)
-3. `--system` / `--user` — explicit scope flag
+1. `-c <path>` / `--config <path>` - explicit path on the command line
+2. `$CHANGETRACK_CONFIG` - environment variable (useful in scripts and hook overrides)
+3. `--system` / `--user` - explicit scope flag
 4. Default: system config (`/etc/changetrack-ng/changetrack-ng.conf`)
 
 The **defaults file** (`/etc/default/changetrack-ng` on Debian-like systems,

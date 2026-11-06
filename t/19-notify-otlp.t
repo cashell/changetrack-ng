@@ -692,9 +692,9 @@ SKIP: {
     my %a   = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
 
     ok($a{'config_change.sensitive'}{boolValue}, 'Sensitive suppress: config_change.sensitive=true');
-    is($a{'config_change.diff'}{stringValue}, '[diff suppressed — sensitive file; view via VCS log]',
+    is($a{'config_change.diff'}{stringValue}, '[diff suppressed -- sensitive file; view via VCS log]',
         'Sensitive suppress: config_change.diff placeholder');
-    is($a{'changetrack.file.diff'}{stringValue}, '[diff suppressed — sensitive file; view via VCS log]',
+    is($a{'changetrack.file.diff'}{stringValue}, '[diff suppressed -- sensitive file; view via VCS log]',
         'Sensitive suppress: changetrack.file.diff placeholder');
 }
 

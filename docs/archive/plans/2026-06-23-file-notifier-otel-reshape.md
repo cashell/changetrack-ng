@@ -2,44 +2,44 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reshape the File notifier from one per-run JSON object (with a nested `files[]` array) into per-event NDJSON — one OTel-shaped JSON record per change, heartbeat, or warning — using the same canonical attribute names as the OTLP notifier.
+**Goal:** Reshape the File notifier from one per-run JSON object (with a nested `files[]` array) into per-event NDJSON - one OTel-shaped JSON record per change, heartbeat, or warning - using the same canonical attribute names as the OTLP notifier.
 
 **Architecture:** `File.pm` gains `_build_records` (returns a list of flat OTel-style records) replacing `_build_record` (single per-run object). Each record has `timestamp`, `event_name`, `severity_text`, `severity_number`, `body`, `resource`, and an `attributes` hash keyed by the canonical names. `_append_records` writes all records for a run under one exclusive lock.
 
 **Tech Stack:** Perl 5.20+, `JSON::PP`, `POSIX::strftime`, `File::Basename`, `Fcntl` flock (all core). Tests: `Test::More` + `prove`.
 
-**Dependency:** This plan depends on `2026-06-23-otel-attribute-model.md` (Task 1) — it consumes `$change->{file_meta}` and the canonical attribute names that plan establishes on `ChangeTrack::Report`.
+**Dependency:** This plan depends on `2026-06-23-otel-attribute-model.md` (Task 1) - it consumes `$change->{file_meta}` and the canonical attribute names that plan establishes on `ChangeTrack::Report`.
 
 ## Global Constraints
 
 - **Perl 5.20+, zero non-core dependencies.** Only core modules: `JSON::PP`, `HTTP::Tiny`, `IO::Compress::Gzip`, `POSIX`, `Fcntl`, `Carp`, `File::Basename`, `Time::HiRes`. No CPAN.
 - **changetrack-ng is a SysAdmin config-change tracking tool, NOT a security/HIDS tool.** Do not frame output as security telemetry. Do NOT add content hashes. Do NOT add actor/detection-provenance fields.
-- **OTel output is not yet deployed** — format reshape is NOT a breaking change. Reshape freely; rewrite the affected tests in the *same* task so the tree is never left red.
+- **OTel output is not yet deployed** - format reshape is NOT a breaking change. Reshape freely; rewrite the affected tests in the *same* task so the tree is never left red.
 - **Preserve sensitive-file diff suppression.** `sensitive_notify` (suppress|allow) gates diff emission via `_diff_text_for`/`_sensitive_notify_allowed` in `Notify/Base.pm`. Never emit a suppressed diff.
 - **Never expose sensitive data** in logs (recipient PII, suppressed diffs). Recipient emission is opt-in, default OFF.
 - **File headers** on any new file: vim modeline + perltidy line + SPDX block exactly as in existing `lib/ChangeTrack/Notify/*.pm`.
 - **Test runner:** `prove -lv t/NN-name.t` from the changetrack-ng project root. `Test::More` + `done_testing()`.
 
-### Canonical attribute naming (authoritative — identical across this plan series)
+### Canonical attribute naming (authoritative - identical across this plan series)
 
 | Current (`ct.*`) | New key | JSON type in File NDJSON | Notes |
 |---|---|---|---|
 | `ct.path` | `file.path` | string | absolute path |
-| — | `file.name` | string | basename |
-| — | `file.directory` | string | dirname |
+| - | `file.name` | string | basename |
+| - | `file.directory` | string | dirname |
 | `ct.is_new` + `ct.is_removed` | `config_change.type` | string enum | `created` \| `modified` \| `removed` |
 | `ct.is_sensitive` | `config_change.sensitive` | bool | |
 | `ct.meta_change` | `config_change.meta_summary` | string | omit when empty |
 | `ct.diff` | `config_change.diff` | string | omit when not full_diff; suppressed text when sensitive |
-| — | `config_change.diff_truncated` | bool | Plan 4 (otel-diff-truncation) only |
-| — | `config_change.notified` | array&lt;string&gt; | F7, behind `emit_recipients` (default off) |
-| — | `file.mode` | string | e.g. `0644` |
-| — | `file.owner.name` | string | |
-| — | `file.group.name` | string | |
-| — | `file.size` | number | bytes |
+| - | `config_change.diff_truncated` | bool | Plan 4 (otel-diff-truncation) only |
+| - | `config_change.notified` | array&lt;string&gt; | F7, behind `emit_recipients` (default off) |
+| - | `file.mode` | string | e.g. `0644` |
+| - | `file.owner.name` | string | |
+| - | `file.group.name` | string | |
+| - | `file.size` | number | bytes |
 | `ct.files_tracked` | `changetrack.files_tracked` | number | common attr |
 | `ct.run_duration_ms` | `changetrack.run_duration_ms` | number | common attr |
-| `ct.heartbeat` | *(removed)* | — | discriminate via `event_name` |
+| `ct.heartbeat` | *(removed)* | - | discriminate via `event_name` |
 
 ### Canonical `event_name` values
 
@@ -268,7 +268,7 @@ done_testing();
 - [ ] **Step 2: Run to verify it fails against the current File.pm**
 
 Run: `prove -lv t/09-notify-file.t`
-Expected: FAIL — current `File.pm` emits a per-run object (`$rec->{files}`, `$rec->{heartbeat}`), so `event_name`/`attributes` assertions fail.
+Expected: FAIL - current `File.pm` emits a per-run object (`$rec->{files}`, `$rec->{heartbeat}`), so `event_name`/`attributes` assertions fail.
 
 - [ ] **Step 3: Commit the tests**
 
@@ -524,7 +524,7 @@ git commit -m "feat(file): emit per-event OTel-shaped NDJSON records"
 
 ## Self-Review
 
-- **Spec coverage:** F1 (File notifier → per-event OTel NDJSON) — Tasks 1-2. Reuses canonical names + recipients opt-in from the attribute-model plan. ✔
-- **Placeholder scan:** Full module and full test file are concrete. Task 2 Step 3 is conditional on what `t/18` actually asserts — the action (match the new shape) is explicit.
+- **Spec coverage:** F1 (File notifier → per-event OTel NDJSON) - Tasks 1-2. Reuses canonical names + recipients opt-in from the attribute-model plan. ✔
+- **Placeholder scan:** Full module and full test file are concrete. Task 2 Step 3 is conditional on what `t/18` actually asserts - the action (match the new shape) is explicit.
 - **Type consistency:** `event_name`/`severity_text`/`severity_number`/`attributes.*` keys are identical between the test (Task 1) and the implementation (Task 2). `config_change.notified` is a plain array in both. `file_meta` keys match the attribute-model plan.
 - **Constraint check:** Sensitive diff suppression goes through `_diff_text_for` unchanged. Recipients opt-in, default OFF. No hashes, no actor fields.

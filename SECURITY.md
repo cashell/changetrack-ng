@@ -1,4 +1,4 @@
-# Security Policy — changetrack-ng
+# Security Policy - changetrack-ng
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 

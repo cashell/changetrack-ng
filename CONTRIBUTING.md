@@ -12,7 +12,7 @@ cd changetrack-ng
 make test    # Requires Perl 5.20+ and prove
 ```
 
-No build step is needed — modules are loaded directly from `lib/`. Tests run via `prove -l t/`.
+No build step is needed - modules are loaded directly from `lib/`. Tests run via `prove -l t/`.
 
 ---
 
@@ -127,12 +127,12 @@ This project uses modern, idiomatic Perl 5.20+:
 - **Prefer**: `say` over `print "...\n"`, `state` for persistent lexical variables
 - **Allowed**: `s///r` (non-destructive substitution), `\h`/`\v` character classes, postfix dereferencing (`$hashref->%*`)
 - **Forbidden**:
-  - Subroutine signatures (not stable until 5.36)
-  - Bareword filehandles (`open FH, ...`)
-  - Two-argument `open`
-  - Indirect method syntax (`new Foo(...)`)
-  - Prototypes on subroutines
-  - Shell-interpolated command execution (backticks, `system($string)`)
+ - Subroutine signatures (not stable until 5.36)
+ - Bareword filehandles (`open FH, ...`)
+ - Two-argument `open`
+ - Indirect method syntax (`new Foo(...)`)
+ - Prototypes on subroutines
+ - Shell-interpolated command execution (backticks, `system($string)`)
 
 ### Naming conventions
 
@@ -187,7 +187,7 @@ if ($result->{success}) {
 
 - Always pass arguments as a list (never a single string)
 - Never interpolate variables into shell strings
-- This is a hard security boundary — no exceptions
+- This is a hard security boundary - no exceptions
 
 ---
 
@@ -228,7 +228,7 @@ prove -l -v t/               # Verbose output
 - **Unit tests**: exercise a single module's methods in isolation
 - **Integration tests**: wire Config → Runner → VCS/Notifier to verify data flow
 - **Mock objects**: `t/lib/ChangeTrack/Test/MockSendmail.pm` for email tests; similar patterns for other externals
-- No network calls in tests — mock HTTP endpoints or use file-based notifiers
+- No network calls in tests - mock HTTP endpoints or use file-based notifiers
 
 ---
 
@@ -364,7 +364,7 @@ Once the release PR is merged to `main`:
 ## Security Considerations
 
 - Never log secrets (webhook URLs with tokens, OTLP auth headers) at default verbosity
-- Preserve the sensitive-file auto-detection model — changes that weaken it need explicit justification
+- Preserve the sensitive-file auto-detection model - changes that weaken it need explicit justification
 - Respect trust boundaries: config is trusted, tracked file content is semi-trusted, network endpoints are untrusted
 - Mirror directories are created mode 0700; config should be 0640
 
