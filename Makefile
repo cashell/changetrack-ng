@@ -180,6 +180,7 @@ _install_examples:
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-user
 	install -m 644 packaging/etc/examples/conf.d/local-settings.conf  $(DESTDIR)$(DOCDIR)/examples/conf.d/local-settings.conf
 	install -m 644 packaging/etc/examples/track.d/system-core.conf    $(DESTDIR)$(DOCDIR)/examples/track.d/system-core.conf
+	install -m 644 packaging/etc/examples/track.d/etc-full.conf       $(DESTDIR)$(DOCDIR)/examples/track.d/etc-full.conf
 	install -m 644 packaging/etc/examples/notifier.d/email.conf       $(DESTDIR)$(DOCDIR)/examples/notifier.d/email.conf
 	install -m 644 packaging/etc/examples/notifier.d/otlp.conf        $(DESTDIR)$(DOCDIR)/examples/notifier.d/otlp.conf
 

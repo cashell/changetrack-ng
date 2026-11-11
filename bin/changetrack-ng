@@ -264,7 +264,7 @@ sub cmd_update_ignore {
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     my @patterns = ChangeTrack::Runner->builtin_ignore_patterns;
-    push @patterns, @{ $cfg->global('ignore') // [] };
+    push @patterns, @{ $cfg->ignore };
 
     if ($vcs_name eq 'git') {
         _update_gitignore($output_dir, \@patterns);

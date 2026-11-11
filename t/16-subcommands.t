@@ -460,7 +460,7 @@ close($fh);
     my $sub_out = tempdir(CLEANUP => 1);
     chmod 0700, $sub_out;
     my ($cfh, $ign_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
-    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\nignore = *.custom-ign\n\n[track]\nDIRECTORY $tracked_dir\n";
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[ignore]\n*.custom-ign\n\n[track]\nDIRECTORY $tracked_dir\n";
     close($cfh);
     chmod(0600, $ign_cfg);
 
