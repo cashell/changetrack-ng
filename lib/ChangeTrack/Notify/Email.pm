@@ -20,7 +20,11 @@ ChangeTrack::Notify::Email - email notifier for changetrack-ng
 
 Sends per-file change notifications by piping RFC 2822 messages to
 C<sendmail -oi -t>.  Per-file recipient lists are taken from the C<[track]>
-section.  Heartbeat is always disabled (anti-spam).
+section by default.  When C<use_track_recipients> is set to false (0),
+per-track recipients are ignored and notifications are delivered only to
+the instance's configured C<to> list, preventing duplicate emails when
+multiple email notifier instances are defined.  Heartbeat is always
+disabled (anti-spam).
 
 =cut
 
@@ -39,12 +43,14 @@ my @SENDMAIL_PATHS = qw(
     /usr/lib/sendmail
 );
 
-# new -- Construct the notifier with defaults for from and sensitive_notify.
+# new -- Construct the notifier with defaults for from, sensitive_notify,
+# and use_track_recipients.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{from}             //= 'changetrack-ng@' . fqdn();
-    $self->{sensitive_notify} //= 'suppress';
+    $self->{from}                 //= 'changetrack-ng@' . fqdn();
+    $self->{sensitive_notify}     //= 'suppress';
+    $self->{use_track_recipients} //= 1;
     return $self;
 }
 
@@ -54,8 +60,9 @@ sub heartbeat_enabled { 0 }
 sub name { 'email' }
 
 # send_changes -- Send per-recipient change digest emails.
-# Changes are grouped by recipient address.  Per-track recipients take
-# precedence over the global email_to list.
+# Changes are grouped by recipient address. When use_track_recipients is true,
+# per-track recipients take precedence over the global email_to list. When
+# use_track_recipients is false, per-track recipients are ignored.
 sub send_changes {
     my ($self, $report) = @_;
 
@@ -65,12 +72,16 @@ sub send_changes {
             return;
         };
 
-    # Group changes by recipient.  Per-track recipients override global;
-    # global email_to is the fallback when a track entry has none.
+    # Group changes by recipient. When use_track_recipients is true (default),
+    # per-track recipients override global; global email_to is the fallback
+    # when a track entry has none. When use_track_recipients is false,
+    # per-track recipients are ignored and notifications fall back to global.
     my @global_recips = grep { defined $_ && /\S/ } @{ $self->{to} // [] };
     my %by_recipient;
     for my $c (@{ $report->changes }) {
-        my @track_recips = grep { defined $_ && /\S/ } @{ $c->{recipients} // [] };
+        my @track_recips = $self->{use_track_recipients}
+            ? grep { defined $_ && /\S/ } @{ $c->{recipients} // [] }
+            : ();
         my @recips = @track_recips ? @track_recips : @global_recips;
 
         my %seen;

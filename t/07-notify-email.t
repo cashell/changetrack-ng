@@ -300,4 +300,104 @@ use_ok('ChangeTrack::Test::MockSendmail');
     ok(grep(/sendmail not found/i, @warn), 'bad explicit sendmail_path emits skip warning');
 }
 
+########################################################################
+# Use_Track_Recipients Flag Behavior
+########################################################################
+{
+    # 1. Default (use_track_recipients => 1): per-track recipients take precedence
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path => $script,
+            to            => ['instance-default@example.com'],
+            # use_track_recipients defaults to 1
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(defined $cap, 'use_track_recipients=1: capture readable');
+        ok(scalar(grep { $_ eq 'pertrack@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=1: per-track recipient receives notification');
+        ok(!scalar(grep { $_ eq 'instance-default@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=1: instance to recipient overridden');
+
+        unlink $script, $capture;
+    }
+
+    # 2. use_track_recipients => 0: ignores per-track recipients, sends to instance to list
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path        => $script,
+            to                   => ['admin-digest@example.com'],
+            use_track_recipients => 0,
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(defined $cap, 'use_track_recipients=0: capture readable');
+        ok(scalar(grep { $_ eq 'admin-digest@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=0: instance to recipient receives notification');
+        ok(!scalar(grep { $_ eq 'pertrack@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=0: per-track recipient ignored');
+
+        unlink $script, $capture;
+    }
+
+    # 3. use_track_recipients => 0 with empty instance to list skips and warns
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path        => $script,
+            to                   => [],
+            use_track_recipients => 0,
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+
+        my @warn;
+        local $SIG{__WARN__} = sub { push @warn, @_ };
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(!defined $cap || !@{ $cap->{args} // [] },
+            'use_track_recipients=0 with no to: sendmail not called');
+        ok(grep(/no recipients for \/etc\/custom\.conf/i, @warn),
+            'use_track_recipients=0 with no to: warning emitted');
+
+        unlink $script, $capture;
+    }
+}
+
 done_testing();
