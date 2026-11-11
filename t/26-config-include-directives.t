@@ -155,4 +155,66 @@ sub write_file {
     like($@, qr/not found/i, 'Error message mentions path not found');
 }
 
+########################################################################
+# @include-track: Allows Both [track] and [ignore] Sections
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $inc = write_file($dir, 'track_and_ignore.conf',
+        "[track]\n/etc/nginx.conf\n\n[ignore]\n*.tmp\n");
+    write_file($dir, 'main.conf',
+        "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n\@include-track $inc\n");
+
+    my $cfg   = ChangeTrack::Config->load("$dir/main.conf");
+    my @paths = map { $_->{path} } @{ $cfg->tracks };
+    ok(grep { $_ eq '/etc/nginx.conf' } @paths,
+        '@include-track: track entry parsed from included file');
+    is_deeply($cfg->ignore, ['*.tmp'],
+        '@include-track: ignore section allowed alongside [track]');
+}
+
+########################################################################
+# @include-ignore: Restricts Included File to [ignore] Sections
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $inc = write_file($dir, 'ignores.conf', "[ignore]\n*.swp\n*.bak\n");
+    write_file($dir, 'main.conf',
+        "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n\@include-ignore $inc\n");
+
+    my $cfg = ChangeTrack::Config->load("$dir/main.conf");
+    is_deeply($cfg->ignore, ['*.swp', '*.bak'],
+        '@include-ignore: ignore patterns from included file');
+}
+
+########################################################################
+# @include-ignore: Rejects [track] in Included File (fatal)
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $inc = write_file($dir, 'bad_track.conf', "[track]\n/etc/shadow\n");
+    write_file($dir, 'main.conf',
+        "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n\@include-ignore $inc\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, '@include-ignore: [track] section in included file is fatal');
+    like($@, qr/\[track\] section is not allowed in a 'ignore'-restricted file/,
+        'Error mentions ignore restriction');
+}
+
+########################################################################
+# @include-ignore: Rejects [global] in Included File (fatal)
+########################################################################
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $inc = write_file($dir, 'bad_global.conf', "[global]\nvcs = git\n");
+    write_file($dir, 'main.conf',
+        "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n\@include-ignore $inc\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, '@include-ignore: [global] section in included file is fatal');
+    like($@, qr/\[global\] section is not allowed in a 'ignore'-restricted file/,
+        'Error mentions ignore restriction');
+}
+
 done_testing();

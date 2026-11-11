@@ -151,12 +151,12 @@ sub write_file {
     write_file($dir, 'main.conf',
         "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts\n");
     mkdir "$dir/conf.d" or die $!;
-    write_file("$dir/conf.d", 'ok.conf', "[global]\nignore = *.swp\n");
+    write_file("$dir/conf.d", 'ok.conf', "[global]\npush_remote = origin\n");
 
     my $cfg = eval { ChangeTrack::Config->load("$dir/main.conf") };
     ok(defined $cfg, '[global] (array key only) in conf.d/ is valid');
-    my $ign = $cfg->global('ignore') // [];
-    ok(grep { $_ eq '*.swp' } @$ign, 'ignore extended from conf.d drop-in');
+    my $pr  = $cfg->global('push_remote') // [];
+    ok(grep { $_ eq 'origin' } @$pr, 'push_remote extended from conf.d drop-in');
 }
 
 done_testing();
