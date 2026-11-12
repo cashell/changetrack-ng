@@ -20,7 +20,10 @@ ChangeTrack::VCS::RCS - RCS VCS backend for changetrack-ng
 
 Implements the L<ChangeTrack::VCS::Base> interface using RCS.  Stores per-file
 C<,v> revision files in C<output_dir> using a colon-encoded flat layout
-compatible with the original C<changetrack> format.
+compatible with the original C<changetrack> format.  Checkin embeds file
+metadata tags and passes C<-f> to ensure metadata-only updates record a
+new revision.  Reverting restores the live file while leaving the RCS working
+file clean at HEAD.
 
 =cut
 
@@ -28,6 +31,7 @@ use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak carp);
 use File::Basename qw(dirname basename);
 use File::Path qw(make_path);
+use File::Temp qw(tempfile);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -75,23 +79,45 @@ sub is_initialized {
     return -d $self->{output_dir} && -d "$self->{output_dir}/RCS";
 }
 
-# checkin -- Copy real file to output_path and check in with ci -l.
+# checkin -- Copy real file to output_path and check in with ci -f -l.
 # For a new file (no ,v yet) passes -t- to suppress the description prompt.
+# Embeds [changetrack-meta: ...] in the commit message and returns revision.
 sub checkin {
     my ($self, $real_path, $msg) = @_;
     $msg //= 'changetrack-ng checkin';
 
     $self->_ensure_output_dir($real_path);
-    my $op = $self->output_path($real_path);
+    my $op       = $self->output_path($real_path);
+    my $rcs_file = $self->_rcs_file($real_path);
 
     sync_mirror_path($real_path, $op);
 
-    my @cmd = ('ci', '-l', "-m$msg");
-    push @cmd, '-t-changetrack-ng' unless -e $self->_rcs_file($real_path);
-    push @cmd, $op;
+    my $ci_msg = $msg;
+    unless ($ci_msg =~ /\[changetrack-meta:/) {
+        my @st = lstat($real_path);
+        if (@st) {
+            my $mode  = sprintf('%04o', $st[2] & 07777);
+            my $uid   = $st[4];
+            my $gid   = $st[5];
+            my $user  = scalar(getpwuid($uid)) // $uid;
+            my $group = scalar(getgrgid($gid)) // $gid;
+            $ci_msg .= " [changetrack-meta: mode=$mode uid=$uid gid=$gid user=$user group=$group]";
+        }
+    }
+
+    my @cmd = ('ci', '-f', '-l', "-m$ci_msg");
+    push @cmd, '-t-changetrack-ng' unless -e $rcs_file;
+    push @cmd, $op, $rcs_file;
 
     my $r = run_cmd(cmd => \@cmd);
     croak "ci failed for $op: $r->{stderr}" unless $r->{success};
+
+    my $rev;
+    my $out = ($r->{stderr} // '') . "\n" . ($r->{stdout} // '');
+    if ($out =~ /(?:new|initial) revision:\s*([0-9.]+)/i) {
+        $rev = $1;
+    }
+    return $rev;
 }
 
 # add / commit -- No-ops for RCS (per-file model; ci does its own commit).
@@ -145,18 +171,49 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
-# revert -- Check out revision $rev of $real_path and restore the live file.
+# revert -- Check out revision $rev of $real_path to a tempfile and restore
+# the live file, leaving the RCS working file and lock clean at HEAD.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
+    croak "unsafe revision: $rev" if $rev =~ /^-/;
+
     my $op = $self->output_path($real_path);
     my $r  = run_cmd(cmd => ['co', "-p$rev", $op]);
     croak "co failed: $r->{stderr}" unless $r->{success};
-    open(my $fh, '>', $op) or croak "Cannot write $op: $!";
-    binmode($fh);
-    print {$fh} $r->{stdout};
-    close($fh) or croak "Cannot close $op: $!";
-    restore_mirror_path($op, $real_path);
+
+    my ($tmp_fh, $tmp_file) = File::Temp::tempfile(CLEANUP => 1);
+    binmode($tmp_fh);
+    print {$tmp_fh} $r->{stdout};
+    close($tmp_fh);
+
+    restore_mirror_path($tmp_file, $real_path);
+}
+
+# metadata_at_revision -- Retrieve historical metadata record for $real_path
+# at $rev from the RCS log message metadata tag.
+sub metadata_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    return undef unless defined $rev && length $rev;
+    return undef if $rev =~ /^-/;
+
+    my $rcs_file = $self->_rcs_file($real_path);
+    return undef unless -f $rcs_file;
+
+    my $r = run_cmd(cmd => ['rlog', "-r$rev", $rcs_file]);
+    return undef unless $r->{success};
+
+    if ($r->{stdout} =~ /\[changetrack-meta:\s*mode=([0-7]+)\s+uid=(\d+)\s+gid=(\d+)(?:\s+user=(\S+))?(?:\s+group=(\S+))?\]/) {
+        return {
+            path  => $real_path,
+            mode  => $1,
+            uid   => $2 + 0,
+            gid   => $3 + 0,
+            user  => $4 // '',
+            group => $5 // '',
+        };
+    }
+    return undef;
 }
 
 1;

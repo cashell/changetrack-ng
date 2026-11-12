@@ -21,7 +21,8 @@ ChangeTrack::VCS::SVN - Subversion VCS backend for changetrack-ng
 Implements the L<ChangeTrack::VCS::Base> interface using Subversion (svn).
 Tracked files are copied into a mirror tree under C<output_dir>, which is
 an svn working copy.  Passes C<--no-ignore> on file addition to preserve
-mirror isolation from in-tree ignore configurations.
+mirror isolation from in-tree ignore configurations.  Reverting restores the
+live file while keeping the Subversion mirror clean at HEAD.
 
 =cut
 
@@ -29,6 +30,7 @@ use parent 'ChangeTrack::VCS::Base';
 use Carp qw(croak);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
+use File::Temp qw(tempfile);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -90,19 +92,34 @@ sub remove {
     }
 }
 
+# _normalize_rev -- Strip leading 'r' before digits (e.g. 'r2' -> '2').
+sub _normalize_rev {
+    my ($rev) = @_;
+    return undef unless defined $rev;
+    $rev =~ s/^r(?=\d+$)//i;
+    return $rev;
+}
+
 # commit -- Commit all pending changes with $msg.
 # SVN commit is inherently a push (no separate push step needed).
+# Returns { committed => 0, revision => undef, warnings => [] } when no changes,
+# or { committed => 1, revision => "r<N>", warnings => [] }.
 sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
 
     # Skip if nothing pending.
     my $st = $self->_run('svn', 'status', $self->{output_dir});
-    return unless $st->{stdout} =~ /\S/;
+    return { committed => 0, revision => undef, warnings => [] } unless $st->{stdout} =~ /\S/;
 
     my $r = $self->_run('svn', 'commit', '-m', $msg, $self->{output_dir});
     croak "svn commit failed: $r->{stderr}" unless $r->{success};
-    # SVN commit is push  --  no separate push step needed.
+
+    my $rev;
+    if ($r->{stdout} =~ /Committed revision (\d+)\./i) {
+        $rev = "r$1";
+    }
+    return { committed => 1, revision => $rev, warnings => [] };
 }
 
 # SVN has no native push_remote concept; the checkout URL is the repository.
@@ -165,22 +182,41 @@ sub log_history {
 }
 
 # revert -- Restore $real_path to revision $rev using svn cat,
-# then copy the content back to the live file.
+# restoring to the live path while leaving the Subversion mirror clean at HEAD.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
-    my $mirror = $self->output_path($real_path);
-    my $rel    = $self->_rel_path($mirror);
-    my $url    = 'file://' . $self->_repo_path . "/$rel";
-    my $r      = $self->_run('svn', 'cat', '-r', $rev, "$url\@$rev");
-    $r         = $self->_run('svn', 'cat', '-r', $rev, $mirror) unless $r->{success};
+    $rev = _normalize_rev($rev);
+    croak "unsafe revision: $rev" if $rev =~ /^-/;
+
+    my $mirror   = $self->output_path($real_path);
+    my $rel      = $self->_rel_path($mirror);
+    my $repo_url = $self->{repo_url} // ('file://' . $self->_repo_path);
+    my $url      = "$repo_url/$rel";
+    my $r        = $self->_run('svn', 'cat', '-r', $rev, "$url\@$rev");
+    $r           = $self->_run('svn', 'cat', '-r', $rev, "$mirror\@$rev") unless $r->{success};
     croak "svn cat failed: $r->{stderr}" unless $r->{success};
-    make_path(dirname($mirror), { mode => 0700 }) unless -d dirname($mirror);
-    open(my $fh, '>', $mirror) or croak "Cannot write $mirror: $!";
-    binmode($fh);
-    print {$fh} $r->{stdout};
-    close($fh) or croak "Cannot close $mirror: $!";
-    restore_mirror_path($mirror, $real_path);
+
+    my ($tmp_fh, $tmp_file) = File::Temp::tempfile(CLEANUP => 1);
+    binmode($tmp_fh);
+    print {$tmp_fh} $r->{stdout};
+    close($tmp_fh);
+
+    restore_mirror_path($tmp_file, $real_path);
+}
+
+# metadata_at_revision -- Retrieve historical metadata record for $real_path
+# at $rev from .changetrack-metadata in Subversion history.
+sub metadata_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    return undef unless defined $rev && length $rev;
+    $rev = _normalize_rev($rev);
+    return undef if $rev =~ /^-/;
+
+    my $repo_url = $self->{repo_url} // ('file://' . $self->_repo_path);
+    my $r = $self->_run('svn', 'cat', '-r', $rev, "$repo_url/.changetrack-metadata\@$rev");
+    return undef unless $r->{success};
+    return $self->_parse_metadata_jsonl($r->{stdout}, $real_path);
 }
 
 1;

@@ -146,4 +146,41 @@ SKIP: {
         'tempfile is cleaned up when rename fails');
 }
 
+########################################################################
+# Recreate Missing Parent Directories on Restore (CORR-14)
+########################################################################
+{
+    # 1. Restore regular file when parent directory has been removed
+    my $missing_parent_dir = "$tmp/deleted_parent/subdir";
+    my $missing_file = "$missing_parent_dir/restored_file.txt";
+    ok(!-d $missing_parent_dir, 'parent directory does not exist prior to restore');
+
+    is(restore_mirror_path($mirror, $missing_file), 'file',
+        'restore_mirror_path recreates missing parent directory for regular file');
+    ok(-d $missing_parent_dir, 'parent directory was created');
+    is(slurp($missing_file), "alpha\n", 'restored file content matches');
+
+    # 2. Restore symlink when parent directory has been removed
+    SKIP: {
+        my $probe = "$tmp/.symlink_probe2";
+        my $can_symlink = eval {
+            symlink('probe-target', $probe) or die $!;
+            unlink($probe);
+            1;
+        };
+        skip 'symlink creation not available on this platform/user', 4 unless $can_symlink;
+
+        my $link_mirror = "$tmp/link.mirror";
+        my $missing_link_dir = "$tmp/deleted_link_parent/subdir";
+        my $missing_link = "$missing_link_dir/restored.link";
+        ok(!-d $missing_link_dir, 'parent directory does not exist prior to symlink restore');
+
+        is(restore_mirror_path($link_mirror, $missing_link), 'symlink',
+            'restore_mirror_path recreates missing parent directory for symlink');
+        ok(-d $missing_link_dir, 'parent directory was created for symlink');
+        ok(-l $missing_link, 'restored path is a symlink');
+        is(readlink($missing_link), 'target.txt', 'symlink target matches original target');
+    }
+}
+
 done_testing();

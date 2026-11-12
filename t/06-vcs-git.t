@@ -80,8 +80,12 @@ is_deeply($diff, ['(new file)'], 'diff: (new file) before first commit');
 ########################################################################
 # Commit
 ########################################################################
-$err = do { local $@; eval { $vcs->commit('Initial commit') }; $@ };
+my $commit_res;
+$err = do { local $@; eval { $commit_res = $vcs->commit('Initial commit') }; $@ };
 is($err, '', 'commit: no error');
+is($commit_res->{committed}, 1, 'commit: returns committed => 1');
+like($commit_res->{revision}, qr/^[0-9a-f]{12}$/, 'commit: returns 12-char revision');
+is_deeply($commit_res->{warnings}, [], 'commit: warnings empty');
 
 my $log_r = run_cmd(cmd => ['git', '-C', $output_dir, 'log', '--oneline']);
 like($log_r->{stdout}, qr/Initial commit/, 'commit: appears in git log');
@@ -147,8 +151,11 @@ like($after_log, qr/Atomic batch commit/, 'atomic commit message in log');
 ########################################################################
 my $log_before_noop = run_cmd(cmd => ['git', '-C', $output_dir, 'log', '--oneline'])->{stdout};
 
-$err = do { local $@; eval { $vcs->commit('Should not appear') }; $@ };
+my $noop_res;
+$err = do { local $@; eval { $noop_res = $vcs->commit('Should not appear') }; $@ };
 is($err, '', 'commit with nothing staged: no error');
+is_deeply($noop_res, { committed => 0, revision => undef, warnings => [] },
+    'commit with nothing staged: returns committed => 0');
 
 my $log_after_noop = run_cmd(cmd => ['git', '-C', $output_dir, 'log', '--oneline'])->{stdout};
 is($log_before_noop, $log_after_noop, 'commit with nothing staged: no new commit');
@@ -201,6 +208,112 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
     my $na_diff = $vcs->diff($never_added);
     is_deeply($na_diff, ['(new file)'], 'diff on un-added file returns (new file)');
     ok(!-e $na_mirror, 'mirror file was not created by diff on un-added file');
+}
+
+########################################################################
+# Revert: Clean HEAD Mirror and Recreate Missing Parent (CORR-14)
+########################################################################
+{
+    my $rev_sub  = "$tracked_dir/revert_dir";
+    mkdir $rev_sub or die $!;
+    my $rev_file = "$rev_sub/revert.conf";
+
+    open(my $rfh, '>', $rev_file) or die $!;
+    print {$rfh} "rev version 1\n";
+    close($rfh);
+
+    $vcs->checkin($rev_file, 'Revert test v1');
+    my $c1 = $vcs->commit('Revert commit v1');
+    my $rev1 = $c1->{revision};
+
+    open($rfh, '>', $rev_file) or die $!;
+    print {$rfh} "rev version 2\n";
+    close($rfh);
+
+    $vcs->checkin($rev_file, 'Revert test v2');
+    my $c2 = $vcs->commit('Revert commit v2');
+    my $rev2 = $c2->{revision};
+
+    # Delete the live file and its parent directory
+    unlink $rev_file or die $!;
+    rmdir $rev_sub   or die $!;
+    ok(!-d $rev_sub, 'revert test: parent directory removed before revert');
+
+    # Revert to rev1
+    my $rev_err = do { local $@; eval { $vcs->revert($rev_file, $rev1) }; $@ };
+    is($rev_err, '', 'revert: succeeded without error even with missing parent directory');
+    ok(-f $rev_file, 'revert: live file restored');
+
+    open(my $check_fh, '<', $rev_file) or die $!;
+    my $reverted_content = do { local $/; <$check_fh> };
+    close($check_fh);
+    is($reverted_content, "rev version 1\n", 'revert: restored content matches v1');
+
+    # Mirror and index must remain clean at HEAD
+    my $st_r = run_cmd(cmd => ['git', '-C', $output_dir, 'status', '--porcelain']);
+    is($st_r->{stdout}, '', 'revert: git mirror working tree and index remain clean at HEAD');
+
+    # is_dirty must be true because live file (v1) differs from HEAD (v2)
+    ok($vcs->is_dirty($rev_file), 'is_dirty: true after revert because live file differs from HEAD');
+}
+
+########################################################################
+# Metadata At Revision (FEAT-5)
+########################################################################
+{
+    my $meta_file = "$output_dir/.changetrack-metadata";
+    open(my $mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0644","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    run_cmd(cmd => ['git', '-C', $output_dir, 'add', '.changetrack-metadata']);
+    my $m_c1 = $vcs->commit('Add metadata record 1');
+    my $m_rev1 = $m_c1->{revision};
+
+    open($mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0600","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    run_cmd(cmd => ['git', '-C', $output_dir, 'add', '.changetrack-metadata']);
+    my $m_c2 = $vcs->commit('Update metadata record 2');
+    my $m_rev2 = $m_c2->{revision};
+
+    my $rec1 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev1);
+    is($rec1->{mode}, '0644', 'metadata_at_revision: retrieves mode from rev1');
+    is($rec1->{user}, 'tester', 'metadata_at_revision: retrieves user from rev1');
+
+    my $rec2 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev2);
+    is($rec2->{mode}, '0600', 'metadata_at_revision: retrieves updated mode from rev2');
+
+    is($vcs->metadata_at_revision('/etc/nonexistent', $m_rev1), undef,
+        'metadata_at_revision: returns undef for untracked path');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '000000000000'), undef,
+        'metadata_at_revision: returns undef for non-existent revision');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '-invalid'), undef,
+        'metadata_at_revision: rejects revision starting with hyphen');
+}
+
+########################################################################
+# Push_Remote: Failure Populates Warnings (NOTIFY-4)
+########################################################################
+{
+    my $bad_remote_vcs = ChangeTrack::VCS::Git->new(
+        output_dir => $output_dir,
+        options    => { push_remote => '/nonexistent/path/cannot/exist.git' },
+    );
+
+    my $warn_file = "$tracked_dir/warn_test.conf";
+    open(my $wfh, '>', $warn_file) or die $!;
+    print {$wfh} "warn test content\n";
+    close($wfh);
+
+    $bad_remote_vcs->checkin($warn_file, 'Push warn test');
+    my $res;
+    my $warn_err = do { local $@; eval { $res = $bad_remote_vcs->commit('Push warn commit') }; $@ };
+    is($warn_err, '', 'commit succeeds despite push_remote failure');
+    is($res->{committed}, 1, 'commit reported committed => 1');
+    ok(@{ $res->{warnings} } > 0, 'push warnings captured in returned hashref');
+    like($res->{warnings}[0], qr/git push.*failed/i, 'warning string details push failure');
 }
 
 done_testing();

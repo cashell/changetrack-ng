@@ -56,7 +56,8 @@ for whole-repo backends).
 
 =item $vcs->commit($message)
 
-Commit all staged changes with I<$message>.
+Commit all staged changes with I<$message>.  Returns a hashref:
+C<{ committed => bool, revision => str|undef, warnings => \@warnings }>.
 
 =item $vcs->diff($path)
 
@@ -77,6 +78,12 @@ Return the revision history for I<$path>.
 =item $vcs->revert($path, $rev)
 
 Restore I<$path> to revision I<$rev>.
+
+=item $vcs->metadata_at_revision($path, $rev)
+
+Retrieve historical metadata for I<$path> recorded at revision I<$rev>.
+Returns a hashref with keys C<path>, C<mode>, C<uid>, C<gid>, C<user>, C<group>
+(plus any additional fields from metadata storage), or C<undef> if not found.
 
 =item $vcs->is_dirty($path)
 
@@ -181,14 +188,34 @@ sub is_dirty {
     return scalar(@{ $self->diff($real_path) }) > 0;
 }
 
-sub init           { _unimpl(shift, 'init')           }
-sub is_initialized { _unimpl(shift, 'is_initialized') }
-sub add            { _unimpl(shift, 'add')            }
-sub commit         { _unimpl(shift, 'commit')         }
-sub diff           { _unimpl(shift, 'diff')           }
-sub remove         { _unimpl(shift, 'remove')         }
-sub log_history    { _unimpl(shift, 'log_history')    }
-sub revert         { _unimpl(shift, 'revert')         }
-sub model          { _unimpl(shift, 'model')          }
+# _parse_metadata_jsonl -- Search a .changetrack-metadata JSONL payload for
+# the record matching $real_path.  Returns the decoded hashref, or undef.
+sub _parse_metadata_jsonl {
+    my ($self, $raw, $real_path) = @_;
+    return undef unless defined $raw && length $raw;
+    return undef unless defined $real_path && length $real_path;
+
+    require JSON::PP;
+    for my $line (split /\r?\n/, $raw) {
+        next if $line =~ /^\s*$/;
+        my $rec = eval { JSON::PP::decode_json($line) };
+        next unless ref($rec) eq 'HASH';
+        if (($rec->{path} // '') eq $real_path) {
+            return $rec;
+        }
+    }
+    return undef;
+}
+
+sub init                 { _unimpl(shift, 'init')                 }
+sub is_initialized       { _unimpl(shift, 'is_initialized')       }
+sub add                  { _unimpl(shift, 'add')                  }
+sub commit               { _unimpl(shift, 'commit')               }
+sub diff                 { _unimpl(shift, 'diff')                 }
+sub remove               { _unimpl(shift, 'remove')               }
+sub log_history          { _unimpl(shift, 'log_history')          }
+sub revert               { _unimpl(shift, 'revert')               }
+sub metadata_at_revision { _unimpl(shift, 'metadata_at_revision') }
+sub model                { _unimpl(shift, 'model')                }
 
 1;

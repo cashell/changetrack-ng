@@ -80,8 +80,12 @@ is_deeply($diff, ['(new file)'], 'diff: (new file) before first commit');
 ########################################################################
 # Commit
 ########################################################################
-$err = do { local $@; eval { $vcs->commit('Initial commit') }; $@ };
+my $commit_res;
+$err = do { local $@; eval { $commit_res = $vcs->commit('Initial commit') }; $@ };
 is($err, '', 'commit: no error');
+is($commit_res->{committed}, 1, 'commit: returns committed => 1');
+is($commit_res->{revision}, 'r1', 'commit: returns r1 revision');
+is_deeply($commit_res->{warnings}, [], 'commit: warnings empty');
 
 my $log_r = run_cmd(cmd => ['svn', 'log', "file://$output_dir-svnrepo"]);
 like($log_r->{stdout}, qr/Initial commit/, 'commit: appears in svn log');
@@ -160,8 +164,11 @@ like($log_after->{stdout}, qr/Atomic batch commit/, 'atomic commit message in lo
 ########################################################################
 my $log_before_noop = run_cmd(cmd => ['svn', 'log', "file://$output_dir-svnrepo"])->{stdout};
 
-$err = do { local $@; eval { $vcs->commit('Should not appear') }; $@ };
+my $noop_res;
+$err = do { local $@; eval { $noop_res = $vcs->commit('Should not appear') }; $@ };
 is($err, '', 'commit with nothing staged: no error');
+is_deeply($noop_res, { committed => 0, revision => undef, warnings => [] },
+    'commit with nothing staged: returns committed => 0');
 
 my $log_after_noop = run_cmd(cmd => ['svn', 'log', "file://$output_dir-svnrepo"])->{stdout};
 is($log_before_noop, $log_after_noop, 'commit with nothing staged: no new commit');
@@ -175,15 +182,15 @@ like(join("\n", @$history), qr/Initial commit/,      'log_history: contains firs
 like(join("\n", @$history), qr/Modification commit/, 'log_history: contains second commit msg');
 
 ########################################################################
-# Revert
+# Revert (with leading 'r' revision string CORR-18)
 ########################################################################
 {
     my $orig_content = do { open(my $f, '<', $test_file) or die $!; local $/; <$f> };
 
-    $vcs->revert($test_file, 1);
+    $vcs->revert($test_file, 'r1');
 
     my $reverted = do { open(my $f, '<', $test_file) or die $!; local $/; <$f> };
-    like($reverted, qr/original/, 'revert: file content restored to revision 1');
+    like($reverted, qr/original/, 'revert: file content restored to revision r1 (CORR-18)');
 
     # Restore so subsequent tests (if any) don't see stale state
     open($fh, '>', $test_file) or die $!;
@@ -211,5 +218,87 @@ like($reverted_file2, qr/key = val/, 'revert on deleted file: content restored')
 
 # Note: SVN has no push_remote concept  --  svn commit IS push.
 # The repository URL used at checkout time is the effective remote.
+
+########################################################################
+# Revert: Recreate Missing Parent and Clean Mirror at HEAD (CORR-14)
+########################################################################
+{
+    my $sub_dir  = "$tracked_dir/svn_rev_dir";
+    mkdir $sub_dir or die $!;
+    my $sub_file = "$sub_dir/revert.conf";
+
+    open(my $rfh, '>', $sub_file) or die $!;
+    print {$rfh} "svn rev v1\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'SVN revert test v1');
+    my $c1 = $vcs->commit('SVN revert commit v1');
+    my $rev1 = $c1->{revision};
+
+    open($rfh, '>', $sub_file) or die $!;
+    print {$rfh} "svn rev v2\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'SVN revert test v2');
+    my $c2 = $vcs->commit('SVN revert commit v2');
+    my $rev2 = $c2->{revision};
+
+    # Delete the live file and its parent directory
+    unlink $sub_file or die $!;
+    rmdir $sub_dir   or die $!;
+    ok(!-d $sub_dir, 'svn revert: parent directory removed before revert');
+
+    # Revert to rev1
+    my $rev_err = do { local $@; eval { $vcs->revert($sub_file, $rev1) }; $@ };
+    is($rev_err, '', 'revert: succeeded without error with missing parent directory');
+    ok(-f $sub_file, 'revert: live file restored');
+
+    open(my $check_fh, '<', $sub_file) or die $!;
+    my $reverted_content = do { local $/; <$check_fh> };
+    close($check_fh);
+    is($reverted_content, "svn rev v1\n", 'revert: restored content matches v1');
+
+    # Subversion mirror working copy must remain clean at HEAD
+    my $st = $vcs->_run('svn', 'status', $vcs->output_path($sub_file));
+    is($st->{stdout}, '', 'revert: svn working copy remains clean at HEAD');
+
+    # is_dirty must be true because live file (v1) differs from HEAD (v2)
+    ok($vcs->is_dirty($sub_file), 'is_dirty: true after revert because live file differs from HEAD');
+}
+
+########################################################################
+# Metadata At Revision (FEAT-5)
+########################################################################
+{
+    my $meta_file = "$output_dir/.changetrack-metadata";
+    open(my $mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0644","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    $vcs->_run('svn', 'add', $meta_file);
+    my $m_c1 = $vcs->commit('Add metadata record 1');
+    my $m_rev1 = $m_c1->{revision};
+
+    open($mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0600","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    my $m_c2 = $vcs->commit('Update metadata record 2');
+    my $m_rev2 = $m_c2->{revision};
+
+    my $rec1 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev1);
+    is($rec1->{mode}, '0644', 'metadata_at_revision: retrieves mode from rev1');
+    is($rec1->{user}, 'tester', 'metadata_at_revision: retrieves user from rev1');
+
+    my $rec2 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev2);
+    is($rec2->{mode}, '0600', 'metadata_at_revision: retrieves updated mode from rev2');
+
+    is($vcs->metadata_at_revision('/etc/nonexistent', $m_rev1), undef,
+        'metadata_at_revision: returns undef for untracked path');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '999999'), undef,
+        'metadata_at_revision: returns undef for non-existent revision');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '-invalid'), undef,
+        'metadata_at_revision: rejects revision starting with hyphen');
+}
 
 done_testing();

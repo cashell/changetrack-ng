@@ -70,8 +70,10 @@ open(my $fh, '>', $test_file) or die "Cannot create: $!";
 print $fh "setting = original\n";
 close($fh);
 
-my $err = do { local $@; eval { $vcs->checkin($test_file, 'Initial checkin') }; $@ };
+my $rev1;
+my $err = do { local $@; eval { $rev1 = $vcs->checkin($test_file, 'Initial checkin') }; $@ };
 is($err, '', 'checkin new file: no error');
+is($rev1, '1.1', 'checkin: returns revision 1.1');
 
 # Verify ,v file was created
 my $op       = $vcs->output_path($test_file);
@@ -107,8 +109,10 @@ ok($vcs->is_dirty($test_file), 'is_dirty: remains true after non-mutating diff')
 ########################################################################
 # Checkin Modified File
 ########################################################################
-$err = do { local $@; eval { $vcs->checkin($test_file, 'Modification') }; $@ };
+my $rev2;
+$err = do { local $@; eval { $rev2 = $vcs->checkin($test_file, 'Modification') }; $@ };
 is($err, '', 'checkin modified file: no error');
+is($rev2, '1.2', 'checkin: returns revision 1.2');
 ok(!$vcs->is_dirty($test_file), 'is_dirty: false after second checkin');
 
 ########################################################################
@@ -146,5 +150,68 @@ close($fh);
 
 eval { $vcs->checkin($test_file, 'Third checkin') };
 is($@, '', 'checkin after revert: no error (lock not corrupted)');
+
+########################################################################
+# Metadata-Only Checkin Forces New Revision via -f (FEAT-5)
+########################################################################
+{
+    # File content unchanged, but chmod changes mode
+    chmod 0600, $test_file or die "chmod failed: $!";
+    my $rev_meta = $vcs->checkin($test_file, 'Metadata chmod only');
+    ok(defined $rev_meta && length $rev_meta, 'checkin with only metadata change produces new revision');
+    isnt($rev_meta, '1.3', 'new revision created for metadata-only change');
+
+    # Verify metadata_at_revision
+    my $meta_rec = $vcs->metadata_at_revision($test_file, $rev_meta);
+    ok(defined $meta_rec, 'metadata_at_revision: returns record');
+    is($meta_rec->{mode}, '0600', 'metadata_at_revision: recorded mode 0600');
+    is($meta_rec->{path}, $test_file, 'metadata_at_revision: records path');
+
+    is($vcs->metadata_at_revision($test_file, '99.99'), undef,
+        'metadata_at_revision: returns undef for non-existent revision');
+    is($vcs->metadata_at_revision($test_file, '-invalid'), undef,
+        'metadata_at_revision: rejects revision starting with hyphen');
+}
+
+########################################################################
+# Revert: Recreate Missing Parent and Leave Mirror Clean at HEAD (CORR-14)
+########################################################################
+{
+    my $sub_dir   = "$tracked_dir/rcs_revert_sub";
+    mkdir $sub_dir or die $!;
+    my $sub_file  = "$sub_dir/revert.conf";
+
+    open(my $sfh, '>', $sub_file) or die $!;
+    print {$sfh} "rcs revert v1\n";
+    close($sfh);
+
+    my $r1 = $vcs->checkin($sub_file, 'Subfile v1');
+    is($r1, '1.1', 'subfile checkin v1');
+
+    open($sfh, '>', $sub_file) or die $!;
+    print {$sfh} "rcs revert v2\n";
+    close($sfh);
+
+    my $r2 = $vcs->checkin($sub_file, 'Subfile v2');
+    is($r2, '1.2', 'subfile checkin v2');
+
+    # Delete live file and parent directory
+    unlink $sub_file or die $!;
+    rmdir $sub_dir   or die $!;
+    ok(!-d $sub_dir, 'rcs revert: parent directory removed before revert');
+
+    # Revert to r1
+    eval { $vcs->revert($sub_file, $r1) };
+    is($@, '', 'rcs revert: succeeds with missing parent directory');
+    ok(-f $sub_file, 'rcs revert: live file restored');
+
+    open(my $check_fh, '<', $sub_file) or die $!;
+    my $content = do { local $/; <$check_fh> };
+    close($check_fh);
+    is($content, "rcs revert v1\n", 'rcs revert: content restored to v1');
+
+    # VCS mirror remains at HEAD, so is_dirty must be true
+    ok($vcs->is_dirty($sub_file), 'is_dirty: true after revert because live file differs from RCS HEAD');
+}
 
 done_testing();

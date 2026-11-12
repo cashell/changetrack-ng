@@ -21,7 +21,8 @@ ChangeTrack::VCS::Fossil - Fossil VCS backend for changetrack-ng
 Implements the L<ChangeTrack::VCS::Base> interface using Fossil.  Tracked
 files are copied into a mirror tree under C<output_dir>, which is an open
 Fossil working directory.  Passes C<--force> during file additions to prevent
-interactive prompt blocking on ignore patterns.
+interactive prompt blocking on ignore patterns.  Reverting restores the
+live file while keeping the Fossil checkout clean at tip.
 
 =cut
 
@@ -30,6 +31,7 @@ use Carp qw(croak carp);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use File::Spec ();
+use File::Temp qw(tempfile);
 use ChangeTrack::Util qw(run_cmd sync_mirror_path restore_mirror_path);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -213,18 +215,21 @@ sub remove {
 # commit -- Commit all pending changes with $msg.
 # If the commit fails due to invalid UTF-8, retries after flagging the
 # offending file as binary in .fossil-settings/binary-glob.
+# Returns { committed => 0, revision => undef, warnings => [] } when no changes,
+# or { committed => 1, revision => $rev, warnings => \@warnings }.
 sub commit {
     my ($self, $msg) = @_;
     $msg //= 'changetrack-ng commit';
 
     # Skip if nothing pending.
     my $changes = $self->_run('fossil', 'changes', '--classify', '--hash');
-    return unless $changes->{stdout} =~ /\S/;
+    return { committed => 0, revision => undef, warnings => [] } unless $changes->{stdout} =~ /\S/;
 
     # --no-warnings suppresses interactive abandonment on encoding/CR-LF issues.
     my $r = $self->_run('fossil', 'commit', '--no-prompt', '--no-warnings', '-m', $msg);
-    return if $r->{stdout} =~ /nothing\s+(has\s+)?changed/i
-           || $r->{stderr} =~ /nothing\s+(has\s+)?changed/i;
+    return { committed => 0, revision => undef, warnings => [] }
+        if $r->{stdout} =~ /nothing\s+(has\s+)?changed/i
+        || $r->{stderr} =~ /nothing\s+(has\s+)?changed/i;
 
     if (!$r->{success}) {
         my $err_text = join("\n", grep { defined && length } ($r->{stderr}, $r->{stdout}));
@@ -234,8 +239,9 @@ sub commit {
             if ($self->_set_binary_glob_for_path($bad_path)) {
                 # Commit again; the settings file is now staged too.
                 my $retry = $self->_run('fossil', 'commit', '--no-prompt', '--no-warnings', '-m', $msg);
-                return if $retry->{stdout} =~ /nothing\s+(has\s+)?changed/i
-                       || $retry->{stderr} =~ /nothing\s+(has\s+)?changed/i;
+                return { committed => 0, revision => undef, warnings => [] }
+                    if $retry->{stdout} =~ /nothing\s+(has\s+)?changed/i
+                    || $retry->{stderr} =~ /nothing\s+(has\s+)?changed/i;
                 $r = $retry;
             } else {
                 carp "fossil binary-glob update failed for '$bad_path'";
@@ -245,15 +251,33 @@ sub commit {
 
     croak "fossil commit failed: $r->{stderr}" unless $r->{success};
 
-    my $push_remote = $self->{options}{push_remote};
-    return unless defined $push_remote;
-
-    my @remotes = ref($push_remote) eq 'ARRAY' ? @$push_remote : ($push_remote);
-    for my $remote (@remotes) {
-        my $url = $remote =~ m{^[a-z]+://} ? $remote : "file://$remote";
-        my $pr  = $self->_run('fossil', 'push', $url);
-        carp 'fossil push ' . ChangeTrack::Util::redact_secrets($remote) . ' failed: ' . ChangeTrack::Util::redact_secrets($pr->{stderr}) unless $pr->{success};
+    my $rev;
+    if ($r->{stdout} =~ /New_Version:\s*([0-9a-f]{10,64})/i) {
+        $rev = substr($1, 0, 12);
+    } else {
+        my $info = $self->_run('fossil', 'info');
+        if ($info->{stdout} =~ /checkout:\s+([0-9a-f]{10,64})/i) {
+            $rev = substr($1, 0, 12);
+        }
     }
+
+    my @push_warnings;
+    my $push_remote = $self->{options}{push_remote};
+    if (defined $push_remote) {
+        my @remotes = ref($push_remote) eq 'ARRAY' ? @$push_remote : ($push_remote);
+        for my $remote (@remotes) {
+            my $url = $remote =~ m{^[a-z]+://} ? $remote : "file://$remote";
+            my $pr  = $self->_run('fossil', 'push', $url);
+            unless ($pr->{success}) {
+                my $warn_msg = 'fossil push ' . ChangeTrack::Util::redact_secrets($remote) . ' failed: ' . ChangeTrack::Util::redact_secrets($pr->{stderr});
+                $warn_msg =~ s/\s+$//;
+                carp $warn_msg;
+                push @push_warnings, $warn_msg;
+            }
+        }
+    }
+
+    return { committed => 1, revision => $rev, warnings => \@push_warnings };
 }
 
 # diff -- Return unified diff lines for $real_path.
@@ -286,15 +310,37 @@ sub log_history {
     return [split /\n/, $r->{stdout}];
 }
 
-# revert -- Restore $real_path to revision $rev and copy back to live file.
+# revert -- Restore $real_path to revision $rev via fossil cat,
+# restoring to the live path while leaving the Fossil checkout clean at tip.
 sub revert {
     my ($self, $real_path, $rev) = @_;
     croak 'revert: revision required' unless defined $rev;
+    croak "unsafe revision: $rev" if $rev =~ /^-/;
+
     my $mirror = $self->output_path($real_path);
     my $rel    = $self->_rel_path($mirror);
-    my $r = $self->_run('fossil', 'revert', '-r', $rev, '--', $rel);
-    croak "fossil revert failed: $r->{stderr}" unless $r->{success};
-    restore_mirror_path($mirror, $real_path);
+    my $r = $self->_run('fossil', 'cat', $mirror, '-r', $rev);
+    croak "fossil cat failed: $r->{stderr}" unless $r->{success};
+
+    my ($tmp_fh, $tmp_file) = File::Temp::tempfile(CLEANUP => 1);
+    binmode($tmp_fh);
+    print {$tmp_fh} $r->{stdout};
+    close($tmp_fh);
+
+    restore_mirror_path($tmp_file, $real_path);
+}
+
+# metadata_at_revision -- Retrieve historical metadata record for $real_path
+# at $rev from .changetrack-metadata in Fossil history.
+sub metadata_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    return undef unless defined $rev && length $rev;
+    return undef if $rev =~ /^-/;
+
+    my $target = "$self->{output_dir}/.changetrack-metadata";
+    my $r = $self->_run('fossil', 'cat', $target, '-r', $rev);
+    return undef unless $r->{success};
+    return $self->_parse_metadata_jsonl($r->{stdout}, $real_path);
 }
 
 1;

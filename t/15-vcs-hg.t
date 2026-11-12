@@ -84,8 +84,12 @@ is_deeply($diff, ['(new file)'], 'diff: (new file) before first commit');
 ########################################################################
 # Commit
 ########################################################################
-$err = do { local $@; eval { $vcs->commit('Initial commit') }; $@ };
+my $commit_res;
+$err = do { local $@; eval { $commit_res = $vcs->commit('Initial commit') }; $@ };
 is($err, '', 'commit: no error');
+is($commit_res->{committed}, 1, 'commit: returns committed => 1');
+like($commit_res->{revision}, qr/^[0-9a-f]{10,64}$/, 'commit: returns revision hash');
+is_deeply($commit_res->{warnings}, [], 'commit: warnings empty');
 
 my $log_r = run_cmd(cmd => ['hg', '-R', $output_dir, 'log', '--template', '{desc}\n']);
 like($log_r->{stdout}, qr/Initial commit/, 'commit: appears in hg log');
@@ -166,8 +170,11 @@ like($log_desc->{stdout}, qr/Atomic batch commit/, 'atomic commit message in log
 ########################################################################
 my $tip_before = run_cmd(cmd => ['hg', '-R', $output_dir, 'tip', '--template', '{rev}'])->{stdout};
 
-$err = do { local $@; eval { $vcs->commit('Should not appear') }; $@ };
+my $noop_res;
+$err = do { local $@; eval { $noop_res = $vcs->commit('Should not appear') }; $@ };
 is($err, '', 'commit with nothing staged: no error');
+is_deeply($noop_res, { committed => 0, revision => undef, warnings => [] },
+    'commit with nothing staged: returns committed => 0');
 
 my $tip_after = run_cmd(cmd => ['hg', '-R', $output_dir, 'tip', '--template', '{rev}'])->{stdout};
 is($tip_before, $tip_after, 'commit with nothing staged: no new commit');
@@ -181,15 +188,19 @@ like(join("\n", @$history), qr/Initial commit/,      'log_history: contains firs
 like(join("\n", @$history), qr/Modification commit/, 'log_history: contains second commit msg');
 
 ########################################################################
-# Revert
+# Revert (with 'rev:node' changeset string CORR-18)
 ########################################################################
 {
     my $orig_content = do { open(my $f, '<', $test_file) or die $!; local $/; <$f> };
 
-    $vcs->revert($test_file, 0);
+    my $node_r = run_cmd(cmd => ['hg', '-R', $output_dir, 'log', '-r', '0', '--template', '{rev}:{node}']);
+    my $rev_node = $node_r->{stdout};
+    chomp $rev_node;
+
+    $vcs->revert($test_file, $rev_node);
 
     my $reverted = do { open(my $f, '<', $test_file) or die $!; local $/; <$f> };
-    like($reverted, qr/original/, 'revert: file content restored to revision 0');
+    like($reverted, qr/original/, 'revert: file content restored using rev:node format (CORR-18)');
 
     # Restore so subsequent tests (if any) don't see stale state
     open($fh, '>', $test_file) or die $!;
@@ -243,6 +254,111 @@ like($reverted_file2, qr/key = val/, 'revert on deleted file: content restored')
 
     my $remote_log = run_cmd(cmd => ['hg', '-R', $clone_dir, 'log', '--template', '{desc}\n']);
     like($remote_log->{stdout}, qr/Push test commit/, 'push_remote: commit visible in clone');
+}
+
+########################################################################
+# Revert: Recreate Missing Parent and Clean Mirror at Tip (CORR-14)
+########################################################################
+{
+    my $sub_dir  = "$tracked_dir/hg_rev_dir";
+    mkdir $sub_dir or die $!;
+    my $sub_file = "$sub_dir/revert.conf";
+
+    open(my $rfh, '>', $sub_file) or die $!;
+    print {$rfh} "hg rev v1\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'Mercurial revert test v1');
+    my $c1 = $vcs->commit('Mercurial revert commit v1');
+    my $rev1 = $c1->{revision};
+
+    open($rfh, '>', $sub_file) or die $!;
+    print {$rfh} "hg rev v2\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'Mercurial revert test v2');
+    my $c2 = $vcs->commit('Mercurial revert commit v2');
+    my $rev2 = $c2->{revision};
+
+    # Delete the live file and its parent directory
+    unlink $sub_file or die $!;
+    rmdir $sub_dir   or die $!;
+    ok(!-d $sub_dir, 'hg revert: parent directory removed before revert');
+
+    # Revert to rev1
+    my $rev_err = do { local $@; eval { $vcs->revert($sub_file, $rev1) }; $@ };
+    is($rev_err, '', 'revert: succeeded without error with missing parent directory');
+    ok(-f $sub_file, 'revert: live file restored');
+
+    open(my $check_fh, '<', $sub_file) or die $!;
+    my $reverted_content = do { local $/; <$check_fh> };
+    close($check_fh);
+    is($reverted_content, "hg rev v1\n", 'revert: restored content matches v1');
+
+    # Mercurial mirror working copy for file must remain clean at tip
+    my $st = $vcs->_hg('status', $vcs->output_path($sub_file));
+    is($st->{stdout}, '', 'revert: hg working copy for file remains clean at tip');
+
+    # is_dirty must be true because live file (v1) differs from tip (v2)
+    ok($vcs->is_dirty($sub_file), 'is_dirty: true after revert because live file differs from tip');
+}
+
+########################################################################
+# Metadata At Revision (FEAT-5)
+########################################################################
+{
+    my $meta_file = "$output_dir/.changetrack-metadata";
+    open(my $mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0644","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    $vcs->_hg('add', $meta_file);
+    my $m_c1 = $vcs->commit('Add metadata record 1');
+    my $m_rev1 = $m_c1->{revision};
+
+    open($mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0600","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    my $m_c2 = $vcs->commit('Update metadata record 2');
+    my $m_rev2 = $m_c2->{revision};
+
+    my $rec1 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev1);
+    is($rec1->{mode}, '0644', 'metadata_at_revision: retrieves mode from rev1');
+    is($rec1->{user}, 'tester', 'metadata_at_revision: retrieves user from rev1');
+
+    my $rec2 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev2);
+    is($rec2->{mode}, '0600', 'metadata_at_revision: retrieves updated mode from rev2');
+
+    is($vcs->metadata_at_revision('/etc/nonexistent', $m_rev1), undef,
+        'metadata_at_revision: returns undef for untracked path');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '000000000000'), undef,
+        'metadata_at_revision: returns undef for non-existent revision');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '-invalid'), undef,
+        'metadata_at_revision: rejects revision starting with hyphen');
+}
+
+########################################################################
+# Push_Remote: Failure Populates Warnings (NOTIFY-4)
+########################################################################
+{
+    my $bad_remote_vcs = ChangeTrack::VCS::Mercurial->new(
+        output_dir => $output_dir,
+        options    => { push_remote => '/nonexistent/path/cannot/exist' },
+    );
+
+    my $warn_file = "$tracked_dir/warn_test.conf";
+    open(my $wfh, '>', $warn_file) or die $!;
+    print {$wfh} "warn test content\n";
+    close($wfh);
+
+    $bad_remote_vcs->checkin($warn_file, 'Push warn test');
+    my $res;
+    my $warn_err = do { local $@; eval { $res = $bad_remote_vcs->commit('Push warn commit') }; $@ };
+    is($warn_err, '', 'commit succeeds despite push_remote failure');
+    is($res->{committed}, 1, 'commit reported committed => 1');
+    ok(@{ $res->{warnings} } > 0, 'push warnings captured in returned hashref');
+    like($res->{warnings}[0], qr/hg push.*failed/i, 'warning string details push failure');
 }
 
 DONE:
