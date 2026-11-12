@@ -116,6 +116,8 @@ my $cfg_path = write_config([$file1]);
     my $c = $report->changes->[0];
     ok($c->{meta_change}, 'perm change: meta_change populated');
     like($c->{meta_change}, qr/mode/, 'perm change: meta mentions mode');
+    ok(defined $c->{revision}, 'perm change: per-change revision populated for RCS checkin');
+    like($c->{revision}, qr/^[0-9.]+$/, 'perm change: revision format matches RCS revision');
 }
 
 ########################################################################
@@ -267,6 +269,39 @@ my $cfg_path = write_config([$file1]);
     ok(defined $c->{file_meta},           'file_meta: key present on change record');
     ok(defined $c->{file_meta}{mode},     'file_meta.mode: populated by runner');
     ok(defined $c->{file_meta}{mtime},    'file_meta.mtime: populated by runner');
+}
+
+########################################################################
+# Revert_Path Restores Historical Metadata (RCS)
+########################################################################
+{
+    my $output_rev  = tempdir(CLEANUP => 1);
+    my $tracked_rev = tempdir(CLEANUP => 1);
+    my $test_f      = "$tracked_rev/rev_perm.conf";
+    open(my $tfh, '>', $test_f) or die $!;
+    print {$tfh} "perm test\n";
+    close($tfh);
+    chmod(0640, $test_f);
+
+    my ($cfh, $cpath) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = rcs\noutput_dir = $output_rev\n\n[track]\n$test_f\n";
+    close($cfh);
+
+    my $runner1 = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
+    my $rep1 = $runner1->run;
+    my $rev1 = $rep1->changes->[0]{revision};
+    ok(defined $rev1, 'RCS revert test: initial revision captured');
+
+    # Change permission 0640 -> 0600 and commit
+    chmod(0600, $test_f);
+    my $runner2 = ChangeTrack::Runner->new(config => $cpath, quiet => 1);
+    my $rep2 = $runner2->run;
+    my $rev2 = $rep2->changes->[0]{revision};
+    is((stat($test_f))[2] & 07777, 0600, 'RCS revert test: mode changed to 0600');
+
+    # Revert to rev1
+    $runner2->revert_path($test_f, $rev1);
+    is((stat($test_f))[2] & 07777, 0640, 'RCS revert_path: historical 0640 mode restored');
 }
 
 done_testing();

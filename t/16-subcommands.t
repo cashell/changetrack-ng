@@ -171,7 +171,7 @@ close($fh);
     like($reverted, qr/red/, 'revert_path: file content restored to HEAD~1');
 
     my $after_mode = (stat($test_file))[2] & 07777;
-    is($after_mode, $before_mode, 'revert_path: preserves existing mode on target file');
+    is($after_mode, 0644, 'revert_path: restores historical mode from target revision');
 }
 
 ########################################################################

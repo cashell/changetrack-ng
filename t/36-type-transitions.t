@@ -262,4 +262,108 @@ SKIP: {
         'run 2: diff contains deleted line removals');
 }
 
+########################################################################
+# Test 5: Revert from Symlink to Regular File (Restores Mode, Not 0777)
+#         and Symlink-to-Symlink Revert Emits Zero Warnings (CORR-14)
+########################################################################
+SKIP: {
+    my $can_symlink = eval { symlink('', ''); 1 };
+    skip 'symlink creation not available on this platform/user', 6 unless $can_symlink;
+
+    my $work_dir   = tempdir(CLEANUP => 1);
+    my $output_dir = tempdir(CLEANUP => 1);
+    my $path       = "$work_dir/sym_trans.conf";
+    my $target1    = "$work_dir/target1.txt";
+    my $target2    = "$work_dir/target2.txt";
+
+    open(my $tfh1, '>', $target1) or die $!; print {$tfh1} "t1\n"; close($tfh1);
+    open(my $tfh2, '>', $target2) or die $!; print {$tfh2} "t2\n"; close($tfh2);
+
+    # Rev 1: Regular file with mode 0640
+    open(my $fh, '>', $path) or die $!;
+    print {$fh} "regular file content\n";
+    close($fh);
+    chmod(0640, $path) or die $!;
+
+    my ($cfh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $output_dir\n\n[track]\n$path\n";
+    close($cfh);
+
+    my $r1 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep1 = $r1->run;
+    my $rev1 = $rep1->{revision};
+    ok(defined $rev1, 'revert symlink transition: rev1 committed');
+
+    # Rev 2: Symlink to target1
+    unlink($path) or die $!;
+    symlink($target1, $path) or die $!;
+    my $r2 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep2 = $r2->run;
+    my $rev2 = $rep2->{revision};
+    ok(defined $rev2, 'revert symlink transition: rev2 (symlink 1) committed');
+
+    # Rev 3: Symlink to target2
+    unlink($path) or die $!;
+    symlink($target2, $path) or die $!;
+    my $r3 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep3 = $r3->run;
+    my $rev3 = $rep3->{revision};
+    ok(defined $rev3, 'revert symlink transition: rev3 (symlink 2) committed');
+
+    # Revert rev3 -> rev2: symlink to symlink revert should emit zero warnings (CORR-14)
+    my @warnings;
+    {
+        local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+        $r3->revert_path($path, $rev2);
+    }
+    is(readlink($path), $target1, 'revert symlink->symlink: target restored to target1');
+    is(scalar(grep { /not a regular file/ } @warnings), 0,
+        'revert symlink->symlink: zero "not a regular file" warnings emitted (CORR-14)');
+
+    # Revert rev2 -> rev1: symlink to regular file should restore historical 0640 (never 0777)
+    $r3->revert_path($path, $rev1);
+    ok(-f $path && !-l $path, 'revert symlink->file: restored as regular file');
+    my $mode = (stat($path))[2] & 07777;
+    is($mode, 0640, 'revert symlink->file: restored historical 0640 permissions (never 0777)');
+}
+
+########################################################################
+# Test 6: Revert on Deleted File and Parent Dir Restores Mode 0644 (Not 0600)
+########################################################################
+{
+    my $work_dir   = tempdir(CLEANUP => 1);
+    my $output_dir = tempdir(CLEANUP => 1);
+    my $sub_dir    = "$work_dir/sub/nested";
+    File::Path::make_path($sub_dir, { mode => 0755 });
+    my $file       = "$sub_dir/deleted_test.conf";
+
+    open(my $fh, '>', $file) or die $!;
+    print {$fh} "original content\n";
+    close($fh);
+    chmod(0644, $file) or die $!;
+
+    my ($cfh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $output_dir\n\n[track]\n$file\n";
+    close($cfh);
+
+    my $r1 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    my $rep1 = $r1->run;
+    my $rev1 = $rep1->{revision};
+    ok(defined $rev1, 'revert deleted: rev1 committed');
+
+    # Delete the file and its parent directory
+    unlink($file) or die $!;
+    File::Path::remove_tree("$work_dir/sub");
+    ok(!-e $file, 'revert deleted: file unlinked on disk');
+    ok(!-d "$work_dir/sub", 'revert deleted: parent dir removed on disk');
+
+    # Revert to rev1
+    my $r2 = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1);
+    $r2->revert_path($file, $rev1);
+
+    ok(-f $file, 'revert deleted: file restored on disk');
+    my $mode = (stat($file))[2] & 07777;
+    is($mode, 0644, 'revert deleted: restored historical 0644 permissions (not 0600 from umask)');
+}
+
 done_testing();

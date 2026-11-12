@@ -233,6 +233,11 @@ sub run {
     my $vcs_class = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
     eval "require $vcs_class; 1" or croak "Cannot load $vcs_class: $@";
+    {
+        no warnings 'redefine';
+        no strict 'refs';
+        *{"${vcs_class}::sync_mirror_path"} = \&ChangeTrack::Util::sync_mirror_path;
+    }
 
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
@@ -321,22 +326,71 @@ sub run {
         }
     }
 
-    # Batch commit for whole-repo VCS
-    if (!$self->{dry_run} && $vcs->model eq 'whole-repo' && $report->has_changes) {
-        my $change_count = scalar @{ $report->changes };
-        $self->_verbose("Committing $change_count changes to $vcs_name");
-        eval { $vcs->commit($commit_msg) };
-        croak "VCS commit failed: $@" if $@;
+    # Batch commit for whole-repo VCS and metadata sidecar saving
+    if (!$self->{dry_run}) {
+        if ($vcs->model eq 'whole-repo') {
+            if ($report->has_changes || $md->is_dirty) {
+                my $change_count = scalar @{ $report->changes };
+                $self->_verbose("Committing $change_count changes to $vcs_name");
+
+                # 1. Back up existing $meta_path bytes in memory so if $vcs->commit fails,
+                # $meta_path can be restored on disk (CORR-6 invariant).
+                my $prev_meta_bytes = -f $meta_path ? do {
+                    open my $fh, '<', $meta_path;
+                    local $/;
+                    <$fh>
+                } : undef;
+
+                # 2. Save $md->save($meta_path) before $vcs->commit($commit_msg)
+                # (whenever $md->is_dirty || !-f $meta_path)
+                if ($md->is_dirty || !-f $meta_path) {
+                    $self->_verbose("Saving metadata sidecar: $meta_path");
+                    eval { $md->save($meta_path); 1 }
+                        or croak "metadata save failed: $@";
+                }
+
+                # 3. Stage .changetrack-metadata into VCS repository
+                $vcs->add('/.changetrack-metadata');
+
+                # 4. Commit to VCS
+                my $commit_res = eval { $vcs->commit($commit_msg) };
+
+                # 5. Handle commit failure: restore $meta_path and croak
+                if ($@) {
+                    my $err = $@;
+                    if (defined $prev_meta_bytes) {
+                        open my $fh, '>', $meta_path;
+                        print {$fh} $prev_meta_bytes;
+                        close $fh;
+                    } else {
+                        unlink $meta_path;
+                    }
+                    croak "VCS commit failed: $err";
+                }
+
+                # 6. Process commit result
+                if (ref($commit_res) eq 'HASH') {
+                    $report->set_revision($commit_res->{revision})
+                        if defined $commit_res->{revision};
+                    for my $w (@{ $commit_res->{warnings} // [] }) {
+                        $self->_warn($w);
+                        $report->add_warning($w);
+                    }
+                }
+            } elsif ($self->{verbose}) {
+                $self->_verbose("No changes to commit");
+            }
+        } else {
+            # per-file (RCS)
+            $vcs->commit($commit_msg);
+            if ($md->is_dirty) {
+                $self->_verbose("Saving metadata sidecar: $meta_path");
+                eval { $md->save($meta_path); 1 }
+                    or croak "metadata save failed (aborting after commit): $@";
+            }
+        }
     } elsif ($self->{verbose} && !$report->has_changes) {
         $self->_verbose("No changes to commit");
-    }
-
-    # Save metadata after VCS commit so that if the commit fails, the on-disk
-    # metadata sidecar is not advanced (preventing permanent loss of changes).
-    if (!$self->{dry_run} && $md->is_dirty) {
-        $self->_verbose("Saving metadata sidecar: $meta_path");
-        eval { $md->save($meta_path); 1 }
-            or croak "metadata save failed (aborting after commit): $@";
     }
 
     $report->set_end_time(time());
@@ -454,11 +508,18 @@ sub _process_file {
         # Empty files have no content to diff unless transitioning from a non-empty file.
         if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st, $self->{max_file_size})) {
             my $meta_summary = $md->diff_summary($real_path, \@st, $self->{max_file_size});
-            my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             my $diff_lines = (defined $existing && defined $prev_type && $prev_type eq 'file')
                 ? $vcs->diff($real_path)
                 : [];
-            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    $rev = $vcs->checkin($real_path, "$commit_msg ($meta_summary)");
+                } else {
+                    my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+                    $vcs->checkin($real_path, $msg);
+                }
+            }
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 $mode_oct);
             $report->add_change(
@@ -469,10 +530,18 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing || !$prev_vcs_eligible) {
-            $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    $rev = $vcs->checkin($real_path, $commit_msg);
+                } else {
+                    $vcs->checkin($real_path, $commit_msg);
+                }
+            }
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 $mode_oct);
             my $trans_meta = (defined $existing && !$prev_vcs_eligible)
@@ -486,6 +555,7 @@ sub _process_file {
                 meta_change  => $trans_meta,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
             $self->_info("New: $real_path");
@@ -508,7 +578,14 @@ sub _process_file {
 
     if (!defined $existing || !$prev_vcs_eligible) {
         # New file / symlink or transitioned from non-trackable
-        $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
+        my $rev;
+        unless ($self->{dry_run}) {
+            if ($vcs->model eq 'per-file') {
+                $rev = $vcs->checkin($real_path, $commit_msg);
+            } else {
+                $vcs->checkin($real_path, $commit_msg);
+            }
+        }
         my $trans_meta = (defined $existing && !$prev_vcs_eligible)
             ? "transition from $prev_type to $type"
             : '';
@@ -520,6 +597,7 @@ sub _process_file {
             meta_change  => $trans_meta,
             recipients   => $recipients,
             stat         => $rec,
+            (defined $rev ? (revision => $rev) : ()),
         );
         $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
         $self->_info("New: $real_path");
@@ -535,8 +613,18 @@ sub _process_file {
         my $content_changed = @$diff_lines > 0;
 
         if ($meta_changed || $content_changed) {
-            my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
-            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    my $ci_msg = (!$content_changed && $meta_changed)
+                        ? "$commit_msg ($meta_summary)"
+                        : (defined $meta_summary && length $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg);
+                    $rev = $vcs->checkin($real_path, $ci_msg);
+                } else {
+                    my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+                    $vcs->checkin($real_path, $msg);
+                }
+            }
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -545,6 +633,7 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("Changed: $real_path"
                 . ($meta_summary ? " (meta: $meta_summary)" : ''));
@@ -1143,7 +1232,9 @@ sub _default_lock_path {
     # a bare, world-writable /tmp path (predictable name -> symlink/DoS prone);
     # use a per-UID name only as a last resort.
     for my $dir ($ENV{XDG_RUNTIME_DIR}, $ENV{XDG_CACHE_HOME}) {
-        return "$dir/changetrack-ng.lock" if defined($dir) && $dir =~ /\S/;
+        next unless defined($dir) && $dir =~ /\S/;
+        next unless -d $dir || eval { make_path($dir, { mode => 0700 }); 1 };
+        return "$dir/changetrack-ng.lock";
     }
 
     my $home = $ENV{HOME};
@@ -1188,6 +1279,11 @@ sub _setup {
     my $vcs_class  = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
     eval "require $vcs_class; 1" or croak "Cannot load $vcs_class: $@";
+    {
+        no warnings 'redefine';
+        no strict 'refs';
+        *{"${vcs_class}::sync_mirror_path"} = \&ChangeTrack::Util::sync_mirror_path;
+    }
 
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
@@ -1406,7 +1502,7 @@ sub _is_non_diffable {
 }
 
 # revert_path -- Revert $path to $rev via the VCS under the run lock,
-# preserving original file mode and ownership after the VCS restore.
+# restoring historical mode and ownership after the VCS restore.
 sub revert_path {
     my ($self, $path, $rev) = @_;
     my ($vcs, $cfg) = $self->_setup;
@@ -1416,52 +1512,86 @@ sub revert_path {
     $lock->acquire
         or croak "Another changetrack-ng run holds the lock ($lock->{path}); retry shortly";
 
-    my $pre = _snapshot_existing_file($path);
-    $vcs->revert($path, $rev);
-    _restore_file_metadata($self, $path, $pre) if $pre;
+    my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+    my $md        = $self->_load_metadata($cfg);
+    my $curr_meta = $md ? $md->record_for($path) : undef;
+    my $pre       = $self->_snapshot_existing_file($path);
+
+    my $target_meta = (defined $hist_meta && keys %$hist_meta)
+        ? $hist_meta
+        : (defined $curr_meta && keys %$curr_meta)
+            ? $curr_meta
+            : ($pre && !$pre->{is_symlink})
+                ? $pre
+                : undef;
+
+    eval {
+        $vcs->revert($path, $rev);
+        $self->_restore_file_metadata($path, $target_meta);
+    };
+    my $err = $@;
     $lock->release;
+    croak $err if $err;
 }
 
 # _snapshot_existing_file -- Capture the current mode/uid/gid of $path
 # before a VCS revert so ownership can be restored afterwards.
 sub _snapshot_existing_file {
-    my ($path) = @_;
+    my $path = @_ > 1 ? $_[1] : $_[0];
     return undef unless defined $path && (-e $path || -l $path);
 
     my @st = lstat($path);
     return undef unless @st;
 
     return {
-        mode => $st[2] & 07777,
-        uid  => $st[4] + 0,
-        gid  => $st[5] + 0,
+        mode       => $st[2] & 07777,
+        uid        => $st[4] + 0,
+        gid        => $st[5] + 0,
         is_symlink => (-l $path ? 1 : 0),
     };
 }
 
-# _restore_file_metadata -- Re-apply pre-revert mode and ownership to $path.
+# _restore_file_metadata -- Re-apply historical or target mode and ownership to $path.
 # chown is only attempted when running as root (uid 0).  The target is
 # re-checked immediately before chmod/chown: mode/ownership restore applies
 # only to a regular file, so if the path now resolves to a symlink or a
-# non-regular file (a swap between revert and restore) it is skipped rather
-# than risk operating on the wrong target.
+# non-regular file it is skipped rather than risk operating on the wrong target.
 sub _restore_file_metadata {
-    my ($self, $path, $pre) = @_;
-    return unless defined $pre;
+    my ($self, $path, $target_meta) = @_;
+    if (@_ == 2 && !ref($_[0])) {
+        ($self, $path, $target_meta) = (undef, @_);
+    }
 
-    my @cur = lstat($path);
-    return unless @cur;
-    if (-l _ || !-f _) {
-        $self->_warn("revert metadata restore skipped (not a regular file): $path");
+    my @st = lstat($path);
+    # Return immediately without warning if !@st or -l _ (CORR-14)
+    return if !@st || -l _;
+
+    # If !-f _: emit warning and return
+    if (!-f _) {
+        $self->_warn("revert metadata restore skipped (not a regular file): $path") if $self;
         return;
     }
 
-    chmod($pre->{mode}, $path)
-        or $self->_warn("revert metadata restore failed (chmod $path): $!");
+    # Determine $mode:
+    my $mode;
+    if (defined $target_meta && defined $target_meta->{mode}
+        && !$target_meta->{is_symlink}
+        && (($target_meta->{type} // '') ne 'symlink')) {
+        if ($target_meta->{mode} =~ /^0[0-7]+$/) {
+            $mode = oct($target_meta->{mode});
+        } else {
+            $mode = $target_meta->{mode} & 07777;
+        }
+    } else {
+        $mode = 0644;
+    }
 
-    if ($> == 0) {
-        chown($pre->{uid}, $pre->{gid}, $path)
-                or $self->_warn("revert metadata restore failed (chown $path): $!");
+    chmod($mode, $path)
+        or ($self && $self->_warn("revert metadata restore failed (chmod $path): $!"));
+
+    if ($> == 0 && defined $target_meta && defined $target_meta->{uid} && defined $target_meta->{gid}) {
+        chown($target_meta->{uid}, $target_meta->{gid}, $path)
+            or ($self && $self->_warn("revert metadata restore failed (chown $path): $!"));
     }
 }
 
