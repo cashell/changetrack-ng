@@ -224,10 +224,18 @@ use_ok('ChangeTrack::VCS::RCS');
     my @removed_entries = grep { $_->{is_removed} } @{ $rep->changes };
     is(scalar @removed_entries, 1, 'nested dir: secret file deletion detected');
     is_deeply(
-        $removed_entries[0]{recipients},
-        ['secops@example.com'],
-        'deleted file inherits options from more specific nested directory',
+        [ sort @{ $removed_entries[0]{recipients} } ],
+        [ 'general@example.com', 'secops@example.com' ],
+        'deleted file unions recipients across enclosing directories',
     );
+
+    # Verify sensitive option from most specific directory is preserved during reconciliation
+    my $cfg_loaded = ChangeTrack::Config->load($cfg_path);
+    my $md_pre = ChangeTrack::Metadata->new();
+    $md_pre->{records}{$secret_file} = { path => $secret_file, type => 'file' };
+    my ($resolved) = grep { $_->{path} eq $secret_file }
+        $runner2->_build_file_list($cfg_loaded->tracks, [], [], $md_pre);
+    is($resolved->{sensitive}, 'yes', 'deleted file inherits sensitive=yes from most specific nested directory');
 }
 
 ########################################################################
@@ -282,6 +290,45 @@ use_ok('ChangeTrack::VCS::RCS');
 
     my $tree = run_cmd(cmd => ['git', '-C', $output_dir, 'ls-tree', '-r', '--name-only', 'HEAD']);
     unlike($tree->{stdout}, qr/retry\.conf/, 'retry.conf removed from Git HEAD on retry');
+}
+
+########################################################################
+# Test 6: Nested Directory Recipient Union on Deletion (NOTIFY-4)
+########################################################################
+{
+    my $work_dir   = tempdir(CLEANUP => 1);
+    my $output_dir = tempdir(CLEANUP => 1);
+    chmod 0700, $output_dir;
+    my $parent_dir = "$work_dir/parent";
+    my $child_dir  = "$work_dir/parent/sub";
+    make_path($child_dir);
+
+    my $test_file = "$child_dir/nested.conf";
+    open(my $fh, '>', $test_file) or die $!;
+    print {$fh} "nested config data\n";
+    close($fh);
+
+    my ($cfh, $cfg_path) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $output_dir\n\n[track]\n";
+    print {$cfh} "DIRECTORY $parent_dir : a\@example.com\n";
+    print {$cfh} "DIRECTORY $child_dir : b\@example.com\n";
+    close($cfh);
+    chmod 0600, $cfg_path;
+
+    ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->run;
+
+    # Delete test_file
+    unlink($test_file) or die $!;
+
+    my $rep = ChangeTrack::Runner->new(config => $cfg_path, quiet => 1)->run;
+    my @removed = grep { $_->{is_removed} } @{ $rep->changes };
+    is(scalar @removed, 1, 'nested dir: file deletion detected');
+    is($removed[0]{path}, $test_file, 'nested dir: removed path matches test file');
+    is_deeply(
+        [ sort @{ $removed[0]{recipients} } ],
+        [ 'a@example.com', 'b@example.com' ],
+        'nested dir: deletion unions recipients from both parent and child directories',
+    );
 }
 
 done_testing();

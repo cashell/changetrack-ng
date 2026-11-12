@@ -226,6 +226,9 @@ sub run {
     # Global sensitivity auto-detection toggle (default: enabled)
     $self->{sensitive_auto} = _bool_or_default($cfg->global('sensitive_auto'), 1);
 
+    # Maximum file size threshold for content tracking (default: 10MB)
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
+
     # Instantiate VCS backend
     my $vcs_class = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
@@ -251,7 +254,7 @@ sub run {
 
     # Load metadata sidecar
     my $meta_path = "$output_dir/.changetrack-metadata";
-    my $md = ChangeTrack::Metadata->load($meta_path);
+    my $md = ChangeTrack::Metadata->load($meta_path, max_file_size => $self->{max_file_size});
     $self->_debug("Metadata sidecar: $meta_path (" . scalar(keys %{ $md->{records} }) . " entries loaded)");
     $self->_debug("Hostname resolved: " . hostname());
     $self->_debug("Lock path: $lock->{path} (running as uid=$>)");
@@ -260,6 +263,9 @@ sub run {
     if ($self->{debug}) {
         for my $key (sort keys %{ $cfg->{global} }) {
             $self->_debug("config: $key = " . _redacted_config_value($key, $cfg->{global}{$key}));
+        }
+        if (my $ign = $cfg->ignore) {
+            $self->_debug("config: ignore = " . join(' ', @$ign)) if @$ign;
         }
         my $notifiers = $cfg->notifiers;
         for my $type (sort keys %$notifiers) {
@@ -274,16 +280,9 @@ sub run {
     }
 
     # Build combined ignore list
-    my @user_ignore = @{ $cfg->global('ignore') // [] };
+    my @user_ignore = @{ $cfg->ignore // [] };
     my @ignore_pats = (@BUILTIN_IGNORE, @user_ignore);
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
-
-    # Build file list from track entries
-    $self->_verbose("Building file list...");
-    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md);
-    my $track_count  = scalar @{ $cfg->tracks };
-    my $ignore_count = scalar @user_ignore;
-    $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
 
     # Commit message
     my $ts         = strftime('%Y-%m-%dT%H:%M:%S', localtime($start_time));
@@ -295,6 +294,13 @@ sub run {
         vcs        => $vcs_name,
         message    => ($self->{message} || $commit_msg),
     );
+
+    # Build file list from track entries
+    $self->_verbose("Building file list...");
+    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md, $report);
+    my $track_count  = scalar @{ $cfg->tracks };
+    my $ignore_count = scalar @user_ignore;
+    $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
 
     # Enforce private permissions (0700 dirs, 0600 files) on output_dir and siblings
     $self->_enforce_output_permissions($output_dir, $report);
@@ -327,7 +333,8 @@ sub run {
 
     # Save metadata after VCS commit so that if the commit fails, the on-disk
     # metadata sidecar is not advanced (preventing permanent loss of changes).
-    unless ($self->{dry_run}) {
+    if (!$self->{dry_run} && $md->is_dirty) {
+        $self->_verbose("Saving metadata sidecar: $meta_path");
         eval { $md->save($meta_path); 1 }
             or croak "metadata save failed (aborting after commit): $@";
     }
@@ -415,24 +422,28 @@ sub _process_file {
     # Fast path: if metadata is unchanged, skip without touching VCS.
     # For known files where mtime+size (or symlink target) haven't changed,
     # there is nothing to process regardless of type.
-    if (defined $existing && $md->can_skip_content_diff($real_path, \@st)
-        && !$md->changed_since_load($real_path, \@st)) {
+    if (defined $existing && $md->can_skip_content_diff($real_path, \@st, $self->{max_file_size})
+        && !$md->changed_since_load($real_path, \@st, $self->{max_file_size})) {
         # Refresh the record (preserves the type as-is).
-        $md->update_from_stat($real_path, \@st);
+        $md->update_from_stat($real_path, \@st, $self->{max_file_size});
         $self->_trace("$real_path: skipped (mtime+size unchanged)");
         return;
     }
 
     # Classify the file (stat it once, determine type)
-    $md->update_from_stat($real_path, \@st);
+    my $meta_changed = defined($existing) && $md->changed_since_load($real_path, \@st, $self->{max_file_size});
+    my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st, $self->{max_file_size}) : '';
+
+    $md->update_from_stat($real_path, \@st, $self->{max_file_size});
     my $rec  = $md->record_for($real_path);
     my $type = $rec->{type};
 
-    # Non-trackable types: special, unreadable, binary, empty
-    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary') {
+    # Non-trackable types: special, unreadable, binary, oversize
+    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary' || $type eq 'oversize') {
         $self->_handle_non_trackable(
             $real_path, $type, $prev_type, $prev_vcs_eligible,
-            $rec, $recipients, $vcs, $md, $report
+            $rec, $recipients, $vcs, $md, $report,
+            $entry, $meta_changed, $meta_summary, $existing, \@st
         );
         return;
     }
@@ -441,8 +452,8 @@ sub _process_file {
 
     if ($type eq 'empty') {
         # Empty files have no content to diff unless transitioning from a non-empty file.
-        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st)) {
-            my $meta_summary = $md->diff_summary($real_path, \@st);
+        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st, $self->{max_file_size})) {
+            my $meta_summary = $md->diff_summary($real_path, \@st, $self->{max_file_size});
             my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
             my $diff_lines = (defined $existing && defined $prev_type && $prev_type eq 'file')
                 ? $vcs->diff($real_path)
@@ -514,12 +525,12 @@ sub _process_file {
         $self->_info("New: $real_path");
     } else {
         # Existing file / symlink  --  check for changes
-        my $meta_changed = $md->changed_since_load($real_path, \@st);
-        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st) : '';
+        my $meta_changed = $md->changed_since_load($real_path, \@st, $self->{max_file_size});
+        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st, $self->{max_file_size}) : '';
 
         # Symlinks: content is the target, already captured by changed_since_load.
         # Regular files: diff only if mtime+size moved.
-        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st);
+        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st, $self->{max_file_size});
         my $diff_lines = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
 
@@ -543,14 +554,15 @@ sub _process_file {
     }
 }
 
-# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary).
+# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary, oversize).
 # Inputs: $real_path, $type, $prev_type, $prev_vcs_eligible, $rec, $recipients,
-#         $vcs, $md, $report
+#         $vcs, $md, $report, $entry, $meta_changed, $meta_summary, $existing, $st_ref
 # Handles trace logging, VCS removal staging on transitions from trackable types,
 # change report recording, and skip warnings for non-trackable file types.
 sub _handle_non_trackable {
     my ($self, $real_path, $type, $prev_type, $prev_vcs_eligible,
-        $rec, $recipients, $vcs, $md, $report) = @_;
+        $rec, $recipients, $vcs, $md, $report,
+        $entry, $meta_changed, $meta_summary, $existing, $st_ref) = @_;
 
     $self->_trace("$real_path: classified as $type, metadata only");
 
@@ -565,37 +577,73 @@ sub _handle_non_trackable {
                 return;
             }
         }
+        my $diff_msg = ($type eq 'oversize')
+            ? [ "(file became oversize (" . ($rec->{size} // 0) . " bytes); removed from VCS tracking)" ]
+            : [];
         $report->add_change(
             path         => $real_path,
             is_new       => 0,
             is_removed   => 1,
             is_sensitive => 0,
-            diff         => [],
+            diff         => $diff_msg,
             meta_change  => "transition from $prev_type to $type (removed from VCS)",
+            meta_changed => "transition from $prev_type to $type (removed from VCS)",
             recipients   => $recipients,
             stat         => $rec,
         );
         $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
         $self->_info("Removed from VCS (became $type): $real_path");
-    } else {
-        if ($type eq 'special') {
-            if (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
-                if ($self->{warn_special_files}) {
-                    $self->_warn("skipping special file (FIFO/socket/device): $real_path");
-                }
-                $report->add_warning("Skipping special file: $real_path");
+        if ($type eq 'oversize') {
+            my $size = $rec->{size} // (-s $real_path) // 0;
+            my $warn_msg = "skipping oversize file ($size bytes > max_file_size $self->{max_file_size}): $real_path";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg);
+        }
+        return;
+    }
+
+    # Already non-trackable file: report metadata changes if any (CORR-17)
+    if (defined $existing && $meta_changed) {
+        my $st_mode = defined($st_ref) ? $st_ref->[2] : undef;
+        my $mode_oct = defined($rec->{mode}) ? oct($rec->{mode}) : (defined($st_mode) ? ($st_mode & 07777) : 0644);
+        my $is_sensitive = _resolve_sensitive($real_path, $entry ? $entry->{sensitive} : undef, $self->{sensitive_auto}, $mode_oct);
+        $report->add_change(
+            path         => $real_path,
+            diff         => [ "(metadata changed: $meta_summary)" ],
+            meta_change  => $meta_summary,
+            meta_changed => $meta_summary,
+            sensitive    => $is_sensitive,
+            is_sensitive => $is_sensitive,
+            recipients   => ($entry && $entry->{recipients}) ? $entry->{recipients} : ($recipients // []),
+            stat         => $rec,
+        );
+        $self->_debug("Changed (non-trackable meta): $real_path ($meta_summary)");
+    }
+
+    if ($type eq 'special') {
+        if (!($prev_type eq 'special' && !$meta_changed)) {
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping special file (FIFO/socket/device): $real_path");
             }
-        } elsif ($type eq 'unreadable') {
-            if (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
-                $report->add_warning("Skipping unreadable: $real_path");
+            $report->add_warning("Skipping special file: $real_path");
+        }
+    } elsif ($type eq 'unreadable') {
+        if (!($prev_type eq 'unreadable' && !$meta_changed)) {
+            $report->add_warning("Skipping unreadable: $real_path");
+        }
+    } elsif ($type eq 'binary') {
+        if ($prev_type ne 'binary') {
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping binary file: $real_path");
             }
-        } elsif ($type eq 'binary') {
-            if ($prev_type ne 'binary') {
-                if ($self->{warn_special_files}) {
-                    $self->_warn("skipping binary file: $real_path");
-                }
-                $report->add_warning("Skipping binary file: $real_path");
-            }
+            $report->add_warning("Skipping binary file: $real_path");
+        }
+    } elsif ($type eq 'oversize') {
+        if ($prev_type ne 'oversize') {
+            my $size = $rec->{size} // (-s $real_path) // 0;
+            my $warn_msg = "skipping oversize file ($size bytes > max_file_size $self->{max_file_size}): $real_path";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg);
         }
     }
 
@@ -668,22 +716,31 @@ sub _merge_file_entry {
 # { path, sensitive, recipients } hashrefs, applying ignore and exclude
 # patterns.  Directory entries are expanded recursively via File::Find.
 # When $md is provided, reconciles deleted files from tracked directories.
+# When $report is provided, records warnings directly to the report.
 sub _build_file_list {
-    my ($self, $tracks, $ignore_pats, $exclude_paths, $md) = @_;
+    my ($self, $tracks, $ignore_pats, $exclude_paths, $md, $report) = @_;
     my %by_path;
     $exclude_paths ||= [];
 
     my %dir_opts;
 
     for my $track (@$tracks) {
+        my $kind          = $track->{kind};
+        my $p             = $track->{path};
         my $opt_sensitive = $track->{options}{sensitive};
 
         my $recips = $track->{emails} && ref($track->{emails}) eq 'ARRAY'
             ? [ @{ $track->{emails} } ]
             : [];
 
-        if ($track->{kind} eq 'file') {
-            my $p = $track->{path};
+        if ($kind eq 'file' && -d $p && !-l $p) {
+            my $warn_msg = "[track] entry '$p' is a directory; treating as 'DIRECTORY $p'";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg) if $report;
+            $kind = 'directory';
+        }
+
+        if ($kind eq 'file') {
             if (_is_foreign_vcs_path($p)) {
                 $self->_trace("$p: skipped (foreign VCS path)");
                 next;
@@ -698,8 +755,8 @@ sub _build_file_list {
             }
             _merge_file_entry(\%by_path, $p, $opt_sensitive, $recips, 1);
 
-        } elsif ($track->{kind} eq 'directory') {
-            my $dir = $track->{path};
+        } elsif ($kind eq 'directory') {
+            my $dir = $p;
             if (!$dir_opts{$dir}) {
                 $dir_opts{$dir} = {
                     sensitive  => $opt_sensitive,
@@ -728,6 +785,10 @@ sub _build_file_list {
                 $self->_trace("$dir: pruned (foreign VCS dir)");
                 next;
             }
+            if (_should_ignore($dir, basename($dir), $ignore_pats)) {
+                $self->_trace("$dir: pruned (ignored directory)");
+                next;
+            }
 
             find({
                 wanted => sub {
@@ -736,6 +797,12 @@ sub _build_file_list {
                         if ($FOREIGN_VCS_DIRS{ basename($p) } || _is_excluded_path($p, $exclude_paths)) {
                             $self->_trace("$p: pruned (foreign VCS dir or internal path)");
                             $File::Find::prune = 1;
+                            return;
+                        }
+                        if (_should_ignore($p, basename($p), $ignore_pats)) {
+                            $self->_trace("$p: pruned (ignored directory)");
+                            $File::Find::prune = 1;
+                            return;
                         }
                         return;
                     }
@@ -760,6 +827,14 @@ sub _build_file_list {
         }
     }
 
+    # Post-filter so [ignore] always overrides [track]
+    for my $p (keys %by_path) {
+        if (_should_ignore($p, basename($p), $ignore_pats)) {
+            $self->_trace("$p: ignored by pattern (post-filter)");
+            delete $by_path{$p};
+        }
+    }
+
     # Reconcile deleted files from tracked directories using metadata
     if ($md && $md->{records}) {
         for my $stored_path (sort keys %{ $md->{records} }) {
@@ -767,28 +842,41 @@ sub _build_file_list {
                 $md->mark_removed($stored_path);
                 next;
             }
+            if (_should_ignore($stored_path, basename($stored_path), $ignore_pats)) {
+                $md->mark_removed($stored_path);
+                next;
+            }
             next if $by_path{$stored_path};
             next if -e $stored_path || -l $stored_path;
 
             # Check if stored path falls under an actively tracked directory
-            my $matched_dir;
-            for my $dir (sort { length($b) <=> length($a) } keys %dir_opts) {
-                my $prefix = $dir =~ m{/$} ? $dir : "$dir/";
-                if (index($stored_path, $prefix) == 0) {
-                    $matched_dir = $dir;
-                    last;
+            my @matching_dirs = grep {
+                my $prefix = $_ =~ m{/$} ? $_ : "$_/";
+                index($stored_path, $prefix) == 0;
+            } sort { length($b) <=> length($a) } keys %dir_opts;
+
+            next unless @matching_dirs;
+
+            # Skip if the path matches exclude patterns
+            next if _is_excluded_path($stored_path, $exclude_paths);
+
+            # Most specific (longest prefix) directory determines sensitive override
+            my $sensitive_override = $dir_opts{ $matching_dirs[0] }{sensitive};
+
+            # Collect and union recipients across all enclosing tracked directories
+            my %seen_recips;
+            my @all_recips;
+            for my $dir (@matching_dirs) {
+                for my $r (@{ $dir_opts{$dir}{recipients} || [] }) {
+                    next unless defined $r && length $r;
+                    push @all_recips, $r unless $seen_recips{$r}++;
                 }
             }
-            next unless $matched_dir;
-
-            # Skip if the path matches ignore or exclude patterns
-            next if _should_ignore($stored_path, basename($stored_path), $ignore_pats);
-            next if _is_excluded_path($stored_path, $exclude_paths);
 
             $by_path{$stored_path} = {
                 path       => $stored_path,
-                sensitive  => $dir_opts{$matched_dir}{sensitive},
-                recipients => [ @{ $dir_opts{$matched_dir}{recipients} || [] } ],
+                sensitive  => $sensitive_override,
+                recipients => \@all_recips,
             };
         }
     }
@@ -865,48 +953,122 @@ sub _should_ignore {
     }
     my $norm_full_path = $full_path;
     $norm_full_path =~ s{\\}{/}g;
+    $base = basename($norm_full_path) unless defined $base;
     for my $spec (@$compiled_patterns) {
         if ($spec->{path}) {
             return 1 if $norm_full_path =~ $spec->{re};
         } else {
-            return 1 if $base =~ $spec->{re};
+            return 1 if (defined $spec->{seg_re} && $norm_full_path =~ $spec->{seg_re})
+                     || ($base =~ $spec->{re});
         }
     }
     return 0;
 }
 
 # _compile_ignore_patterns -- Convert a list of glob strings to an
-# arrayref of { path => bool, re => qr// } hashrefs.
-# Path-containing patterns (with /) match as a path suffix;
-# plain patterns match only the filename.
+# arrayref of { path => bool, re => qr//, seg_re => qr// } hashrefs.
+# Path-containing patterns (with /) match directory prefixes/suffixes or full paths;
+# plain patterns match only the filename or individual path segments.
 sub _compile_ignore_patterns {
     my ($patterns) = @_;
     my @compiled;
     for my $pat (@$patterns) {
-        next unless defined $pat && $pat ne '';
+        next unless defined $pat;
+        $pat =~ s{/+$}{};
+        next if $pat eq '';
         if ($pat =~ m{/}) {
             my $re = _glob_to_re($pat);
-            push @compiled, { path => 1, re => qr{(?:^|/)${re}$} };
+            push @compiled, { path => 1, re => qr{(?:^|/)${re}(?:/|$)} };
         } else {
             my $re = _glob_to_re($pat);
-            push @compiled, { path => 0, re => qr/^${re}$/ };
+            push @compiled, {
+                path   => 0,
+                re     => qr/^${re}$/,
+                seg_re => qr{(?:^|/)${re}(?:/|$)},
+            };
         }
     }
     return \@compiled;
 }
 
-
-# _glob_to_re -- Convert a simple glob pattern to a regex fragment.
-# Handles *, ?, and escapes regex metacharacters.  Does not support ** or [].
+# _glob_to_re -- Convert a glob pattern to a regex fragment.
+# Handles **, /**/, *, ?, [...], and escapes regex metacharacters.
 sub _glob_to_re {
     my ($glob) = @_;
+    return '' unless defined $glob;
+
     my $re = '';
-    for my $ch (split //, $glob) {
-        if    ($ch eq '*') { $re .= '[^/]*' }
-        elsif ($ch eq '?') { $re .= '[^/]'  }
-        elsif ($ch eq '.') { $re .= '\.'    }
-        elsif ($ch =~ /[\[\]{}()+^\$|\\]/) { $re .= "\\$ch" }
-        else               { $re .= $ch     }
+    my $len = length($glob);
+    my $i = 0;
+
+    while ($i < $len) {
+        # Check for '/**/'
+        if (substr($glob, $i, 4) eq '/**/') {
+            $re .= '(?:/|/.*/)';
+            $i += 4;
+            next;
+        }
+
+        # Check for '**'
+        if (substr($glob, $i, 2) eq '**') {
+            $re .= '.*';
+            $i += 2;
+            next;
+        }
+
+        my $ch = substr($glob, $i, 1);
+
+        if ($ch eq '*') {
+            $re .= '[^/]*';
+            $i++;
+        } elsif ($ch eq '?') {
+            $re .= '[^/]';
+            $i++;
+        } elsif ($ch eq '.') {
+            $re .= '\.';
+            $i++;
+        } elsif ($ch eq '[') {
+            # Character class parsing (DEBT-5):
+            # scan for closing ']'
+            # handling leading '!' or '^' as negation '[^...]' and disallowing '/' inside the class
+            # if unclosed '[', escape as '\['
+            my $j = $i + 1;
+            my $neg = '';
+            if ($j < $len && (substr($glob, $j, 1) eq '!' || substr($glob, $j, 1) eq '^')) {
+                $neg = '^';
+                $j++;
+            }
+            my $found_close = 0;
+            my $class_start = $j;
+            while ($j < $len) {
+                my $c = substr($glob, $j, 1);
+                if ($c eq '/') {
+                    # / is not allowed inside a character class
+                    last;
+                }
+                if ($c eq ']') {
+                    if ($j > $class_start) {
+                        $found_close = 1;
+                    }
+                    last;
+                }
+                $j++;
+            }
+            if ($found_close) {
+                my $body = substr($glob, $class_start, $j - $class_start);
+                $re .= '[' . $neg . $body . ']';
+                $i = $j + 1;
+            } else {
+                $re .= '\[';
+                $i++;
+            }
+        } elsif ($ch =~ /[\[\]{}()+^\$|\\]/) {
+            $re .= "\\$ch";
+            $i++;
+        } else {
+            $re .= $ch;
+            $i++;
+        }
     }
     return $re;
 }
@@ -1056,7 +1218,7 @@ sub init_vcs {
 # applying ignore and exclude patterns.  Returns an arrayref.
 sub _tracked_entries {
     my ($self, $cfg, $md) = @_;
-    my @user_ignore = @{ $cfg->global('ignore') // [] };
+    my @user_ignore = @{ $cfg->ignore // [] };
     my @ignore_pats = ($self->builtin_ignore_patterns, @user_ignore);
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
     return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md)];
@@ -1080,8 +1242,27 @@ sub _build_notifiers {
             $self->_warn("cannot load $nclass: $@");
             next;
         };
-        for my $inst (@{ $all_notifiers->{$type} }) {
-            push @objects, $nclass->new(%$inst, sensitive_notify => $sensitive_notify);
+        my @instances = @{ $all_notifiers->{$type} // [] };
+        if ($type eq 'email') {
+            my $primary_idx = 0;
+            for my $i (0 .. $#instances) {
+                if (($instances[$i]{instance_name} // '') eq 'default') {
+                    $primary_idx = $i;
+                    last;
+                }
+            }
+            for my $i (0 .. $#instances) {
+                my $inst = $instances[$i];
+                my %extra = (sensitive_notify => $sensitive_notify);
+                if (@instances > 1) {
+                    $extra{use_track_recipients} = ($i == $primary_idx) ? 1 : 0;
+                }
+                push @objects, $nclass->new(%$inst, %extra);
+            }
+        } else {
+            for my $inst (@instances) {
+                push @objects, $nclass->new(%$inst, sensitive_notify => $sensitive_notify);
+            }
         }
     }
 
@@ -1092,6 +1273,7 @@ sub _build_notifiers {
 sub status {
     my ($self) = @_;
     my ($vcs, $cfg) = $self->_setup;
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
     my $md      = $self->_load_metadata($cfg);
     my $entries = $self->_tracked_entries($cfg, $md);
 
@@ -1105,15 +1287,15 @@ sub status {
             next;
         }
         next if $self->_is_non_diffable($path, $md);
-        my $meta_changed = defined($md->record_for($path)) && $md->changed_since_load($path);
+        my $meta_changed = defined($md->record_for($path)) && $md->changed_since_load($path, undef, $self->{max_file_size});
         next if defined $md->record_for($path)
-             && $md->can_skip_content_diff($path)
+             && $md->can_skip_content_diff($path, undef, $self->{max_file_size})
              && !$meta_changed;
         my $diff = eval { $vcs->diff($path) };
         croak "status: diff failed for $path: $@" if $@;
         $diff //= [];
         if (!@$diff && $meta_changed) {
-            $diff = ['(meta: ' . $md->diff_summary($path) . ')'];
+            $diff = ['(meta: ' . $md->diff_summary($path, undef, $self->{max_file_size}) . ')'];
         }
         push @results, { path => $path, diff => $diff } if @$diff;
     }
@@ -1125,6 +1307,7 @@ sub status {
 sub diff_path {
     my ($self, $path) = @_;
     my ($vcs, $cfg) = $self->_setup;
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
     my $md          = $self->_load_metadata($cfg);
 
     if (defined $path) {
@@ -1135,8 +1318,8 @@ sub diff_path {
             return { $path => [] };
         }
         if (defined $md->record_for($path)
-            && $md->can_skip_content_diff($path)
-            && !$md->changed_since_load($path)) {
+            && $md->can_skip_content_diff($path, undef, $self->{max_file_size})
+            && !$md->changed_since_load($path, undef, $self->{max_file_size})) {
             return { $path => [] };
         }
         return { $path => $vcs->diff($path) };
@@ -1152,10 +1335,10 @@ sub diff_path {
             }
             next;
         }
-        next if _is_non_diffable($ep);
+        next if $self->_is_non_diffable($ep, $md);
         next if defined $md->record_for($ep)
-             && $md->can_skip_content_diff($ep)
-             && !$md->changed_since_load($ep);
+             && $md->can_skip_content_diff($ep, undef, $self->{max_file_size})
+             && !$md->changed_since_load($ep, undef, $self->{max_file_size});
         my $diff = eval { $vcs->diff($ep) };
         croak "diff failed for $ep: $@" if $@;
         $diff //= [];
@@ -1179,7 +1362,7 @@ sub log_path {
     for my $entry (@$entries) {
         my $ep = $entry->{path};
         next unless -e $ep || -l $ep;
-        next if _is_non_diffable($ep);
+        next if $self->_is_non_diffable($ep);
         next unless -e $vcs->output_path($ep);
         my $log = eval { $vcs->log_history($ep) };
         croak "log failed for $ep: $@" if $@;
@@ -1193,19 +1376,32 @@ sub log_path {
 sub _load_metadata {
     my ($self, $cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
-    return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
+    my $max_size   = $self->{max_file_size} // $cfg->global('max_file_size') // (10 * 1024 * 1024);
+    return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata", max_file_size => $max_size);
 }
 
 # _is_non_diffable -- Return true for file types that cannot produce meaningful diffs.
-# (binary, special, unreadable).  Symlinks are always diffable (target is text).
+# (binary, special, unreadable, oversize).  Symlinks are always diffable (target is text).
 # Empty files (0 bytes) are considered diffable so truncations show deleted content.
 sub _is_non_diffable {
-    my $path = @_ > 1 && (ref($_[0]) || $_[0] eq __PACKAGE__) ? $_[1] : $_[0];
+    my $self = (ref($_[0]) || $_[0] eq __PACKAGE__) ? shift : undef;
+    my ($path, $md) = @_;
     return 1 unless defined $path;
     return 0 if -l $path;          # symlinks are always diffable (target is text)
     return 1 unless -f $path;      # special files
     return 1 unless -r $path;      # unreadable
     return 0 if -z $path;          # empty files are diffable (truncations show deleted content)
+    if (defined $md && $md->can('record_for')) {
+        my $rec = $md->record_for($path);
+        if ($rec && defined $rec->{type}) {
+            return 1 if $rec->{type} eq 'oversize' || $rec->{type} eq 'binary' || $rec->{type} eq 'special' || $rec->{type} eq 'unreadable';
+        }
+    }
+    my $max_size = $self ? $self->{max_file_size} : undef;
+    if (defined $max_size && $max_size > 0) {
+        my @s = stat($path);
+        return 1 if @s && $s[7] > $max_size;
+    }
     return (-B $path) ? 1 : 0;     # binary
 }
 
