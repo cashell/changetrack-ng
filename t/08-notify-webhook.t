@@ -443,4 +443,61 @@ sub make_report {
     like($p->{files}[0]{diff}, qr/old_hash/, 'sensitive_notify=allow: diff content included');
 }
 
+########################################################################
+# Payload Revision Fields: Top-Level And Per-File
+########################################################################
+{
+    my $n = ChangeTrack::Notify::Webhook->new(url => 'http://127.0.0.1:9999/');
+
+    # 1. Report with whole-run revision
+    my $r1 = ChangeTrack::Report->new(start_time => 1000000000);
+    $r1->add_change(path => '/etc/hosts', diff => ['+test']);
+    $r1->set_revision('sha-abcdef123');
+    my $p1 = $n->_build_payload($r1, 0);
+
+    is($p1->{revision}, 'sha-abcdef123',            'top-level revision present in payload');
+    is($p1->{files}[0]{revision}, 'sha-abcdef123', 'per-file revision matches backfilled revision');
+
+    # 2. Report with per-file revision and no whole-run revision (e.g. RCS)
+    my $r2 = ChangeTrack::Report->new(start_time => 1000000000);
+    $r2->add_change(path => '/etc/rcs-file', diff => [], revision => '1.4');
+    my $p2 = $n->_build_payload($r2, 0);
+
+    ok(!exists $p2->{revision},          'top-level revision omitted when unset on report');
+    is($p2->{files}[0]{revision}, '1.4', 'per-file revision present when set on change');
+
+    # 3. Report with no revisions at all
+    my $r3 = ChangeTrack::Report->new(start_time => 1000000000);
+    $r3->add_change(path => '/etc/plain', diff => []);
+    my $p3 = $n->_build_payload($r3, 0);
+
+    ok(!exists $p3->{revision},          'top-level revision omitted when none');
+    ok(!exists $p3->{files}[0]{revision}, 'per-file revision omitted when undef');
+}
+
+########################################################################
+# End-To-End HTTP POST With Revision Payload
+########################################################################
+{
+    my $body_file = File::Spec->catfile($tmpdir, 'revision-e2e.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $body_file);
+
+    my $n = ChangeTrack::Notify::Webhook->new(
+        url => "http://127.0.0.1:$port/",
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000, vcs => 'git');
+    $report->add_change(path => '/etc/conf.d/net', diff => ['+ip=1.2.3.4']);
+    $report->set_revision('v1.2.3-commit');
+    $report->set_end_time(1000000002);
+
+    $n->send($report);
+    waitpid($pid, 0);
+
+    my $p = read_payload($body_file);
+    ok(defined $p,                               'e2e HTTP payload received');
+    is($p->{revision}, 'v1.2.3-commit',          'e2e HTTP payload contains top-level revision');
+    is($p->{files}[0]{revision}, 'v1.2.3-commit', 'e2e HTTP payload file entry contains revision');
+}
+
 done_testing();

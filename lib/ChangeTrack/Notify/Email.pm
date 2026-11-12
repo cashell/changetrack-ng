@@ -23,8 +23,9 @@ C<sendmail -oi -t>.  Per-file recipient lists are taken from the C<[track]>
 section by default.  When C<use_track_recipients> is set to false (0),
 per-track recipients are ignored and notifications are delivered only to
 the instance's configured C<to> list, preventing duplicate emails when
-multiple email notifier instances are defined.  Heartbeat is always
-disabled (anti-spam).
+multiple email notifier instances are defined.  When revision information is
+recorded in the report or on individual changes, it is included in the email
+message header and file change blocks.  Heartbeat is always disabled (anti-spam).
 
 =cut
 
@@ -104,16 +105,29 @@ sub send_changes {
 
     for my $recipient (sort keys %by_recipient) {
         my $changes = $by_recipient{$recipient};
-        my $body    = $self->_format_body($changes, $host, $date);
+        my $body    = $self->_format_body($changes, $host, $date, $report);
         $self->_send_one($sendmail, $recipient, $host, $date, $body);
     }
 }
 
 # _format_body -- Build the plain-text email body from a list of change entries.
 sub _format_body {
-    my ($self, $changes, $host, $date) = @_;
+    my ($self, $changes, $host, $date, $report_or_rev) = @_;
+
+    my $revision;
+    if (ref($report_or_rev) && eval { $report_or_rev->can('revision') }) {
+        $revision = $report_or_rev->revision;
+    } elsif (ref($report_or_rev) eq 'HASH') {
+        $revision = $report_or_rev->{revision};
+    } elsif (defined $report_or_rev && !ref($report_or_rev)) {
+        $revision = $report_or_rev;
+    }
+
     my @lines;
     push @lines, "changetrack-ng detected changes on $host at $date";
+    if (defined $revision && length $revision) {
+        push @lines, "Revision: $revision";
+    }
     push @lines, '';
 
     for my $c (@$changes) {
@@ -121,6 +135,11 @@ sub _format_body {
                   : $c->{is_new}     ? 'NEW'
                   :                    'CHANGED';
         push @lines, "$label: $c->{path}";
+
+        if (defined $c->{revision} && length $c->{revision}
+            && (!defined $revision || $c->{revision} ne $revision)) {
+            push @lines, "  Revision: $c->{revision}";
+        }
 
         if ($c->{meta_change}) {
             push @lines, "  Metadata: $c->{meta_change}";

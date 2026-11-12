@@ -400,4 +400,82 @@ use_ok('ChangeTrack::Test::MockSendmail');
     }
 }
 
+########################################################################
+# Revision Surfacing: Report Revision In Email Header
+########################################################################
+{
+    my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+    my $n = ChangeTrack::Notify::Email->new(
+        sendmail_path => $script,
+        from          => 'ct@testhost',
+        to            => ['admin@example.com'],
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(
+        path         => '/etc/hosts',
+        is_new       => 0,
+        is_sensitive => 0,
+        diff         => ['+192.168.1.1 server'],
+    );
+    $report->set_revision('deadbeef1234');
+    $n->send($report);
+
+    my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+    ok(defined $cap, 'email capture readable with report revision');
+    like($cap->{body}, qr/^Revision:\s*deadbeef1234$/m, 'email body header contains Revision: deadbeef1234');
+    unlike($cap->{body}, qr/CHANGED:.*deadbeef/,        'per-file line does not redundantly repeat revision');
+
+    unlink $script, $capture;
+}
+
+########################################################################
+# Revision Surfacing: Per-File Revision In Email Block
+########################################################################
+{
+    my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+    my $n = ChangeTrack::Notify::Email->new(
+        sendmail_path => $script,
+        from          => 'ct@testhost',
+        to            => ['admin@example.com'],
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(
+        path         => '/etc/rcs-file',
+        is_new       => 0,
+        is_sensitive => 0,
+        diff         => ['+change line'],
+        revision     => '1.2',
+    );
+    $n->send($report);
+
+    my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+    ok(defined $cap, 'email capture readable with per-file revision');
+    unlike($cap->{body}, qr/^changetrack-ng detected.*\nRevision:/s, 'email body has no top-level revision header');
+    like($cap->{body},   qr/^\s*Revision:\s*1\.2$/m,                'email body per-file block contains Revision: 1.2');
+
+    unlink $script, $capture;
+}
+
+########################################################################
+# Direct _format_body Backward Compatibility
+########################################################################
+{
+    my $n = ChangeTrack::Notify::Email->new;
+    my $changes = [
+        { path => '/etc/test', is_new => 0, is_removed => 0, is_sensitive => 0, diff => [] },
+    ];
+
+    # 3-arg call (legacy test compatibility)
+    my $body3 = $n->_format_body($changes, 'myhost', '2026-11-12T00:00:00');
+    unlike($body3, qr/Revision:/, '3-arg _format_body omits Revision line');
+
+    # 4-arg call with scalar revision
+    my $body4 = $n->_format_body($changes, 'myhost', '2026-11-12T00:00:00', 'git-sha-789');
+    like($body4, qr/^Revision:\s*git-sha-789$/m, '4-arg _format_body includes Revision: git-sha-789');
+}
+
 done_testing();

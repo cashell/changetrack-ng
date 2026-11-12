@@ -19,7 +19,9 @@ ChangeTrack::Notify::OTLP - OpenTelemetry (OTLP/HTTP) notifier for changetrack-n
 =head1 DESCRIPTION
 
 Exports one OTLP log record per changed file to an OTLP/HTTP endpoint via
-C<HTTP::Tiny>.  Features: optional gzip compression, environment-variable
+C<HTTP::Tiny>.  Each record includes standard and changetrack-ng attributes
+(including C<vcs.revision> and C<config_change.revision> when available).
+Features: optional gzip compression, environment-variable
 endpoint/header precedence (C<OTEL_EXPORTER_OTLP_ENDPOINT>,
 C<OTEL_EXPORTER_OTLP_LOGS_ENDPOINT>), 3-attempt exponential retry backoff,
 and heartbeat enabled by default.
@@ -131,7 +133,7 @@ sub _build_payload {
     } else {
         my ($chg_num, $chg_text) = $self->_severity_cfg('severity_change', 'INFO');
         for my $c (@{ $report->changes }) {
-            my $ev = $self->_build_change_event($c, $report->{start_time} // time());
+            my $ev = $self->_build_change_event($c, $report, $report->{start_time} // time());
             my $occurred_nano = sprintf('%d000000000', $ev->{occurred_unix});
 
             my %ev_attrs = %{ $ev->{attributes} };

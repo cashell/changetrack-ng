@@ -247,4 +247,86 @@ use ChangeTrack::Report;
     ok(!defined $c->{file_meta}{mode},  'file_meta.mode undef without stat');
 }
 
+########################################################################
+# Revision Handling: Construction, Accessor, And Per-Change Defaults
+########################################################################
+{
+    my $r = ChangeTrack::Report->new(revision => 'rev-init-123');
+    is($r->revision, 'rev-init-123', 'revision accessor returns constructor value');
+
+    $r->add_change(path => '/etc/hosts', diff => []);
+    my $c = $r->changes->[0];
+    is($c->{revision}, 'rev-init-123', 'add_change inherits report revision when already set');
+
+    $r->add_change(path => '/etc/rcs-file', diff => [], revision => '1.5');
+    my $c2 = $r->changes->[1];
+    is($c2->{revision}, '1.5', 'explicit per-change revision overrides report default');
+
+    $r->add_removed('/etc/vanished', revision => '1.6');
+    my $c3 = $r->changes->[2];
+    is($c3->{revision}, '1.6', 'add_removed respects explicit per-change revision');
+}
+
+########################################################################
+# Revision Handling: Set_Revision And Backfilling
+########################################################################
+{
+    my $r = ChangeTrack::Report->new;
+    is($r->revision, undef, 'revision undef on default construction');
+
+    # Add change with no revision (e.g. Git pre-commit)
+    $r->add_change(path => '/etc/nginx/nginx.conf', diff => []);
+    is($r->changes->[0]{revision}, undef, 'change revision undef before commit');
+
+    # Add change with explicit per-file revision (e.g. RCS immediate ci -l)
+    $r->add_change(path => '/etc/rcs-tracked', diff => [], revision => '1.2');
+    is($r->changes->[1]{revision}, '1.2', 'per-file RCS revision preserved');
+
+    # Add removal with no revision
+    $r->add_removed(path => '/etc/old.conf');
+    is($r->changes->[2]{revision}, undef, 'removal revision undef before commit');
+
+    # Commit completes, backfilling whole-run revision
+    my $ret = $r->set_revision('commit-sha-456');
+    is($r->revision, 'commit-sha-456', 'set_revision updates report revision');
+    is($ret, $r, 'set_revision returns self for chaining');
+
+    is($r->changes->[0]{revision}, 'commit-sha-456', 'unassigned change backfilled with run revision');
+    is($r->changes->[1]{revision}, '1.2',            'pre-existing RCS revision preserved on backfill');
+    is($r->changes->[2]{revision}, 'commit-sha-456', 'unassigned removal backfilled with run revision');
+}
+
+########################################################################
+# To_Text With Revision Output
+########################################################################
+{
+    my $r = ChangeTrack::Report->new(vcs => 'git', revision => 'abcdef0123');
+    $r->add_change(path => '/etc/hosts', diff => ['+127.0.0.1 test']);
+    $r->increment_tracked;
+
+    my $text = $r->to_text;
+    like($text, qr/^VCS: git$/m,              'to_text includes VCS line');
+    like($text, qr/^Revision: abcdef0123$/m,  'to_text includes Revision line in header');
+    unlike($text, qr/\(rev abcdef0123\)/,     'to_text omits redundant per-file revision when matching report');
+
+    # RCS scenario: report has no whole-run revision, but file has per-file revision
+    my $rcs = ChangeTrack::Report->new(vcs => 'rcs');
+    $rcs->add_change(path => '/etc/resolv.conf', diff => ['+nameserver 8.8.8.8'], revision => '1.3');
+    $rcs->increment_tracked;
+
+    my $rcs_text = $rcs->to_text;
+    like($rcs_text, qr/^VCS: rcs$/m,                                'RCS to_text includes VCS line');
+    unlike($rcs_text, qr/^Revision:/m,                              'RCS to_text has no top-level Revision header');
+    like($rcs_text, qr|CHANGED\s+/etc/resolv\.conf\s+\(rev 1\.3\)|, 'RCS to_text displays per-file (rev 1.3)');
+
+    # Mixed scenario: report has global revision, but file has different per-file revision
+    my $mixed = ChangeTrack::Report->new(revision => 'global-rev');
+    $mixed->add_change(path => '/etc/override', diff => [], revision => 'file-rev-9.9');
+    $mixed->increment_tracked;
+
+    my $mixed_text = $mixed->to_text;
+    like($mixed_text, qr/^Revision: global-rev$/m,                     'mixed to_text includes global revision');
+    like($mixed_text, qr|CHANGED\s+/etc/override\s+\(rev file-rev-9\.9\)|, 'mixed to_text displays differing per-file revision');
+}
+
 done_testing;

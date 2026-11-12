@@ -302,4 +302,51 @@ sub last_record { my @r = all_records(@_); return $r[-1]; }
     is($ov->{severity_text},   'WARN', 'file change override severity_text WARN');
 }
 
+########################################################################
+# VCS Revision Attributes (File Notifier)
+########################################################################
+{
+    my $log = "$dir/revision.log";
+    my $n   = ChangeTrack::Notify::File->new(path => $log);
+
+    # 1. Report-level revision backfilled to modified and removed events
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(path => '/etc/hosts', is_new => 0, diff => ['+line']);
+    $report->add_change(path => '/etc/rcs-file', is_new => 0, diff => [], revision => '1.7');
+    $report->add_removed(path => '/etc/old-config');
+    $report->set_revision('commit-rev-abcdef');
+    $report->set_end_time(1000000001);
+
+    $n->send($report);
+
+    my @recs = all_records($log);
+    is(scalar @recs, 3, 'three records written');
+
+    # First record: modified file with report revision
+    is($recs[0]{attributes}{'vcs.revision'},           'commit-rev-abcdef', 'recs[0] vcs.revision matches report revision');
+    is($recs[0]{attributes}{'config_change.revision'}, 'commit-rev-abcdef', 'recs[0] config_change.revision matches report revision');
+
+    # Second record: per-file revision preserved
+    is($recs[1]{attributes}{'vcs.revision'},           '1.7', 'recs[1] vcs.revision matches per-file revision');
+    is($recs[1]{attributes}{'config_change.revision'}, '1.7', 'recs[1] config_change.revision matches per-file revision');
+
+    # Third record: removed file with report revision
+    is($recs[2]{attributes}{'vcs.revision'},           'commit-rev-abcdef', 'recs[2] removed file vcs.revision matches report revision');
+    is($recs[2]{attributes}{'config_change.revision'}, 'commit-rev-abcdef', 'recs[2] removed file config_change.revision matches report revision');
+
+    # 2. Created file with no revision set (attributes must be omitted)
+    my $log_norev = "$dir/no_revision.log";
+    my $n_norev   = ChangeTrack::Notify::File->new(path => $log_norev);
+
+    my $r_norev = ChangeTrack::Report->new(start_time => 1000000000);
+    $r_norev->add_change(path => '/etc/new-file', is_new => 1, diff => ['(new)']);
+    $r_norev->set_end_time(1000000001);
+
+    $n_norev->send($r_norev);
+
+    my $rec_norev = last_record($log_norev);
+    ok(!exists $rec_norev->{attributes}{'vcs.revision'},           'vcs.revision omitted when undef');
+    ok(!exists $rec_norev->{attributes}{'config_change.revision'}, 'config_change.revision omitted when undef');
+}
+
 done_testing();

@@ -40,7 +40,13 @@ commit step.
 
 Append a change record.  Accepts a flat key-value list.  Recognized keys:
 C<path>, C<is_new>, C<is_sensitive>, C<diff>, C<meta_change>, C<recipients>,
-and C<stat> (a metadata hashref normalized into C<file_meta>).
+C<revision>, and C<stat> (a metadata hashref normalized into C<file_meta>).
+
+=item $report->add_removed($path, %opts)
+
+Append a change record for a file removed from disk.  Accepts either a
+path followed by key-value pairs or named C<path> in a parameter list.
+Recognized keys: C<path>, C<recipients>, and C<revision>.
 
 =item $report->add_warning($msg)
 
@@ -49,6 +55,15 @@ Append a warning string.
 =item $report->set_end_time($epoch)
 
 Record the run end time (used to compute C<duration_ms>).
+
+=item $report->set_revision($rev)
+
+Set the VCS commit or revision ID for this report and backfill it onto
+any existing change records that lack a per-file revision.
+
+=item $report->revision
+
+Return the VCS commit or revision ID for this report, or undef if unset.
 
 =item $report->changes
 
@@ -89,6 +104,7 @@ sub new {
         end_time      => undef,
         vcs           => $args{vcs},
         message       => $args{message},
+        revision      => $args{revision},
         changes       => [],
         warnings      => [],
         files_tracked => 0,
@@ -98,7 +114,7 @@ sub new {
 
 # add_change -- Append a change record for a modified or new file.
 # Recognized keys: path, is_new, is_removed, is_sensitive, diff,
-# meta_change, recipients, stat (hashref from Metadata::record_for).
+# meta_change, recipients, revision, stat (hashref from Metadata::record_for).
 sub add_change {
     my ($self, %args) = @_;
     my $st = $args{stat} // {};
@@ -110,6 +126,7 @@ sub add_change {
         diff         => $args{diff}         // [],
         meta_change  => $args{meta_change}  // '',
         recipients   => $args{recipients}   // [],
+        revision     => $args{revision}     // $self->{revision},
         file_meta    => {
             mode  => $st->{mode},
             owner => $st->{user},
@@ -122,7 +139,14 @@ sub add_change {
 
 # add_removed -- Append a change record for a file that vanished from disk.
 sub add_removed {
-    my ($self, %args) = @_;
+    my $self = shift;
+    my %args;
+    if (@_ % 2 == 1) {
+        my $path = shift;
+        %args = (path => $path, @_);
+    } else {
+        %args = @_;
+    }
     push @{ $self->{changes} }, {
         path         => $args{path},
         is_new       => 0,
@@ -131,6 +155,7 @@ sub add_removed {
         diff         => [],
         meta_change  => '(file removed from disk)',
         recipients   => $args{recipients} // [],
+        revision     => $args{revision}   // $self->{revision},
         file_meta    => { mode => undef, owner => undef, group => undef,
                           size => undef, mtime => undef },
     };
@@ -156,13 +181,23 @@ sub set_end_time {
     $self->{end_time} = $t;
 }
 
-# has_changes()  --  true if at least one file changed, was added, or was removed.
+# set_revision -- Set the report revision and backfill on accumulated changes.
+sub set_revision {
+    my ($self, $rev) = @_;
+    $self->{revision} = $rev;
+    for my $c (@{ $self->{changes} }) {
+        $c->{revision} //= $rev;
+    }
+    return $self;
+}
+
+# has_changes -- True if at least one file changed, was added, or was removed.
 sub has_changes {
     my ($self) = @_;
     return scalar @{ $self->{changes} } > 0;
 }
 
-# is_heartbeat_eligible()  --  true if the run completed cleanly (no errors/warnings).
+# is_heartbeat_eligible -- True if the run completed cleanly (no errors/warnings).
 sub is_heartbeat_eligible {
     my ($self) = @_;
     return !$self->{has_errors};
@@ -176,6 +211,7 @@ sub start_time    { $_[0]->{start_time}    }
 sub end_time      { $_[0]->{end_time}      }
 sub vcs           { $_[0]->{vcs}           }
 sub message       { $_[0]->{message}       }
+sub revision      { $_[0]->{revision}      }
 
 # duration_ms -- Return run duration in milliseconds, or undef if not finished.
 sub duration_ms {
@@ -184,20 +220,36 @@ sub duration_ms {
     return ($self->{end_time} - $self->{start_time}) * 1000;
 }
 
-# to_text()  --  human-readable run summary for stdout output.
+# to_text -- Human-readable run summary for stdout output.
 sub to_text {
-    my ($self) = @_;
+    my ($self, %opts) = @_;
     my @out;
 
     if (!$self->has_changes && !@{ $self->{warnings} }) {
         return "No changes detected ($self->{files_tracked} file(s) tracked).\n";
     }
 
+    my @header;
+    if (defined $self->{vcs} && length $self->{vcs}) {
+        push @header, "VCS: $self->{vcs}";
+    }
+    if (defined $self->{revision} && length $self->{revision}) {
+        push @header, "Revision: $self->{revision}";
+    }
+    if (@header) {
+        push @out, @header, '';
+    }
+
     for my $c (@{ $self->{changes} }) {
         my $label = $c->{is_removed} ? 'REMOVED'
                   : $c->{is_new}     ? 'NEW    '
                   :                    'CHANGED';
-        push @out, "  $label  $c->{path}";
+        my $rev_suffix = '';
+        if (defined $c->{revision} && length $c->{revision}
+            && (!defined $self->{revision} || $c->{revision} ne $self->{revision})) {
+            $rev_suffix = " (rev $c->{revision})";
+        }
+        push @out, "  $label  $c->{path}$rev_suffix";
 
         if ($c->{meta_change}) {
             push @out, "           meta: $c->{meta_change}";
