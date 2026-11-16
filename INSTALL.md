@@ -23,7 +23,7 @@ make test            # verify the test suite passes
 sudo make install    # installs to /usr/local by default
 ```
 
-`make install` installs the binary, library modules, default configuration, and `/etc/logrotate.d/changetrack-ng`.
+`make install` installs the binary and library modules under `/usr/local` by default, while installing the default configuration to `/etc/changetrack-ng/changetrack-ng.conf` (`SYSCONFDIR=/etc`) and logrotate policy to `/etc/logrotate.d/changetrack-ng` (`LOGROTATEDIR=/etc/logrotate.d`).
 
 To install system-wide (binary in `/usr/bin`, config in `/etc`):
 
@@ -80,8 +80,9 @@ Run once manually:
 ```
 
 Notes:
-- For non-root runs, lock file defaults to `$XDG_CACHE_HOME/changetrack-ng.lock`
-	or `~/.cache/changetrack-ng.lock`.
+- For non-root runs, lock file resolution checks `$XDG_RUNTIME_DIR/changetrack-ng.lock`,
+	then `$XDG_CACHE_HOME/changetrack-ng.lock`, then `~/.cache/changetrack-ng.lock`
+	(falling back to `/tmp/changetrack-ng-<uid>.lock` if none are available).
 - Package-manager hooks are root/system scope and are not applicable to
 	unprivileged installs.
 
@@ -98,6 +99,7 @@ Ready-to-use example configs and drop-in templates are installed under
 | `changetrack-ng.conf-user` | Non-root install - home directory paths and dotfiles |
 | `conf.d/local-settings.conf` | Example `[global]` drop-in |
 | `track.d/system-core.conf` | Example `[track]` drop-in |
+| `track.d/etc-full.conf` | Example whole-`/etc` `[track]` + `[ignore]` drop-in |
 | `notifier.d/email.conf` | Example email notifier drop-in |
 | `notifier.d/otlp.conf` | Example OTLP notifier drop-in |
 
@@ -126,8 +128,8 @@ defaults.
 - Symptom: run exits quietly or logs indicate lock contention.
 - Checks:
 	- Verify `lock_path` in config.
-	- Check for stale lock files after unclean shutdown.
-	- If needed for debugging, set `lock_timeout` to a small non-zero value.
+	- `flock(2)` locks are automatically released by the kernel when a process exits or crashes, so no manual lockfile deletion is needed; check whether another `changetrack-ng` process is actively running.
+	- Pass `--lock-timeout <seconds>` (or set `lock_timeout` in config) to wait for an active run to finish instead of skipping immediately.
 
 ### VCS not initialized
 
@@ -202,7 +204,7 @@ Auto-detects the package manager and installs the appropriate hooks:
 | Package manager | Hook type | Files installed |
 |---|---|---|
 | apt | apt.conf.d directives | `/etc/apt/apt.conf.d/80changetrack-ng-{pre,post}` |
-| dnf | Python plugin hooks | `/etc/dnf/plugins/changetrack_ng.{py,conf}` |
+| dnf | DNF4 Python plugin + DNF5 actions | `<python3-sitelib>/dnf-plugins/changetrack_ng.py`, `/etc/dnf/plugins/changetrack_ng.conf`, `/etc/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions` |
 | pacman | ALPM hooks | `/usr/share/libalpm/hooks/changetrack-ng-{pre,post}.hook` |
 
 ## Log Rotation
@@ -211,7 +213,7 @@ Auto-detects the package manager and installs the appropriate hooks:
 sudo make install-logrotate
 ```
 
-Installs logrotate configuration to `/etc/logrotate.d/changetrack-ng` to manage `/var/log/changetrack-ng.jsonl` and `/var/log/changetrack-ng.log` (also installed automatically by `make install`).
+Installs logrotate configuration to `/etc/logrotate.d/changetrack-ng` to manage `/var/log/changetrack-ng.jsonl`, `/var/log/changetrack-ng.log`, and `/var/log/changetrack-ng-apt-debug.log` (also installed automatically by `make install`).
 
 ## Man Pages
 
@@ -221,8 +223,8 @@ sudo make install-man
 
 Requires `pod2man` (ships with Perl).  Installs:
 
-- `man/changetrack-ng.8` → `$(MANDIR)/man8/changetrack-ng.8`
-- `man/changetrack-ng.conf.5` → `$(MANDIR)/man5/changetrack-ng.conf.5`
+- `man/changetrack-ng.8` -> `$(MANDIR)/man8/changetrack-ng.8.gz`
+- `man/changetrack-ng.conf.5` -> `$(MANDIR)/man5/changetrack-ng.conf.5.gz`
 
 ## Uninstall
 

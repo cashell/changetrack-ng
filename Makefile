@@ -7,7 +7,7 @@ VERSION    := 0.7.5
 PREFIX     ?= /usr/local
 BINDIR     ?= $(PREFIX)/bin
 LIBDIR     ?= $(PREFIX)/lib/$(NAME)
-SYSCONFDIR ?= $(if $(filter /usr,$(PREFIX)),/etc,$(PREFIX)/etc)
+SYSCONFDIR ?= /etc
 DATADIR    ?= /var/lib/$(NAME)
 MANDIR     ?= $(PREFIX)/share/man
 DOCDIR     ?= $(PREFIX)/share/doc/$(NAME)
@@ -15,7 +15,9 @@ SYSTEMDDIR  ?= /etc/systemd/system
 HOOKSDIR    ?= $(LIBDIR)/hooks
 CRONDIR     ?= /etc/cron.hourly
 DEFAULTSDIR ?= $(if $(shell command -v dnf 2>/dev/null),/etc/sysconfig,/etc/default)
-LOGROTATEDIR ?= $(SYSCONFDIR)/logrotate.d
+LOGROTATEDIR ?= /etc/logrotate.d
+DNF4_PLUGINDIR ?= $(shell python3 -c "import sysconfig; s = 'deb_system' if 'deb_system' in sysconfig.get_scheme_names() else 'posix_prefix'; print(sysconfig.get_path('purelib', s, vars={'base': '/usr', 'platbase': '/usr'}))" 2>/dev/null || echo /usr/lib/python3/dist-packages)/dnf-plugins
+DNF5_ACTIONSDIR ?= /etc/dnf/libdnf5-plugins/actions.d
 DESTDIR     ?=
 BUILD_DIR   ?= $(HOME)/dev/build/$(NAME)
 RELEASE_DIR ?= $(HOME)/dev/releases/$(NAME)
@@ -147,6 +149,7 @@ _install_dirs:
 
 _install_bin:
 	sed -e "s|^use lib.*|use lib \"$(LIBDIR)\";|" \
+	    -e "s|/etc/changetrack-ng/changetrack-ng\.conf|$(SYSCONFDIR)/$(NAME)/$(NAME).conf|g" \
 	    bin/$(NAME) > $(DESTDIR)$(BINDIR)/$(NAME)
 	chmod 755 $(DESTDIR)$(BINDIR)/$(NAME)
 
@@ -180,6 +183,7 @@ _install_examples:
 	install -m 644 packaging/etc/examples/changetrack-ng.conf-user    $(DESTDIR)$(DOCDIR)/examples/changetrack-ng.conf-user
 	install -m 644 packaging/etc/examples/conf.d/local-settings.conf  $(DESTDIR)$(DOCDIR)/examples/conf.d/local-settings.conf
 	install -m 644 packaging/etc/examples/track.d/system-core.conf    $(DESTDIR)$(DOCDIR)/examples/track.d/system-core.conf
+	install -m 644 packaging/etc/examples/track.d/etc-full.conf       $(DESTDIR)$(DOCDIR)/examples/track.d/etc-full.conf
 	install -m 644 packaging/etc/examples/notifier.d/email.conf       $(DESTDIR)$(DOCDIR)/examples/notifier.d/email.conf
 	install -m 644 packaging/etc/examples/notifier.d/otlp.conf        $(DESTDIR)$(DOCDIR)/examples/notifier.d/otlp.conf
 
@@ -283,17 +287,24 @@ install-hooks: _install_defaults
 	elif command -v dnf >/dev/null 2>&1; then \
 		echo "Detected dnf; installing plugin hooks..."; \
 		if [ -d packaging/hooks/dnf ]; then \
-			install -d /etc/dnf/plugins; \
+			install -d $(DESTDIR)$(DNF4_PLUGINDIR); \
 			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
-			    packaging/hooks/dnf/changetrack_ng.py > /etc/dnf/plugins/changetrack_ng.py; \
-			chmod 644 /etc/dnf/plugins/changetrack_ng.py; \
-			install -m 644 packaging/hooks/dnf/changetrack_ng.conf /etc/dnf/plugins/changetrack_ng.conf; \
+			    packaging/hooks/dnf/changetrack_ng.py > $(DESTDIR)$(DNF4_PLUGINDIR)/changetrack_ng.py; \
+			chmod 644 $(DESTDIR)$(DNF4_PLUGINDIR)/changetrack_ng.py; \
+			install -d $(DESTDIR)/etc/dnf/plugins; \
+			install -m 644 packaging/hooks/dnf/changetrack_ng.conf $(DESTDIR)/etc/dnf/plugins/changetrack_ng.conf; \
+			install -d $(DESTDIR)$(DNF5_ACTIONSDIR); \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/dnf/changetrack-ng.actions > $(DESTDIR)$(DNF5_ACTIONSDIR)/changetrack-ng.actions; \
+			chmod 644 $(DESTDIR)$(DNF5_ACTIONSDIR)/changetrack-ng.actions; \
 		fi; \
 	elif command -v pacman >/dev/null 2>&1; then \
 		echo "Detected pacman; installing hooks..."; \
 		if [ -d packaging/hooks ]; then \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/pacman-pre.hook  > /usr/share/libalpm/hooks/$(NAME)-pre.hook; \
-			sed -e "s|@BINDIR@|$(BINDIR)|g" packaging/hooks/pacman-post.hook > /usr/share/libalpm/hooks/$(NAME)-post.hook; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/pacman-pre.hook  > /usr/share/libalpm/hooks/$(NAME)-pre.hook; \
+			sed -e "s|@BINDIR@|$(BINDIR)|g" -e "s|@DEFAULTSDIR@|$(DEFAULTSDIR)|g" \
+			    packaging/hooks/pacman-post.hook > /usr/share/libalpm/hooks/$(NAME)-post.hook; \
 			chmod 644 /usr/share/libalpm/hooks/$(NAME)-pre.hook /usr/share/libalpm/hooks/$(NAME)-post.hook; \
 		fi; \
 	else \

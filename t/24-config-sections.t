@@ -202,6 +202,176 @@ sub write_main {
 }
 
 ########################################################################
+# [ignore] Section Parsing and Deduplication
+########################################################################
+{
+    local $ENV{TEST_CUSTOM_DIR} = 'custom_dir';
+    local $ENV{HOME}            = '/tmp/ct-home';
+
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = write_main($dir, <<'EOF');
+
+[ignore]
+*.swp
+*~
+*.bak
+*.swp
+backup-HOSTNAME.tar
+backup-${HOSTNAME}.log
+${TEST_CUSTOM_DIR}/*
+~/cache/*
+*~
+EOF
+
+    my $cfg = ChangeTrack::Config->load($path);
+    my $expected = [
+        '*.swp',
+        '*~',
+        '*.bak',
+        'backup-mock-node.internal.net.tar',
+        'backup-mock-node.internal.net.log',
+        'custom_dir/*',
+        '/tmp/ct-home/cache/*',
+    ];
+    is_deeply($cfg->ignore, $expected,
+        '[ignore] patterns parsed, expanded (HOSTNAME, ${HOSTNAME}, ${VAR}, ~), and deduplicated in order');
+}
+
+########################################################################
+# Legacy ignore in [global] Is Fatal
+########################################################################
+{
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = write_main($dir, "\n[global]\nignore = *.swp\n");
+    my $ok   = eval { ChangeTrack::Config->load($path); 1 };
+    ok(!$ok, 'Legacy ignore key in [global] is rejected');
+    like($@, qr/'ignore' in \[global\] is no longer supported; use an \[ignore\] section instead/,
+        'Error message instructs using [ignore] section');
+}
+
+########################################################################
+# max_file_size Integer Parsing and Validation
+########################################################################
+{
+    # 1. Valid non-negative integer (10485760)
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/size.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\nmax_file_size = 10485760\n\n[track]\n/etc/hosts\n";
+        close($fh);
+        my $cfg = ChangeTrack::Config->load($path);
+        is($cfg->global('max_file_size'), 10485760, 'max_file_size parsed as integer 10485760');
+    }
+
+    # 2. Unlimited (0)
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/size_zero.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\nmax_file_size = 0\n\n[track]\n/etc/hosts\n";
+        close($fh);
+        my $cfg = ChangeTrack::Config->load($path);
+        is($cfg->global('max_file_size'), 0, 'max_file_size 0 parsed as 0 (unlimited)');
+    }
+
+    # 3. Non-integer rejected
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/size_bad.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\nmax_file_size = 10MB\n\n[track]\n/etc/hosts\n";
+        close($fh);
+        my $ok = eval { ChangeTrack::Config->load($path); 1 };
+        ok(!$ok, 'Non-integer max_file_size is fatal');
+        like($@, qr/'max_file_size' must be an integer \(got '10MB'\)/, 'Error message indicates integer required');
+    }
+}
+
+########################################################################
+# ${HOSTNAME} Expansion in Notifier and Global Without $ENV{HOSTNAME}
+########################################################################
+{
+    local $ENV{HOSTNAME};
+    delete $ENV{HOSTNAME};
+
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = "$dir/braced_host.conf";
+    open(my $fh, '>', $path) or die $!;
+    print {$fh} "[global]\nvcs = git\noutput_dir = /var/ct-\${HOSTNAME}\n\n[notifier:email:default]\nenabled = true\nfrom = changetrack-ng\@\${HOSTNAME}\n\n[track]\n/etc/hosts\n";
+    close($fh);
+
+    my $cfg = ChangeTrack::Config->load($path);
+    is($cfg->global('output_dir'), '/var/ct-mock-node.internal.net', '${HOSTNAME} expanded in [global]');
+    my $insts = $cfg->notifiers->{email};
+    is($insts->[0]{from}, 'changetrack-ng@mock-node.internal.net', '${HOSTNAME} expanded in [notifier:email] from without $ENV{HOSTNAME}');
+}
+
+########################################################################
+# [track] Recipients, sensitive Option, and Validation
+########################################################################
+{
+    # 1. Comma-separated email recipients and valid sensitive values
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/track_opts.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} <<'EOF';
+[global]
+vcs = git
+output_dir = /tmp
+
+[track]
+/etc/passwd : a@example.com, b@example.com sensitive=true
+/etc/shadow : sec@example.com sensitive=auto
+/etc/hosts sensitive=false
+/etc/group sensitive=1
+/etc/issue sensitive=off
+EOF
+        close($fh);
+
+        my $cfg = ChangeTrack::Config->load($path);
+        my $tracks = $cfg->tracks;
+        is(scalar @$tracks, 5, 'Five tracks parsed');
+
+        is_deeply($tracks->[0]{emails}, ['a@example.com', 'b@example.com'],
+            'Comma-separated email recipients parsed');
+        is($tracks->[0]{options}{sensitive}, 'yes', 'sensitive=true normalized to yes');
+        is($tracks->[1]{options}{sensitive}, 'auto', 'sensitive=auto preserved as auto');
+        is($tracks->[2]{options}{sensitive}, 'no', 'sensitive=false normalized to no');
+        is($tracks->[3]{options}{sensitive}, 'yes', 'sensitive=1 normalized to yes');
+        is($tracks->[4]{options}{sensitive}, 'no', 'sensitive=off normalized to no');
+    }
+
+    # 2. Invalid sensitive value croaks
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/track_bad_sens.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts sensitive=maybe\n";
+        close($fh);
+
+        my $ok = eval { ChangeTrack::Config->load($path); 1 };
+        ok(!$ok, 'Invalid sensitive value is fatal');
+        like($@, qr/'sensitive' must be a boolean \(true\/false\/yes\/no\/1\/0\), got 'maybe'/,
+            'Error message mentions boolean expectation');
+    }
+
+    # 3. Unknown [track] option croaks
+    {
+        my $dir  = tempdir(CLEANUP => 1);
+        my $path = "$dir/track_bad_opt.conf";
+        open(my $fh, '>', $path) or die $!;
+        print {$fh} "[global]\nvcs = git\noutput_dir = /tmp\n\n[track]\n/etc/hosts foo=bar\n";
+        close($fh);
+
+        my $ok = eval { ChangeTrack::Config->load($path); 1 };
+        ok(!$ok, 'Unknown [track] option is fatal');
+        like($@, qr/unknown \[track\] option 'foo'/, 'Error message mentions unknown [track] option');
+    }
+}
+
+########################################################################
 # Default Config Tracks Self Config Directory
 ########################################################################
 {

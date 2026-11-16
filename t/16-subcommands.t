@@ -14,6 +14,8 @@ use FindBin qw($RealBin);
 use File::Spec;
 use File::Temp qw(tempfile tempdir);
 use lib File::Spec->catdir($RealBin, '..', 'lib');
+use IPC::Open3;
+use Symbol qw(gensym);
 use ChangeTrack::Util qw(run_cmd);
 
 my $GIT = do {
@@ -30,6 +32,18 @@ use_ok('ChangeTrack::Runner');
 my $output_dir  = tempdir(CLEANUP => 1);
 my $tracked_dir = tempdir(CLEANUP => 1);
 my $bin         = File::Spec->catfile($RealBin, '..', 'bin', 'changetrack-ng');
+
+sub run_cli_capture {
+    my (@args) = @_;
+    my ($in, $out_fh);
+    my $err_fh = gensym;
+    my $pid = open3($in, $out_fh, $err_fh, $^X, $bin, @args);
+    close($in);
+    my $stdout = do { local $/; <$out_fh> } // '';
+    my $stderr = do { local $/; <$err_fh> } // '';
+    waitpid($pid, 0);
+    return ($? >> 8, $stdout, $stderr);
+}
 
 ########################################################################
 # Config Helper
@@ -145,8 +159,10 @@ close($fh);
 {
     my $runner = ChangeTrack::Runner->new(config => $cfg, quiet => 1);
     my $logs   = $runner->log_path(undef);
-    ok(exists $logs->{$test_file}, 'log_path(undef): tracked file appears in result');
-    ok(@{ $logs->{$test_file} } > 0, 'log_path(undef): log lines present');
+    ok(exists $logs->{'(repository)'}, 'log_path(undef): repository key present');
+    ok(@{ $logs->{'(repository)'} } > 0, 'log_path(undef): log lines present');
+    like(join("\n", @{ $logs->{'(repository)'} }), qr/changetrack-ng run/,
+        'log_path(undef): commit messages in repo-wide log');
 }
 
 ########################################################################
@@ -171,7 +187,7 @@ close($fh);
     like($reverted, qr/red/, 'revert_path: file content restored to HEAD~1');
 
     my $after_mode = (stat($test_file))[2] & 07777;
-    is($after_mode, $before_mode, 'revert_path: preserves existing mode on target file');
+    is($after_mode, 0644, 'revert_path: restores historical mode from target revision');
 }
 
 ########################################################################
@@ -454,37 +470,302 @@ close($fh);
 }
 
 ########################################################################
-# Update-Ignore: Atomic .gitignore Rewrite and No Temp Leftovers
+# Show: Regular File, Symlink, Deleted File, and Error Handling
 ########################################################################
 {
     my $sub_out = tempdir(CLEANUP => 1);
-    chmod 0700, $sub_out;
-    my ($cfh, $ign_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
-    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\nignore = *.custom-ign\n\n[track]\nDIRECTORY $tracked_dir\n";
+    my $sub_dir = tempdir(CLEANUP => 1);
+    my $f_show  = "$sub_dir/show.conf";
+    my $f_del   = "$sub_dir/gone.conf";
+    my $l_show  = "$sub_dir/link.conf";
+
+    open(my $fh1, '>', $f_show) or die $!;
+    print $fh1 "line = one\n";
+    close($fh1);
+    chmod(0640, $f_show);
+
+    open(my $fh2, '>', $f_del) or die $!;
+    print $fh2 "ephemeral = yes\n";
+    close($fh2);
+    chmod(0644, $f_del);
+
+    my ($cfh, $scfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\nDIRECTORY $sub_dir\n";
     close($cfh);
-    chmod(0600, $ign_cfg);
 
-    my $gitignore = "$sub_out/.gitignore";
-    open(my $ufh, '>', $gitignore) or die $!;
-    print $ufh "# user custom rule\nlocal.tmp\n";
-    close($ufh);
+    ChangeTrack::Runner->new(config => $scfg, quiet => 1)->run;
 
-    my $bin = File::Spec->catfile($RealBin, '..', 'bin', 'changetrack-ng');
-    my $r   = ChangeTrack::Util::run_cmd(cmd => [$^X, $bin, '-c', $ign_cfg, '-q', 'update-ignore']);
-    ok($r->{success}, 'update-ignore exits 0');
-    ok(-f $gitignore, '.gitignore exists after update-ignore');
+    open($fh1, '>', $f_show) or die $!;
+    print $fh1 "line = two_v2\n";
+    close($fh1);
+    unlink $f_del or die $!;
 
-    open(my $gfh, '<', $gitignore) or die $!;
-    my $content = do { local $/; <$gfh> };
-    close($gfh);
-    like($content, qr/# user custom rule\nlocal\.tmp/, 'update-ignore preserves existing user rules');
-    like($content, qr/# BEGIN managed by changetrack-ng.*\n\*\.custom-ign\n.*# END managed by changetrack-ng/s,
-        'update-ignore writes managed block with user ignore pattern');
+    ChangeTrack::Runner->new(config => $scfg, quiet => 1)->run;
 
-    opendir(my $dh, $sub_out) or die $!;
-    my @leftovers = grep { /^\.gitignore\./ || /\.tmp/ } readdir($dh);
-    closedir($dh);
-    is(scalar @leftovers, 0, 'no temporary .gitignore files left behind in output_dir');
+    # Show historical revision of regular file
+    my ($rc1, $out1, $err1) = run_cli_capture('-c', $scfg, 'show', $f_show, 'HEAD~1');
+    is($rc1, 0, 'CLI show regular file at HEAD~1: exits 0');
+    like($out1, qr/^# Path: \Q$f_show\E/m, 'CLI show: prints Path header');
+    like($out1, qr/^# Revision: HEAD~1/m, 'CLI show: prints Revision header');
+    like($out1, qr/^# Type: file  Mode: 0640/m, 'CLI show: prints metadata header');
+    like($out1, qr/^line = one$/m, 'CLI show: prints historical file content');
+
+    # Show deleted file at earlier revision
+    my ($rc_del, $out_del, $err_del) = run_cli_capture('-c', $scfg, 'show', $f_del, 'HEAD~1');
+    is($rc_del, 0, 'CLI show deleted file at HEAD~1: exits 0');
+    like($out_del, qr/^ephemeral = yes$/m, 'CLI show deleted file: retrieves content');
+
+    # Show invalid revision exits 2
+    my ($rc_bad, $out_bad, $err_bad) = run_cli_capture('-c', $scfg, 'show', $f_show, 'nonexistent_rev_xyz');
+    is($rc_bad, 2, 'CLI show invalid revision: exits 2');
+    like($err_bad, qr/changetrack-ng:/, 'CLI show invalid revision: prints error');
+
+    # Historical diff: 1 rev (rev vs live) and 2 revs (rev1 vs rev2)
+    open($fh1, '>', $f_show) or die $!;
+    print $fh1 "line = three_v3\n";
+    close($fh1);
+
+    my ($rc_d1, $out_d1, $err_d1) = run_cli_capture('-c', $scfg, 'diff', $f_show, 'HEAD~1');
+    is($rc_d1, 0, 'CLI diff <path> <rev1>: exits 0');
+    like($out_d1, qr/-line = one/, 'CLI diff <path> <rev1>: shows historical line removed');
+    like($out_d1, qr/\+line = three_v3/, 'CLI diff <path> <rev1>: shows live line added');
+
+    my ($rc_d2, $out_d2, $err_d2) = run_cli_capture('-c', $scfg, 'diff', $f_show, 'HEAD~1', 'HEAD');
+    is($rc_d2, 0, 'CLI diff <path> <rev1> <rev2>: exits 0');
+    like($out_d2, qr/-line = one/, 'CLI diff <path> <rev1> <rev2>: shows rev1 line');
+    like($out_d2, qr/\+line = two_v2/, 'CLI diff <path> <rev1> <rev2>: shows rev2 line');
+
+    # Show symlink at historical revision
+    SKIP: {
+        my $can_symlink = eval { symlink('', ''); 1 };
+        skip 'symlink creation not available', 3 unless $can_symlink;
+        symlink('/target/first', $l_show) or die $!;
+        ChangeTrack::Runner->new(config => $scfg, quiet => 1)->run;
+        unlink $l_show or die $!;
+        symlink('/target/second', $l_show) or die $!;
+        ChangeTrack::Runner->new(config => $scfg, quiet => 1)->run;
+
+        my ($rc_sym, $out_sym, $err_sym) = run_cli_capture('-c', $scfg, 'show', $l_show, 'HEAD~1');
+        is($rc_sym, 0, 'CLI show symlink at HEAD~1: exits 0');
+        like($out_sym, qr{^# Symlink-Target: /target/first}m, 'CLI show symlink: prints Symlink-Target header');
+        like($out_sym, qr{^symlink -> /target/first}m, 'CLI show symlink: prints target');
+    }
+
+    # Repo-wide log (no-arg) includes deleted file commit history
+    my ($rc_log, $out_log, $err_log) = run_cli_capture('-c', $scfg, 'log');
+    is($rc_log, 0, 'CLI log (no-arg): exits 0');
+    like($out_log, qr/gone\.conf/, 'CLI log (no-arg): includes deleted file in repo history');
+}
+
+########################################################################
+# Diff <dir> and Metadata-Only Diff (CORR-16)
+########################################################################
+{
+    my $sub_out = tempdir(CLEANUP => 1);
+    my $sub_dir = tempdir(CLEANUP => 1);
+    my $fa = "$sub_dir/a.conf";
+    my $fb = "$sub_dir/b.conf";
+
+    open(my $fha, '>', $fa) or die $!; print $fha "alpha = 1\n"; close($fha);
+    open(my $fhb, '>', $fb) or die $!; print $fhb "beta = 1\n";  close($fhb);
+    chmod(0644, $fa, $fb);
+
+    my ($cfh, $dcfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\nDIRECTORY $sub_dir\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $dcfg, quiet => 1)->run;
+
+    # Content change on a.conf (different size for same-second stat), metadata-only on b.conf
+    open($fha, '>', $fa) or die $!; print $fha "alpha = 2 (modified)\n"; close($fha);
+    chmod(0755, $fb);
+
+    my ($rc_dir, $out_dir, $err_dir) = run_cli_capture('-c', $dcfg, 'diff', $sub_dir);
+    is($rc_dir, 0, 'CLI diff <dir>: exits 0 without directory crash');
+    like($out_dir, qr/=== \Q$fa\E ===/, 'CLI diff <dir>: includes modified file header');
+    like($out_dir, qr/\+alpha = 2 \(modified\)/, 'CLI diff <dir>: includes content diff');
+    like($out_dir, qr/=== \Q$fb\E ===/, 'CLI diff <dir>: includes chmod file header');
+    like($out_dir, qr/\(metadata changed: mode 0644 -> 0755\)/, 'CLI diff <dir>: reports metadata-only diff');
+
+    my ($rc_single, $out_single, $err_single) = run_cli_capture('-c', $dcfg, 'diff', $fb);
+    is($rc_single, 0, 'CLI diff <file> on chmod-only change: exits 0');
+    like($out_single, qr/\(metadata changed: mode 0644 -> 0755\)/, 'CLI diff <file>: reports metadata-only change');
+}
+
+########################################################################
+# Status: File -> Binary Transition and Binary Chmod (CORR-16)
+########################################################################
+{
+    my $sub_out  = tempdir(CLEANUP => 1);
+    my $sub_dir  = tempdir(CLEANUP => 1);
+    my $bin_file = "$sub_dir/data.dat";
+
+    open(my $fh, '>', $bin_file) or die $!;
+    print $fh "plain text initial\n";
+    close($fh);
+    chmod(0644, $bin_file);
+
+    my ($cfh, $bcfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\n$bin_file\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $bcfg, quiet => 1)->run;
+
+    # Transition text file -> binary file
+    open($fh, '>:raw', $bin_file) or die $!;
+    print $fh "\x00\x01\x02\x03\x04\x05binarypayload";
+    close($fh);
+
+    my $runner1 = ChangeTrack::Runner->new(config => $bcfg, quiet => 1);
+    my $st1     = $runner1->status;
+    is(scalar @$st1, 1, 'status: detects file -> binary transition');
+    is($st1->[0]{path}, $bin_file, 'status: reports correct path for file -> binary');
+    like(join("\n", @{ $st1->[0]{diff} }), qr/type file -> binary/,
+        'status: diff notes type file -> binary');
+
+    # Commit the binary state, then chmod it
+    ChangeTrack::Runner->new(config => $bcfg, quiet => 1)->run;
+    chmod(0600, $bin_file);
+
+    my $runner2 = ChangeTrack::Runner->new(config => $bcfg, quiet => 1);
+    my $st2     = $runner2->status;
+    is(scalar @$st2, 1, 'status: detects chmod on already-tracked binary file');
+    like(join("\n", @{ $st2->[0]{diff} }), qr/mode 0644 -> 0600/,
+        'status: reports mode change on binary file');
+}
+
+########################################################################
+# Revert --Dry-Run (Preview Without Disk Mutation)
+########################################################################
+{
+    my $sub_out = tempdir(CLEANUP => 1);
+    my $sub_dir = tempdir(CLEANUP => 1);
+    my $rfile   = "$sub_dir/app.conf";
+
+    open(my $fh, '>', $rfile) or die $!;
+    print $fh "setting = original\n";
+    close($fh);
+    chmod(0640, $rfile);
+
+    my ($cfh, $rcfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = git\noutput_dir = $sub_out\n\n[track]\n$rfile\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $rcfg, quiet => 1)->run;
+
+    open($fh, '>', $rfile) or die $!;
+    print $fh "setting = updated\n";
+    close($fh);
+    chmod(0644, $rfile);
+    ChangeTrack::Runner->new(config => $rcfg, quiet => 1)->run;
+
+    my ($rc, $out, $err) = run_cli_capture('-c', $rcfg, '--dry-run', 'revert', $rfile, 'HEAD~1');
+    is($rc, 0, 'CLI revert --dry-run: exits 0 without interactive prompt');
+    like($out, qr/Would revert \Q$rfile\E to revision HEAD~1/, 'CLI revert --dry-run: prints preview banner');
+    like($out, qr/Target metadata: mode=0640/, 'CLI revert --dry-run: prints target metadata');
+    like($out, qr/-setting = original/, 'CLI revert --dry-run: prints diff');
+
+    my $content_after = do { open(my $f, '<', $rfile) or die $!; local $/; <$f> };
+    is($content_after, "setting = updated\n", 'CLI revert --dry-run: live file content untouched');
+    is((stat($rfile))[2] & 07777, 0644, 'CLI revert --dry-run: live file permissions untouched');
+
+    # Invalid path/revision fails immediately in interactive mode without hanging
+    my ($rc_bad, $out_bad, $err_bad) = run_cli_capture('-c', $rcfg, 'revert', $rfile, 'bad_rev_xyz');
+    isnt($rc_bad, 0, 'CLI revert invalid rev (interactive): fails immediately');
+    unlike($out_bad, qr/\[y\/N\]/, 'CLI revert invalid rev: does not prompt before validating');
+}
+
+########################################################################
+# RCS Directory Log Including Deleted Files (CORR-18)
+########################################################################
+SKIP: {
+    my $has_rcs = 0;
+    for my $dir (split /:/, ($ENV{PATH} // '/usr/bin:/usr/local/bin')) {
+        if (-x "$dir/ci" && -x "$dir/rlog") { $has_rcs = 1; last }
+    }
+    skip 'RCS ci/rlog not found in PATH', 3 unless $has_rcs;
+
+    my $rcs_out = tempdir(CLEANUP => 1);
+    my $rcs_dir = tempdir(CLEANUP => 1);
+    my $rf1     = "$rcs_dir/keep.conf";
+    my $rf2     = "$rcs_dir/removed.conf";
+
+    open(my $f1, '>', $rf1) or die $!; print $f1 "keep = 1\n";    close($f1);
+    open(my $f2, '>', $rf2) or die $!; print $f2 "removed = 1\n"; close($f2);
+
+    my ($cfh, $rcscfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $cfh "[global]\nvcs = rcs\noutput_dir = $rcs_out\n\n[track]\nDIRECTORY $rcs_dir\n";
+    close($cfh);
+
+    ChangeTrack::Runner->new(config => $rcscfg, quiet => 1)->run;
+    unlink $rf2 or die $!;
+    ChangeTrack::Runner->new(config => $rcscfg, quiet => 1)->run;
+
+    my ($rc, $out, $err) = run_cli_capture('-c', $rcscfg, 'log', $rcs_dir);
+    is($rc, 0, 'CLI log <dir> (RCS): exits 0');
+    like($out, qr/keep\.conf/, 'CLI log <dir> (RCS): includes active file');
+    like($out, qr/removed\.conf/, 'CLI log <dir> (RCS): includes deleted file archive');
+}
+
+########################################################################
+# CLI Validation: Unknown Post-Subcommand Flags, Arity, --lock-timeout, Default VCS
+########################################################################
+{
+    my ($rc1, $o1, $e1) = run_cli_capture('-c', $cfg, 'run', '--bogus-flag');
+    is($rc1, 64, 'CLI run --bogus-flag: exits 64');
+    like($e1, qr/unknown option '--bogus-flag'/, 'CLI run --bogus-flag: reports unknown option');
+
+    my ($rc2, $o2, $e2) = run_cli_capture('-c', $cfg, 'run', '--dryrun');
+    is($rc2, 64, 'CLI run --dryrun: exits 64');
+
+    my ($rc3, $o3, $e3) = run_cli_capture('-c', $cfg, 'status', '/etc/hosts');
+    is($rc3, 64, 'CLI status <extra>: exits 64');
+    like($e3, qr/unexpected argument/, 'CLI status <extra>: reports unexpected argument');
+
+    my ($rc4, $o4, $e4) = run_cli_capture('-c', $cfg, 'run', 'extra');
+    is($rc4, 64, 'CLI run <extra>: exits 64');
+
+    my ($rc5, $o5, $e5) = run_cli_capture('-c', $cfg, 'init', 'extra');
+    is($rc5, 64, 'CLI init <extra>: exits 64');
+
+    my ($rc6, $o6, $e6) = run_cli_capture('-c', $cfg, 'log', $test_file, 'extra');
+    is($rc6, 64, 'CLI log <p1> <p2>: exits 64');
+
+    my ($rc7, $o7, $e7) = run_cli_capture('-c', $cfg, 'diff', $test_file, 'HEAD~1', 'HEAD', 'extra');
+    is($rc7, 64, 'CLI diff >3 args: exits 64');
+
+    my ($rc8, $o8, $e8) = run_cli_capture('-c', $cfg, 'show', $test_file);
+    is($rc8, 64, 'CLI show <1 arg>: exits 64');
+
+    my ($rc9, $o9, $e9) = run_cli_capture('-c', $cfg, 'show', $test_file, 'HEAD', 'extra');
+    is($rc9, 64, 'CLI show >2 args: exits 64');
+
+    my ($rc10, $o10, $e10) = run_cli_capture('-c', $cfg, 'revert', $test_file);
+    is($rc10, 64, 'CLI revert <1 arg>: exits 64');
+
+    my ($rc11, $o11, $e11) = run_cli_capture('-c', $cfg, 'revert', $test_file, 'HEAD', 'extra');
+    is($rc11, 64, 'CLI revert >2 args: exits 64');
+
+    my ($rc12, $o12, $e12) = run_cli_capture('-c', $cfg, 'update-ignore');
+    is($rc12, 64, 'CLI update-ignore (removed): exits 64');
+    like($e12, qr/unknown subcommand 'update-ignore'/, 'CLI update-ignore: reported as unknown subcommand');
+
+    # --lock-timeout valid and invalid
+    my ($rc_lt_bad, $o_lt_bad, $e_lt_bad) = run_cli_capture('-c', $cfg, '--lock-timeout', '-1', 'run');
+    is($rc_lt_bad, 64, 'CLI --lock-timeout -1: exits 64');
+    like($e_lt_bad, qr/non-negative integer/, 'CLI --lock-timeout -1: descriptive error');
+
+    my ($rc_lt_ok, $o_lt_ok, $e_lt_ok) = run_cli_capture('-c', $cfg, 'run', '--lock-timeout', '5', '-n', '-q');
+    is($rc_lt_ok, 0, 'CLI run --lock-timeout 5 -n -q: exits 0');
+
+    # Default VCS when vcs is omitted from config is git
+    my $def_out = tempdir(CLEANUP => 1);
+    my ($dcfh, $def_cfg) = tempfile(SUFFIX => '.ini', UNLINK => 1);
+    print $dcfh "[global]\noutput_dir = $def_out\n\n[track]\n$test_file\n";
+    close($dcfh);
+    my ($vcs_obj) = ChangeTrack::Runner->new(config => $def_cfg, quiet => 1)->init_vcs;
+    isa_ok($vcs_obj, 'ChangeTrack::VCS::Git', 'default VCS when unset in config is Git');
+    ok(-d "$def_out/.git", 'default VCS init creates .git directory');
 }
 
 done_testing();

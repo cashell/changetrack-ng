@@ -1063,4 +1063,72 @@ SKIP: {
     }
 }
 
+########################################################################
+# VCS Revision Attributes (OTLP Notifier)
+########################################################################
+{
+    my $n = ChangeTrack::Notify::OTLP->new(endpoint => 'http://127.0.0.1:9999/v1/logs');
+
+    # 1. Report with whole-run revision backfilled
+    my $r1 = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r1->add_change(path => '/etc/hosts', is_new => 0, diff => ['+line']);
+    $r1->set_revision('otlp-rev-12345');
+    my $p1 = $n->_build_payload($r1, 0);
+    my $rec1 = $p1->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    my %a1 = map { $_->{key} => $_->{value} } @{ $rec1->{attributes} };
+
+    ok(exists $a1{'vcs.revision'}, 'OTLP change record has vcs.revision attribute');
+    is($a1{'vcs.revision'}{stringValue}, 'otlp-rev-12345', 'vcs.revision stringValue matches report revision');
+    ok(exists $a1{'config_change.revision'}, 'OTLP change record has config_change.revision attribute');
+    is($a1{'config_change.revision'}{stringValue}, 'otlp-rev-12345', 'config_change.revision stringValue matches report revision');
+
+    # 2. Per-file revision (e.g. RCS) without whole-run revision
+    my $r2 = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r2->add_change(path => '/etc/rcs-file', is_new => 0, diff => [], revision => '1.9');
+    my $p2 = $n->_build_payload($r2, 0);
+    my $rec2 = $p2->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    my %a2 = map { $_->{key} => $_->{value} } @{ $rec2->{attributes} };
+
+    is($a2{'vcs.revision'}{stringValue}, '1.9', 'vcs.revision matches per-file RCS revision');
+    is($a2{'config_change.revision'}{stringValue}, '1.9', 'config_change.revision matches per-file RCS revision');
+
+    # 3. Report without any revision: attributes must be omitted
+    my $r3 = ChangeTrack::Report->new(start_time => 1_000_000_000);
+    $r3->add_change(path => '/etc/plain', is_new => 1, diff => ['(new)']);
+    my $p3 = $n->_build_payload($r3, 0);
+    my $rec3 = $p3->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    my %a3 = map { $_->{key} => $_->{value} } @{ $rec3->{attributes} };
+
+    ok(!exists $a3{'vcs.revision'},           'vcs.revision omitted when undef');
+    ok(!exists $a3{'config_change.revision'}, 'config_change.revision omitted when undef');
+}
+
+########################################################################
+# End-To-End HTTP POST With OTLP Revision Attributes
+########################################################################
+{
+    my $bf = File::Spec->catfile($tmpdir, 'otlp_rev_e2e.json');
+    my ($port, $pid) = start_server(codes => [200], body_file => $bf);
+
+    my $r = ChangeTrack::Report->new(start_time => 1_000_000_000, vcs => 'git');
+    $r->add_change(path => '/etc/app.conf', diff => ['+setting=1']);
+    $r->set_revision('e2e-otlp-commit-abc');
+    $r->set_end_time(1_000_000_001);
+
+    my $n = ChangeTrack::Notify::OTLP->new(
+        endpoint    => "http://127.0.0.1:$port/v1/logs",
+        compression => 'none',
+    );
+    $n->send($r);
+    waitpid($pid, 0);
+
+    my $payload = read_payload($bf);
+    ok(defined $payload, 'e2e OTLP payload received');
+    my $rec = $payload->{resourceLogs}[0]{scopeLogs}[0]{logRecords}[0];
+    my %attrs = map { $_->{key} => $_->{value} } @{ $rec->{attributes} };
+
+    is($attrs{'vcs.revision'}{stringValue},           'e2e-otlp-commit-abc', 'e2e vcs.revision attribute present');
+    is($attrs{'config_change.revision'}{stringValue}, 'e2e-otlp-commit-abc', 'e2e config_change.revision attribute present');
+}
+
 done_testing();

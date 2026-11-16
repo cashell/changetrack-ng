@@ -6,7 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches to
-#   subcommands (run, init, status, diff, log, revert, update-ignore).
+#   subcommands (run, init, status, diff, log, show, revert).
 #
 
 use strict;
@@ -33,6 +33,7 @@ my %opts = (
     trace        => 0,
     no_auto_init => 0,
     dry_run      => 0,
+    lock_timeout => undef,
     message      => '',
     force        => 0,
 );
@@ -44,6 +45,7 @@ GetOptions(
     'message|m=s'    => \$opts{message},
     'no-auto-init'   => \$opts{no_auto_init},
     'dry-run|n'      => \$opts{dry_run},
+    'lock-timeout=i' => \$opts{lock_timeout},
     'quiet|q'        => \$opts{quiet},
     'verbose|v'      => \$opts{verbose},
     'debug|d'        => \$opts{debug},
@@ -52,6 +54,11 @@ GetOptions(
     'version|V'      => sub { say "changetrack-ng $VERSION"; exit 0 },
     'help|h'         => sub { _usage(); exit 0 },
 ) or do { _usage(\*STDERR); exit 64 };
+
+if (defined $opts{lock_timeout} && $opts{lock_timeout} < 0) {
+    warn "changetrack-ng: --lock-timeout must be a non-negative integer\n";
+    exit 64;
+}
 
 if ($opts{system_mode} && $opts{user_mode}) {
     warn "changetrack-ng: --system and --user are mutually exclusive\n";
@@ -84,13 +91,13 @@ ChangeTrack::Util::set_debug(1) if $opts{debug};
 my $subcommand = @ARGV ? shift @ARGV : 'run';
 
 my %dispatch = (
-    'run'            => \&cmd_run,
-    'init'           => \&cmd_init,
-    'status'         => \&cmd_status,
-    'diff'           => \&cmd_diff,
-    'log'            => \&cmd_log,
-    'revert'         => \&cmd_revert,
-    'update-ignore'  => \&cmd_update_ignore,
+    'run'    => \&cmd_run,
+    'init'   => \&cmd_init,
+    'status' => \&cmd_status,
+    'diff'   => \&cmd_diff,
+    'log'    => \&cmd_log,
+    'show'   => \&cmd_show,
+    'revert' => \&cmd_revert,
 );
 
 # With Getopt::Long pass_through, an unrecognized global option is left in
@@ -116,12 +123,20 @@ exit($dispatch{$subcommand}->());
 
 # cmd_run -- Instantiate Runner and execute a full tracked-file scan.
 sub cmd_run {
+    return 64 if _reject_unknown_flag(\@ARGV);
+    if (@ARGV > 0) {
+        warn "changetrack-ng run: unexpected argument '$ARGV[0]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
     require ChangeTrack::Runner;
     my $runner = ChangeTrack::Runner->new(
         config       => $opts{config},
         message      => $opts{message},
         no_auto_init => $opts{no_auto_init},
         dry_run      => $opts{dry_run},
+        lock_timeout => $opts{lock_timeout},
         quiet        => $opts{quiet},
         verbose      => $opts{verbose},
         debug        => $opts{debug},
@@ -136,6 +151,13 @@ sub cmd_run {
 # cmd_init -- Initialize the VCS output directory without running a scan.
 sub cmd_init {
     my ($cfg) = @_;
+    return 64 if _reject_unknown_flag(\@ARGV);
+    if (@ARGV > 0) {
+        warn "changetrack-ng init: unexpected argument '$ARGV[0]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
     require ChangeTrack::Runner;
     require ChangeTrack::Config;
     $cfg //= eval { ChangeTrack::Config->load($opts{config}) };
@@ -154,6 +176,13 @@ sub cmd_init {
 
 # cmd_status -- List files that have pending changes without committing.
 sub cmd_status {
+    return 64 if _reject_unknown_flag(\@ARGV);
+    if (@ARGV > 0) {
+        warn "changetrack-ng status: unexpected argument '$ARGV[0]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
     require ChangeTrack::Runner;
     my $runner = ChangeTrack::Runner->new(
         config  => $opts{config},
@@ -171,10 +200,25 @@ sub cmd_status {
     return @$changed ? 1 : 0;
 }
 
-# cmd_diff -- Print the pending unified diff for one file or all tracked paths.
+# cmd_diff -- Print unified diff for pending, directory, or historical changes.
 sub cmd_diff {
+    return 64 if _reject_unknown_flag(\@ARGV, 1 => 1, 2 => 1);
+    if (@ARGV > 3) {
+        warn "changetrack-ng diff: unexpected argument '$ARGV[3]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
+    my ($path, $rev1, $rev2) = @ARGV;
+    for my $r ($rev1, $rev2) {
+        next unless defined $r;
+        if ($r =~ /^-/) {
+            warn "changetrack-ng: invalid revision '$r' (must not begin with '-')\n";
+            return 64;
+        }
+    }
+
     require ChangeTrack::Runner;
-    my $path   = @ARGV ? shift @ARGV : undef;
     my $runner = ChangeTrack::Runner->new(
         config  => $opts{config},
         quiet   => $opts{quiet},
@@ -182,20 +226,28 @@ sub cmd_diff {
         debug   => $opts{debug},
         trace   => $opts{trace},
     );
-    my $diffs = eval { $runner->diff_path($path) };
+    my $diffs = eval { $runner->diff_path($path, $rev1, $rev2) };
     if ($@) { warn "changetrack-ng: $@\n"; return 2 }
 
+    my $single_target = defined($path) && keys(%$diffs) <= 1 && (!keys(%$diffs) || exists $diffs->{$path});
     for my $p (sort keys %$diffs) {
-        say "=== $p ===" unless defined $path;
+        say "=== $p ===" unless $single_target;
         say $_ for @{ $diffs->{$p} };
     }
     return 0;
 }
 
-# cmd_log -- Print VCS history for one file or all tracked paths.
+# cmd_log -- Print VCS history for one path or the whole repository.
 sub cmd_log {
+    return 64 if _reject_unknown_flag(\@ARGV);
+    if (@ARGV > 1) {
+        warn "changetrack-ng log: unexpected argument '$ARGV[1]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
+    my $path = @ARGV ? shift @ARGV : undef;
     require ChangeTrack::Runner;
-    my $path   = @ARGV ? shift @ARGV : undef;
     my $runner = ChangeTrack::Runner->new(
         config  => $opts{config},
         quiet   => $opts{quiet},
@@ -206,22 +258,63 @@ sub cmd_log {
     my $logs = eval { $runner->log_path($path) };
     if ($@) { warn "changetrack-ng: $@\n"; return 2 }
 
+    my $single_target = (defined($path) && keys(%$logs) == 1 && exists($logs->{$path}))
+        || (!defined($path) && keys(%$logs) == 1 && exists($logs->{'(repository)'}));
     for my $p (sort keys %$logs) {
-        say "=== $p ===" unless defined $path;
+        say "=== $p ===" unless $single_target;
         say $_ for @{ $logs->{$p} };
     }
     return 0;
 }
 
-# cmd_revert -- Restore a tracked file to a specific revision.
-# Prompts for confirmation unless --force is given.
-sub cmd_revert {
-    require ChangeTrack::Runner;
-    my ($path, $rev) = @ARGV;
-    unless (defined $path && defined $rev) {
-        warn "Usage: changetrack-ng revert <path> <rev>\n";
+# cmd_show -- Print historical content and metadata of <path> at <rev>.
+sub cmd_show {
+    return 64 if _reject_unknown_flag(\@ARGV, 1 => 1);
+    if (@ARGV < 2) {
+        warn "changetrack-ng show: usage: changetrack-ng show <path> <revision>\n";
         return 64;
     }
+    if (@ARGV > 2) {
+        warn "changetrack-ng show: unexpected argument '$ARGV[2]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
+    my ($path, $rev) = @ARGV;
+    if ($rev =~ /^-/) {
+        warn "changetrack-ng: invalid revision '$rev' (must not begin with '-')\n";
+        return 64;
+    }
+
+    require ChangeTrack::Runner;
+    my $runner = ChangeTrack::Runner->new(
+        config  => $opts{config},
+        quiet   => $opts{quiet},
+        verbose => $opts{verbose},
+        debug   => $opts{debug},
+        trace   => $opts{trace},
+    );
+    my $out = eval { $runner->show_path($path, $rev) };
+    if ($@) { warn "changetrack-ng: $@\n"; return 2 }
+    print $out;
+    return 0;
+}
+
+# cmd_revert -- Restore a tracked file to a specific revision.
+# Supports --dry-run preview and prompts for confirmation unless --force is given.
+sub cmd_revert {
+    return 64 if _reject_unknown_flag(\@ARGV, 1 => 1);
+    if (@ARGV < 2) {
+        warn "changetrack-ng revert: usage: changetrack-ng revert <path> <revision>\n";
+        return 64;
+    }
+    if (@ARGV > 2) {
+        warn "changetrack-ng revert: unexpected argument '$ARGV[2]'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+
+    my ($path, $rev) = @ARGV;
     # A revision beginning with '-' could be consumed as a flag by the VCS
     # backend (argument injection); reject it up front.
     if ($rev =~ /^-/) {
@@ -229,7 +322,42 @@ sub cmd_revert {
         return 64;
     }
 
+    require ChangeTrack::Runner;
+    my $runner = ChangeTrack::Runner->new(
+        config       => $opts{config},
+        quiet        => $opts{quiet},
+        verbose      => $opts{verbose},
+        debug        => $opts{debug},
+        trace        => $opts{trace},
+        dry_run      => $opts{dry_run},
+        force        => $opts{force},
+        lock_timeout => $opts{lock_timeout},
+    );
+
+    if ($opts{dry_run}) {
+        my $preview = eval { $runner->revert_path($path, $rev) };
+        if ($@) { warn "changetrack-ng: $@\n"; return 1 }
+
+        say "Would revert $path to revision $rev";
+        if (my $m = $preview->{metadata}) {
+            my $mode  = $m->{mode} // '-';
+            my $owner = (defined $m->{user} && defined $m->{group})
+                ? "$m->{user}:$m->{group}"
+                : (defined $m->{uid} && defined $m->{gid})
+                    ? "$m->{uid}:$m->{gid}"
+                    : '-';
+            say "Target metadata: mode=$mode owner=$owner";
+        }
+        if (@{ $preview->{diff} // [] }) {
+            say $_ for @{ $preview->{diff} };
+        }
+        return 0;
+    }
+
     unless ($opts{force}) {
+        eval { $runner->validate_revert($path, $rev) };
+        if ($@) { warn "changetrack-ng: $@\n"; return 1 }
+
         print "Revert $path to revision $rev? [y/N] ";
         my $ans = <STDIN> // '';
         chomp $ans;
@@ -239,98 +367,32 @@ sub cmd_revert {
         }
     }
 
-    my $runner = ChangeTrack::Runner->new(
-        config  => $opts{config},
-        quiet   => $opts{quiet},
-        verbose => $opts{verbose},
-        debug   => $opts{debug},
-        trace   => $opts{trace},
-    );
     eval { $runner->revert_path($path, $rev) };
     if ($@) { warn "changetrack-ng: $@\n"; return 1 }
     say "Reverted: $path to revision $rev" unless $opts{quiet};
     return 0;
 }
 
-# cmd_update_ignore -- Write VCS-native ignore patterns for the configured backend.
-sub cmd_update_ignore {
-    require ChangeTrack::Config;
-    require ChangeTrack::Runner;
-
-    my $cfg = eval { ChangeTrack::Config->load($opts{config}) };
-    if ($@) { warn "changetrack-ng: cannot read config: $@\n"; return 64 }
-
-    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
-    my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
-
-    my @patterns = ChangeTrack::Runner->builtin_ignore_patterns;
-    push @patterns, @{ $cfg->global('ignore') // [] };
-
-    if ($vcs_name eq 'git') {
-        _update_gitignore($output_dir, \@patterns);
-    } elsif ($vcs_name eq 'rcs') {
-        _info("RCS has no native ignore file; nothing to update");
-    } else {
-        _info("VCS '$vcs_name' ignore-file update not yet supported");
-    }
-
-    return 0;
-}
-
-# _update_gitignore -- Write/replace the managed block in output_dir/.gitignore.
-sub _update_gitignore {
-    my ($dir, $patterns) = @_;
-    my $path         = "$dir/.gitignore";
-    my $begin_marker = '# BEGIN managed by changetrack-ng';
-    my $end_marker   = '# END managed by changetrack-ng';
-
-    my $existing = '';
-    if (open(my $fh, '<', $path)) { local $/; $existing = <$fh> }
-
-    # Transform path-containing patterns to match at any depth in the repo
-    my @gitpats = map { m{/} ? "**/$_" : $_ } @$patterns;
-    my $block = join("\n", $begin_marker, @gitpats, $end_marker) . "\n";
-
-    if ($existing =~ /\Q$begin_marker\E/) {
-        $existing =~ s/\Q$begin_marker\E.*?\Q$end_marker\E\n?/$block/s;
-    } else {
-        $existing .= "\n" if $existing =~ /\S/;
-        $existing .= $block;
-    }
-
-    require File::Temp;
-    my ($fh, $tmp) = eval {
-        File::Temp::tempfile('.gitignore.XXXXXXXX', DIR => $dir, UNLINK => 0);
-    };
-    if ($@ || !$fh) {
-        warn "changetrack-ng: cannot write $path: $!\n";
-        return;
-    }
-    chmod 0600, $tmp;
-    print {$fh} $existing or do {
-        close($fh);
-        unlink($tmp);
-        warn "changetrack-ng: cannot write $path: $!\n";
-        return;
-    };
-    close($fh) or do {
-        unlink($tmp);
-        warn "changetrack-ng: cannot finalize $path: $!\n";
-        return;
-    };
-    rename($tmp, $path) or do {
-        unlink($tmp);
-        warn "changetrack-ng: cannot rename $tmp -> $path: $!\n";
-        return;
-    };
-
-    say "Updated: $path" unless $opts{quiet};
-}
-
 
 ########################################################################
 # Helpers
 ########################################################################
+
+# _reject_unknown_flag -- Reject any leading-dash token left in @ARGV by
+# Getopt::Long pass_through.  Single-dash tokens at indices listed in %rev_idx
+# are passed through so revision validation can report 'invalid revision'.
+sub _reject_unknown_flag {
+    my ($args_ref, %rev_idx) = @_;
+    for my $i (0 .. $#$args_ref) {
+        my $arg = $args_ref->[$i];
+        next unless defined $arg && $arg =~ /^-/;
+        next if $rev_idx{$i} && $arg !~ /^--/;
+        warn "changetrack-ng: unknown option '$arg'\n";
+        _usage(\*STDERR);
+        return 64;
+    }
+    return 0;
+}
 
 # _info -- Print an informational message to STDERR (suppressed when quiet).
 sub _info {
@@ -350,10 +412,10 @@ Subcommands:
   run                          Scan tracked files and commit changes (default)
   init                         Explicitly initialize the output directory
   status                       Show files that would be committed
-  diff [path]                  Show pending diff for one file or all
-  log [path]                   Show history for one file or all
+  diff [path] [rev1] [rev2]    Show pending or historical diff
+  log [path]                   Show history for one path or repository
+  show <path> <rev>            Print historical content and metadata
   revert <path> <rev>          Restore file from a specific revision
-  update-ignore                Update VCS-native ignore file
 
 Options:
     -c, --config <file>    Config file path (overrides all other config resolution)
@@ -361,8 +423,9 @@ Options:
         --user             Use user config:   ~/.config/changetrack-ng/changetrack-ng.conf
   -m, --message <msg>    Extra annotation appended to commit message
       --no-auto-init     Disable implicit VCS initialization on first run
-    -n, --dry-run          Detect and report changes without committing/notifying
-  -f, --force            Force through lock or confirmation prompts
+    -n, --dry-run          Detect and report changes without mutating state
+      --lock-timeout <s> Override lock wait timeout in seconds
+  -f, --force            Force through confirmation prompts
   -q, --quiet            Suppress progress output
   -v, --verbose          Show high-level run structure and key settings
   -d, --debug            Show all external commands, config values, and action details
@@ -390,8 +453,9 @@ changetrack-ng [options] [subcommand] [args]
 
     changetrack-ng run
     changetrack-ng status
-    changetrack-ng diff [path]
+    changetrack-ng diff [path] [rev1] [rev2]
     changetrack-ng log [path]
+    changetrack-ng show <path> <rev>
     changetrack-ng revert <path> <rev>
 
 =head1 DESCRIPTION
@@ -433,23 +497,27 @@ Initialize the output repository backend.
 Show files that would be committed. Exit code is C<1> when changes are
 present, C<0> when clean.
 
-=item C<diff [path]>
+=item C<diff [path] [rev1] [rev2]>
 
-Show pending diff for a single path or for all tracked files.
+Show pending diff for a single path, directory, or all tracked files, or
+compare revisions when C<rev1> (and optionally C<rev2>) is supplied.
 
 =item C<log [path]>
 
-Show version-control history for a single path or all tracked files.
+Show version-control history for a single path, directory, or the whole
+repository when no path is given.
+
+=item C<show E<lt>pathE<gt> E<lt>revE<gt>>
+
+Print recorded metadata and historical file content (or symlink target) for
+C<path> at revision C<rev> without modifying disk state.
 
 =item C<revert E<lt>pathE<gt> E<lt>revE<gt>>
 
 Restore a file or symlink from a specific revision. Acquires the advisory run
 lock (honoring C<lock_timeout>) to prevent concurrent repository mutations.
-
-=item C<update-ignore>
-
-Update backend-specific ignore configuration where supported. Writes changes
-atomically via a temporary file.
+With C<--dry-run>, prints a restoration preview without locking or modifying
+disk.
 
 =back
 
@@ -482,7 +550,12 @@ Disable automatic repository initialization during C<run>.
 =item C<-n, --dry-run>
 
 Detect and report changes without mutating the repository, writing metadata,
-or dispatching notifications.
+or dispatching notifications. On C<revert>, prints a restoration preview
+without modifying disk.
+
+=item C<--lock-timeout E<lt>secondsE<gt>>
+
+Override the configured C<lock_timeout> (must be a non-negative integer).
 
 =item C<-f, --force>
 

@@ -38,7 +38,7 @@ No build step required - Perl modules are used directly from `lib/`.
 
 ## Architecture Quick Reference
 
-**Entry point:** `bin/changetrack-ng` - dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `revert`, `update-ignore`). Default subcommand is `run`.
+**Entry point:** `bin/changetrack-ng` - dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `show`, `revert`). Default subcommand is `run`.
 
 **Core modules in `lib/ChangeTrack/`:**
 
@@ -94,8 +94,9 @@ Three levels, each implying the ones below it:
 Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic output uses `warn` (STDERR) to keep STDOUT clean for subcommand data output (`diff`, `status`, `log`).
 
 ### Config data shapes
-- Array-valued `[global]` keys: `ignore`, `push_remote` - returned as arrayrefs; appended across multi-file loads
-- All other `[global]` keys return scalar strings; conflicting values across files are a fatal parse error
+- Array-valued `[global]` keys: `push_remote` - returned as an arrayref; appended across multi-file loads
+- `[ignore]` sections: line-oriented glob/path patterns returned by `$cfg->ignore` as a deduplicated arrayref (allowed in main config, `conf.d/`, `track.d/`, `ignore.d/`, and `@include` / `@include-track` / `@include-ignore`)
+- All other `[global]` keys return scalar strings; conflicting values across files are a fatal parse error (except `conf.d/*.conf` overriding base config)
 - `[notifier:*]` keys are per-instance scalars stored in `$cfg->notifiers->{<type>}` as an arrayref of instance hashrefs
 - When adding a new global key, decide scalar vs array-valued and update `%ARRAY_GLOBAL_KEYS` accordingly
 
@@ -106,7 +107,7 @@ Implication chain: `--trace` → `--debug` → `--verbose`. All diagnostic outpu
 
 ### Symlink handling mechanics
 - **Metadata:** Recorded in `.changetrack-metadata` JSONL sidecar via `lstat()` + `readlink()`, capturing target path, uid/gid, and mode.
-- **VCS mirror:** `Util::sync_mirror_path()` writes a regular file with the exact marker prefix `__CHANGTRACK_NG_SYMLINK_TARGET__=<target_path>` rather than a raw symlink (avoiding VCS symlink discrepancies).
+- **VCS mirror:** `Util::sync_mirror_path()` writes a regular file with the exact marker prefix `__CHANGETRACK_NG_SYMLINK_TARGET__=<target_path>` rather than a raw symlink (avoiding VCS symlink discrepancies).
 - **Restoration:** `Util::restore_mirror_path()` parses the marker prefix and recreates the symbolic link with `symlink()`.
 
 ### Metadata atomicity
@@ -156,7 +157,7 @@ The description line is mandatory and must start with the file/module name, then
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches
-#   to subcommands (run, init, status, diff, log, revert, update-ignore).
+#   to subcommands (run, init, status, diff, log, show, revert).
 #
 use strict;
 use warnings;

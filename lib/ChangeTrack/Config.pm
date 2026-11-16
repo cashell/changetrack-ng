@@ -24,20 +24,22 @@ Parses changetrack-ng INI configuration files.  Supports:
 
 =item Sections
 
-C<[global]>, C<[track]>, C<[notifier:E<lt>typeE<gt>]> (name defaults to
-C<default>), and C<[notifier:E<lt>typeE<gt>:E<lt>nameE<gt>]>.
+C<[global]>, C<[ignore]>, C<[track]>, C<[notifier:E<lt>typeE<gt>]> (name
+defaults to C<default>), and C<[notifier:E<lt>typeE<gt>:E<lt>nameE<gt>]>.
 
 =item Drop-in directories
 
-C<conf.d/> (global only), C<track.d/> (track only), C<notifier.d/>
-(notifier only) -- siblings of the main config file; C<*.conf> files
-processed in sorted order.  Drop-in files in C<conf.d/> can override
-scalar C<[global]> keys set in the base configuration file.
+C<conf.d/> (global only), C<track.d/> (track and ignore), C<ignore.d/>
+(ignore only), C<notifier.d/> (notifier only) -- siblings of the main
+config file; C<*.conf> files processed in sorted order.  Drop-in files in
+C<conf.d/> can override scalar C<[global]> keys set in the base
+configuration file.
 
 =item Include directives
 
 C<@include E<lt>pathE<gt>>, C<@include-track E<lt>pathE<gt>>,
-C<@include-notifier E<lt>pathE<gt>>; file or directory path; recursion-safe.
+C<@include-ignore E<lt>pathE<gt>>, C<@include-notifier E<lt>pathE<gt>>;
+file or directory path; recursion-safe.
 
 =item Comments
 
@@ -62,18 +64,24 @@ or I/O failure.
 
 =item $cfg->global($key)
 
-Return the value for a C<[global]> key.  Array-valued keys (C<ignore>,
-C<push_remote>) return an arrayref.  All others return a scalar or undef.
+Return the value for a C<[global]> key.  Array-valued keys (C<push_remote>)
+return an arrayref.  All others return a scalar or undef.
 
 Note: C<interval> is parsed and accepted for backward compatibility, but
 is deprecated and ignored by the runner (scheduling is handled via systemd
 timer or cron).
 
+=item $cfg->ignore
+
+Return an arrayref of glob/path patterns from all C<[ignore]> sections,
+deduplicated while preserving first-seen order.
+
 =item $cfg->tracks
 
 Return an arrayref of hashrefs, one per C<[track]> entry.  Each hashref
 has keys: C<kind> (C<"file"> or C<"directory">), C<path> (absolute
-string), C<emails> (arrayref), and C<options> (hashref).
+string), C<emails> (arrayref), and C<options> (hashref; e.g.
+C<sensitive =E<gt> 'yes'|'no'|'auto'>).
 
 =item $cfg->notifiers
 
@@ -105,21 +113,26 @@ our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION
 ########################################################################
 
 my %KNOWN_GLOBAL_KEYS = map { $_ => 1 } qw(
-    vcs output_dir push_remote ignore
+    vcs output_dir push_remote
     sensitive_auto sensitive_notify
     warn_special_files interval
     lock_path lock_timeout command_timeout
+    max_file_size
 );
 
 # Global keys whose values are split into arrayrefs (append across files).
-my %ARRAY_GLOBAL_KEYS = map { $_ => 1 } qw(ignore push_remote);
+my %ARRAY_GLOBAL_KEYS = map { $_ => 1 } qw(push_remote);
 
 my %BOOL_GLOBAL_KEYS = map { $_ => 1 } qw(sensitive_auto warn_special_files);
-my %INT_GLOBAL_KEYS  = map { $_ => 1 } qw(lock_timeout interval command_timeout);
+my %INT_GLOBAL_KEYS  = map { $_ => 1 } qw(lock_timeout interval command_timeout max_file_size);
 my %PATH_GLOBAL_KEYS = map { $_ => 1 } qw(output_dir lock_path);
 my %ENUM_GLOBAL_KEYS = (
     vcs              => { map { $_ => 1 } qw(rcs git fossil svn hg mercurial) },
     sensitive_notify => { map { $_ => 1 } qw(suppress allow) },
+);
+
+my %KNOWN_TRACK_OPTIONS = (
+    sensitive => 1,
 );
 
 # Keys allowed in each notifier type.  'enabled' is universal (always required).
@@ -183,11 +196,14 @@ my %ENUM_NOTIFIER_KEYS = (
 # new -- Internal constructor; use load() in production code.
 sub new {
     my ($class, %args) = @_;
+    my @init_ignore = @{ $args{ignore} // [] };
     return bless {
         global         => $args{global}    // {},
+        ignore         => \@init_ignore,
         tracks         => $args{tracks}    // [],
         notifiers      => $args{notifiers} // { email => [], webhook => [], otlp => [], file => [] },
         _global_src    => {},   # key => { file => $path, is_dropin => $bool }, for conflict detection
+        _ignore_seen   => { map { $_ => 1 } @init_ignore },
         _notifier_seen => {},   # "type:name" => source path, for duplicate-instance detection
     }, $class;
 }
@@ -213,6 +229,7 @@ sub load {
         $dir = '.' unless length $dir;
         $self->_scan_dropin_dir("$dir/conf.d",     'global',   \%visited);
         $self->_scan_dropin_dir("$dir/track.d",    'track',    \%visited);
+        $self->_scan_dropin_dir("$dir/ignore.d",   'ignore',   \%visited);
         $self->_scan_dropin_dir("$dir/notifier.d", 'notifier', \%visited);
     }
 
@@ -285,8 +302,9 @@ sub _load_file {
         next unless $line =~ /\S/;
 
         # @include directives.
-        if ($line =~ /^\@include(-track|-notifier)?\s+(\S.*?)\s*$/) {
+        if ($line =~ /^\@include(-track|-ignore|-notifier)?\s+(\S.*?)\s*$/) {
             my ($variant, $inc_path) = ($1 // '', $2);
+            $inc_path = _expand_hostname($inc_path);
             $inc_path = _expand_env_vars($inc_path, $path, $lineno);
             $inc_path = _expand_home_path($inc_path, $path, $lineno);
 
@@ -314,6 +332,9 @@ sub _load_file {
             } elsif ($hdr eq 'track') {
                 _check_section_allowed('track', $restrict, $path, $lineno);
                 $section = 'track';
+            } elsif ($hdr eq 'ignore') {
+                _check_section_allowed('ignore', $restrict, $path, $lineno);
+                $section = 'ignore';
             } elsif ($hdr =~ /^notifier:([a-zA-Z]+)(?::(\S*))?$/) {
                 my ($t, $n) = (lc($1), $2);
                 $n = 'default' if !defined($n) || $n eq '';
@@ -335,9 +356,13 @@ sub _load_file {
             croak "Config error in $path line $lineno: entry appears before any section header: '$line'";
         }
 
-        # Track entries are free-form lines; handle before the key=value check.
+        # Track and ignore entries are free-form lines; handle before the key=value check.
         if ($section eq 'track') {
             $self->_parse_and_add_track($line, $path, $lineno);
+            next;
+        }
+        if ($section eq 'ignore') {
+            $self->_parse_and_add_ignore($line, $path, $lineno);
             next;
         }
 
@@ -346,13 +371,14 @@ sub _load_file {
             my ($key, $val) = (lc($1), $2);
 
             if ($section eq 'global') {
+                if ($key eq 'ignore') {
+                    croak "Config error in $path line $lineno: "
+                        . "'ignore' in [global] is no longer supported; use an [ignore] section instead";
+                }
                 unless ($KNOWN_GLOBAL_KEYS{$key}) {
                     croak "Config error in $path line $lineno: unknown global key '$key'";
                 }
-                if ($val =~ /\bHOSTNAME\b/) {
-                    my $host = _config_hostname();
-                    $val =~ s/\bHOSTNAME\b/$host/g;
-                }
+                $val = _expand_hostname($val);
                 $val = _expand_env_vars($val, $path, $lineno);
                 $val = _expand_home_path($val, $path, $lineno) if $PATH_GLOBAL_KEYS{$key};
                 $self->_merge_global($key, $val, $path, $lineno, $is_dropin);
@@ -362,10 +388,7 @@ sub _load_file {
                     croak "Config error in $path line $lineno: "
                         . "unknown key '$key' for notifier type '$ntype'";
                 }
-                if ($val =~ /\bHOSTNAME\b/) {
-                    my $host = _config_hostname();
-                    $val =~ s/\bHOSTNAME\b/$host/g;
-                }
+                $val = _expand_hostname($val);
                 $val = _expand_env_vars($val, $path, $lineno);
                 $val = _expand_home_path($val, $path, $lineno) if $PATH_NOTIFIER_KEYS{$ntype}{$key};
 
@@ -495,8 +518,20 @@ sub _flush_notifier_section {
 }
 
 ########################################################################
-# Track-entry parsing
+# Track and ignore entry parsing
 ########################################################################
+
+# _parse_and_add_ignore -- Parse one [ignore] section line and append to ignore list.
+sub _parse_and_add_ignore {
+    my ($self, $line, $src, $lineno) = @_;
+    $line =~ s/\s+[#;].*//;
+    $line =~ s/^\s+|\s+$//g;
+    return unless length $line;
+    $line = _expand_hostname($line);
+    $line = _expand_env_vars($line, $src, $lineno);
+    $line = _expand_home_path($line, $src, $lineno);
+    push @{ $self->{ignore} }, $line unless $self->{_ignore_seen}{$line}++;
+}
 
 # _parse_and_add_track -- Parse one [track] section line and append to tracks.
 sub _parse_and_add_track {
@@ -523,13 +558,14 @@ sub _parse_track_line {
     }
 
     $path = _expand_track_path($path, $src, $lineno);
-    my ($emails_ref, %options) = _parse_rest($rest);
+    my ($emails_ref, %options) = _parse_rest($rest, $src, $lineno);
     return { kind => $kind, path => $path, emails => $emails_ref, options => \%options };
 }
 
-# _expand_track_path -- Expand env vars and ~ in a track path; enforce absolute.
+# _expand_track_path -- Expand HOSTNAME, env vars, and ~ in a track path; enforce absolute.
 sub _expand_track_path {
     my ($path, $src, $lineno) = @_;
+    $path = _expand_hostname($path);
     $path = _expand_env_vars($path, $src, $lineno);
     if ($path =~ m{^~(?:/|$)}) {
         my $home = _home_dir();
@@ -549,14 +585,28 @@ sub _expand_track_path {
 # _parse_rest -- Parse trailing email/option tokens after ':' in a track line.
 # Returns (emails_arrayref, %options_hash).
 sub _parse_rest {
-    my ($rest) = @_;
+    my ($rest, $src, $lineno) = @_;
     return ([], ()) unless defined $rest && length $rest;
+    my $loc = (defined $src && defined $lineno && $lineno) ? "$src line $lineno" : ($src // '');
     my (@emails, %options);
-    for my $token (split /\s+/, $rest) {
+    for my $token (split /[\s,]+/, $rest) {
         next unless length $token;
         if ($token =~ /^(\w+)=(.*)$/) {
-            $options{$1} = $2;
+            my ($k, $v) = (lc($1), $2);
+            unless ($KNOWN_TRACK_OPTIONS{$k}) {
+                croak "Config error" . ($loc ? " in $loc" : '') . ": unknown [track] option '$k'";
+            }
+            if ($k eq 'sensitive') {
+                if (lc($v) eq 'auto') {
+                    $options{sensitive} = 'auto';
+                } else {
+                    my $bool = _parse_bool($v, 'sensitive', $src, $lineno);
+                    $options{sensitive} = $bool ? 'yes' : 'no';
+                }
+            }
         } else {
+            $token = _expand_hostname($token);
+            $token = _expand_env_vars($token, $src, $lineno);
             push @emails, $token;
         }
     }
@@ -566,6 +616,15 @@ sub _parse_rest {
 ########################################################################
 # Value expansion helpers
 ########################################################################
+
+# _expand_hostname -- Replace ${HOSTNAME} and bare HOSTNAME tokens with the system FQDN.
+sub _expand_hostname {
+    my ($val) = @_;
+    return $val unless defined $val && $val =~ /(?:\$\{HOSTNAME\}|\bHOSTNAME\b)/;
+    my $host = _config_hostname();
+    $val =~ s/(?:\$\{HOSTNAME\}|\bHOSTNAME\b)/$host/g;
+    return $val;
+}
 
 # _expand_env_vars -- Replace ${VAR} references with environment values.
 # $src and $lineno are used only for error messages.
@@ -640,18 +699,24 @@ sub _parse_bool {
 # _include_restrict -- Compute the effective section restriction for an
 # @include directive.
 # - Bare @include:        inherits the parent file's restriction.
-# - @include-track:       restricts to 'track'; incompatible with non-track parent.
+# - @include-track:       restricts to 'track' (allows [track] and [ignore]);
+#                         incompatible with non-track parent.
+# - @include-ignore:      restricts to 'ignore'; allowed in unrestricted,
+#                         'track', or 'ignore' parent.
 # - @include-notifier:    restricts to 'notifier'; incompatible with non-notifier parent.
 sub _include_restrict {
     my ($parent_restrict, $variant, $path, $lineno) = @_;
 
     my $req = $variant eq '-track'    ? 'track'
+            : $variant eq '-ignore'   ? 'ignore'
             : $variant eq '-notifier' ? 'notifier'
             :                           undef;
 
     return $parent_restrict unless defined $req;
 
-    if (defined $parent_restrict && $parent_restrict ne $req) {
+    if (defined $parent_restrict && $parent_restrict ne $req
+        && !($parent_restrict eq 'track' && $req eq 'ignore'))
+    {
         croak "Config error in $path line $lineno: "
             . "\@include-$req is not allowed inside a '$parent_restrict'-restricted file";
     }
@@ -663,6 +728,7 @@ sub _check_section_allowed {
     my ($section_type, $restrict, $path, $lineno) = @_;
     return unless defined $restrict;
     return if $restrict eq $section_type;
+    return if $restrict eq 'track' && $section_type eq 'ignore';
     croak "Config error in $path line $lineno: "
         . "[$section_type] section is not allowed in a '$restrict'-restricted file";
 }
@@ -687,6 +753,12 @@ sub _abs_path {
 sub global {
     my ($self, $key) = @_;
     return $self->{global}{$key};
+}
+
+# ignore -- Return the arrayref of [ignore] patterns.
+sub ignore {
+    my ($self) = @_;
+    return $self->{ignore} // [];
 }
 
 # tracks -- Return the arrayref of [track] entries.

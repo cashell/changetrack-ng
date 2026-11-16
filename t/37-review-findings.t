@@ -350,4 +350,73 @@ EOF
     is($removed[0]->{path}, $file_del, 'reconciled removed file path matches');
 }
 
+########################################################################
+# Finding 10: Git Metadata-Only Change Creates VCS Commit & Revert Restores
+########################################################################
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $outdir = File::Spec->catdir($tmpdir, 'outdir');
+    my $tracked = File::Spec->catfile($tmpdir, 'meta_commit.conf');
+    open(my $tfh, '>', $tracked) or die "open: $!";
+    print {$tfh} "initial content\n";
+    close($tfh);
+    chmod(0640, $tracked) or die "chmod: $!";
+
+    my $cfg_file = File::Spec->catfile($tmpdir, 'ct.conf');
+    open(my $cfh, '>', $cfg_file) or die "open: $!";
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $outdir\n\n[track]\n$tracked\n";
+    close($cfh);
+
+    my $runner1 = ChangeTrack::Runner->new(config => $cfg_file, quiet => 1);
+    my $rep1 = $runner1->run;
+    my $rev1 = $rep1->{revision};
+    ok(defined $rev1 && length($rev1) > 0, 'git initial run: revision populated on report');
+    is($rep1->changes->[0]{revision}, $rev1, 'git initial run: per-change revision matches report revision');
+
+    # Metadata-only change: chmod 0640 -> 0600 (no content change)
+    chmod(0600, $tracked) or die "chmod: $!";
+
+    my $runner2 = ChangeTrack::Runner->new(config => $cfg_file, quiet => 1);
+    my $rep2 = $runner2->run;
+    ok($rep2->has_changes, 'git meta-only change: change detected');
+    my $rev2 = $rep2->{revision};
+    ok(defined $rev2 && length($rev2) > 0, 'git meta-only change: creates VCS commit with revision');
+    isnt($rev2, $rev1, 'git meta-only change: new commit revision distinct from rev1');
+    is($rep2->changes->[0]{revision}, $rev2, 'git meta-only change: per-change revision populated');
+
+    # Revert to rev1 restores historical 0640
+    $runner2->revert_path($tracked, $rev1);
+    my $restored_mode = (stat($tracked))[2] & 07777;
+    is($restored_mode, 0640, 'git revert_path: historical 0640 permissions restored after 0600 change');
+}
+
+########################################################################
+# Finding 11: Push_Remote Failure Warnings & Heartbeat Ineligibility
+########################################################################
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $outdir = File::Spec->catdir($tmpdir, 'outdir');
+    my $tracked = File::Spec->catfile($tmpdir, 'push_fail.conf');
+    open(my $tfh, '>', $tracked) or die "open: $!";
+    print {$tfh} "content\n";
+    close($tfh);
+
+    my $cfg_file = File::Spec->catfile($tmpdir, 'ct.conf');
+    open(my $cfh, '>', $cfg_file) or die "open: $!";
+    print {$cfh} "[global]\nvcs = git\noutput_dir = $outdir\npush_remote = git://127.0.0.1:9999/invalid/repo\n\n[track]\n$tracked\n";
+    close($cfh);
+
+    my $runner = ChangeTrack::Runner->new(config => $cfg_file, quiet => 1);
+    my $report = $runner->run;
+
+    ok($report->has_changes, 'push_remote failure test: run completed with change');
+    my @warns = @{ $report->warnings };
+    ok(scalar(@warns) > 0, 'push_remote failure: warning added to report');
+    ok(
+        scalar(grep { m{git push \Qgit://127.0.0.1:9999/invalid/repo\E failed} } @warns),
+        'push_remote failure: warning message contains push remote failure detail'
+    );
+    ok(!$report->is_heartbeat_eligible, 'push_remote failure: report is NOT heartbeat eligible');
+}
+
 done_testing();

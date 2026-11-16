@@ -300,4 +300,182 @@ use_ok('ChangeTrack::Test::MockSendmail');
     ok(grep(/sendmail not found/i, @warn), 'bad explicit sendmail_path emits skip warning');
 }
 
+########################################################################
+# Use_Track_Recipients Flag Behavior
+########################################################################
+{
+    # 1. Default (use_track_recipients => 1): per-track recipients take precedence
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path => $script,
+            to            => ['instance-default@example.com'],
+            # use_track_recipients defaults to 1
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(defined $cap, 'use_track_recipients=1: capture readable');
+        ok(scalar(grep { $_ eq 'pertrack@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=1: per-track recipient receives notification');
+        ok(!scalar(grep { $_ eq 'instance-default@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=1: instance to recipient overridden');
+
+        unlink $script, $capture;
+    }
+
+    # 2. use_track_recipients => 0: ignores per-track recipients, sends to instance to list
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path        => $script,
+            to                   => ['admin-digest@example.com'],
+            use_track_recipients => 0,
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(defined $cap, 'use_track_recipients=0: capture readable');
+        ok(scalar(grep { $_ eq 'admin-digest@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=0: instance to recipient receives notification');
+        ok(!scalar(grep { $_ eq 'pertrack@example.com' } @{ $cap->{args} }),
+            'use_track_recipients=0: per-track recipient ignored');
+
+        unlink $script, $capture;
+    }
+
+    # 3. use_track_recipients => 0 with empty instance to list skips and warns
+    {
+        my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+        my $n = ChangeTrack::Notify::Email->new(
+            sendmail_path        => $script,
+            to                   => [],
+            use_track_recipients => 0,
+        );
+
+        my $report = ChangeTrack::Report->new(start_time => time());
+        $report->add_change(
+            path         => '/etc/custom.conf',
+            is_new       => 0,
+            is_sensitive => 0,
+            diff         => ['-one', '+two'],
+            meta_change  => '',
+            recipients   => ['pertrack@example.com'],
+        );
+
+        my @warn;
+        local $SIG{__WARN__} = sub { push @warn, @_ };
+        $n->send($report);
+
+        my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+        ok(!defined $cap || !@{ $cap->{args} // [] },
+            'use_track_recipients=0 with no to: sendmail not called');
+        ok(grep(/no recipients for \/etc\/custom\.conf/i, @warn),
+            'use_track_recipients=0 with no to: warning emitted');
+
+        unlink $script, $capture;
+    }
+}
+
+########################################################################
+# Revision Surfacing: Report Revision In Email Header
+########################################################################
+{
+    my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+    my $n = ChangeTrack::Notify::Email->new(
+        sendmail_path => $script,
+        from          => 'ct@testhost',
+        to            => ['admin@example.com'],
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(
+        path         => '/etc/hosts',
+        is_new       => 0,
+        is_sensitive => 0,
+        diff         => ['+192.168.1.1 server'],
+    );
+    $report->set_revision('deadbeef1234');
+    $n->send($report);
+
+    my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+    ok(defined $cap, 'email capture readable with report revision');
+    like($cap->{body}, qr/^Revision:\s*deadbeef1234$/m, 'email body header contains Revision: deadbeef1234');
+    unlike($cap->{body}, qr/CHANGED:.*deadbeef/,        'per-file line does not redundantly repeat revision');
+
+    unlink $script, $capture;
+}
+
+########################################################################
+# Revision Surfacing: Per-File Revision In Email Block
+########################################################################
+{
+    my ($script, $capture) = ChangeTrack::Test::MockSendmail->create;
+
+    my $n = ChangeTrack::Notify::Email->new(
+        sendmail_path => $script,
+        from          => 'ct@testhost',
+        to            => ['admin@example.com'],
+    );
+
+    my $report = ChangeTrack::Report->new(start_time => 1000000000);
+    $report->add_change(
+        path         => '/etc/rcs-file',
+        is_new       => 0,
+        is_sensitive => 0,
+        diff         => ['+change line'],
+        revision     => '1.2',
+    );
+    $n->send($report);
+
+    my $cap = ChangeTrack::Test::MockSendmail->read_capture($capture);
+    ok(defined $cap, 'email capture readable with per-file revision');
+    unlike($cap->{body}, qr/^changetrack-ng detected.*\nRevision:/s, 'email body has no top-level revision header');
+    like($cap->{body},   qr/^\s*Revision:\s*1\.2$/m,                'email body per-file block contains Revision: 1.2');
+
+    unlink $script, $capture;
+}
+
+########################################################################
+# Direct _format_body Backward Compatibility
+########################################################################
+{
+    my $n = ChangeTrack::Notify::Email->new;
+    my $changes = [
+        { path => '/etc/test', is_new => 0, is_removed => 0, is_sensitive => 0, diff => [] },
+    ];
+
+    # 3-arg call (legacy test compatibility)
+    my $body3 = $n->_format_body($changes, 'myhost', '2026-11-12T00:00:00');
+    unlike($body3, qr/Revision:/, '3-arg _format_body omits Revision line');
+
+    # 4-arg call with scalar revision
+    my $body4 = $n->_format_body($changes, 'myhost', '2026-11-12T00:00:00', 'git-sha-789');
+    like($body4, qr/^Revision:\s*git-sha-789$/m, '4-arg _format_body includes Revision: git-sha-789');
+}
+
 done_testing();

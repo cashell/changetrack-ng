@@ -20,7 +20,9 @@ ChangeTrack::Notify::Webhook - HTTP webhook notifier for changetrack-ng
 
 POSTs a JSON change report to one or more URLs via C<HTTP::Tiny>.  Payload
 is a summary by default; set C<webhook_full_diff = 1> to include the full
-unified diff.  Configurable heartbeat (default off).
+unified diff.  When a VCS revision is present on the report or individual files,
+it is included in the top-level C<revision> field and per-file C<files> records.
+Configurable heartbeat (default off).
 
 =cut
 
@@ -99,6 +101,9 @@ sub _build_payload {
                 diff_lines_added   => $suppressed ? 0 : _count_added($c->{diff}),
                 diff_lines_removed => $suppressed ? 0 : _count_removed($c->{diff}),
             };
+            if (defined $c->{revision} && length $c->{revision}) {
+                $entry->{revision} = $c->{revision};
+            }
             if ($self->{full_diff} && !$suppressed) {
                 my ($text, $truncated)
                     = $self->_truncate_diff(join("\n", @{ $c->{diff} // [] }));
@@ -119,7 +124,11 @@ sub _build_payload {
         files         => \@files,
     );
     $payload{run_duration_ms} = int($dur) if defined $dur;
-    $payload{vcs}     = $report->{vcs}     if defined $report->{vcs};
+    $payload{vcs} = $report->{vcs} if defined $report->{vcs};
+
+    my $rev = eval { $report->revision } // (ref($report) eq 'HASH' ? $report->{revision} : undef);
+    $payload{revision} = $rev if defined $rev && length $rev;
+
     $payload{message} = $is_heartbeat
         ? 'changetrack-ng heartbeat (no changes)'
         : ($report->{message} // '');

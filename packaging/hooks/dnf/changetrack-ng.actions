@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
+# SPDX-License-Identifier: GPL-3.0-or-later
+# changetrack-ng DNF5 actions plugin hook (libdnf5-plugin-actions)
+# Installed to /etc/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions
+
+pre_transaction::::/bin/sh -c '. @DEFAULTSDIR@/changetrack-ng 2>/dev/null || true; @BINDIR@/changetrack-ng run -q --lock-timeout 30 -m "pre-install: dnf" ${CHANGETRACK_EXTRA_ARGS:-} 2>/dev/null || true'
+post_transaction::::/bin/sh -c '. @DEFAULTSDIR@/changetrack-ng 2>/dev/null || true; @BINDIR@/changetrack-ng run -q --lock-timeout 30 -m "post-install: dnf" ${CHANGETRACK_EXTRA_ARGS:-} 2>/dev/null || true'

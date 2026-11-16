@@ -22,7 +22,8 @@ Appends one OTel-shaped JSON record per event (one per changed file, one
 per heartbeat, one per warning) to the file at C<path>.  Each record carries
 C<timestamp>, C<event_name>, C<severity_text>, C<severity_number>, C<body>,
 C<resource>, and an C<attributes> hash keyed by changetrack-ng's canonical
-attribute names.  Heartbeat is configurable (default off).
+attribute names (including C<vcs.revision> and C<config_change.revision>
+when available).  Heartbeat is configurable (default off).
 
 =cut
 
@@ -125,7 +126,7 @@ sub _build_records {
     }
 
     for my $c (@{ $report->changes }) {
-        my $ev = $self->_build_change_event($c, $report->{start_time} // time());
+        my $ev = $self->_build_change_event($c, $report, $report->{start_time} // time());
 
         my $occurred_ts = strftime('%Y-%m-%dT%H:%M:%SZ', gmtime($ev->{occurred_unix}));
         my %attrs = (

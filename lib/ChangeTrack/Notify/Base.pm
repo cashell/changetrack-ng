@@ -49,10 +49,12 @@ Returns the response hashref on 2xx and 4xx status (emitting a warning on 4xx).
 Retries on 5xx and 599 network errors with back-off delay doubling each attempt.
 Dies on terminal failure after 3 attempts.
 
-=item $notifier->_build_change_event($change, $observed_unix)
+=item $notifier->_build_change_event($change, $report_or_observed, $observed_unix)
 
 Normalize a single Report change hashref into a canonical OpenTelemetry event
-structure shared by File and OTLP notifiers.
+structure shared by File and OTLP notifiers.  If revision information is
+present on the change record or the report, C<vcs.revision> and
+C<config_change.revision> attributes are populated on the resulting event.
 
 =back
 
@@ -142,7 +144,15 @@ sub _truncate_diff {
 # _build_change_event -- Normalize a single Report change hashref into a
 # canonical OpenTelemetry event structure shared by File and OTLP notifiers.
 sub _build_change_event {
-    my ($self, $change, $observed_unix) = @_;
+    my ($self, $change, $report_or_observed, $observed_unix) = @_;
+
+    my $report;
+    if (ref($report_or_observed)) {
+        $report        = $report_or_observed;
+        $observed_unix //= eval { $report->start_time } // time();
+    } else {
+        $observed_unix //= $report_or_observed;
+    }
     $observed_unix //= time();
 
     my $path = $change->{path};
@@ -170,6 +180,14 @@ sub _build_change_event {
         'config_change.type'           => $change_type,
         'config_change.sensitive'      => $is_sensitive,
     );
+
+    my $rev = $change->{revision}
+        // (ref($report) && eval { $report->can('revision') } ? $report->revision
+            : (ref($report) eq 'HASH' ? $report->{revision} : undef));
+    if (defined $rev && length $rev) {
+        $attrs{'vcs.revision'}           = $rev;
+        $attrs{'config_change.revision'} = $rev;
+    }
 
     if (defined $fm->{mode}) {
         $attrs{'changetrack.file.mode'} = $fm->{mode};

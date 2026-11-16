@@ -217,4 +217,27 @@ EOF
     is_deeply($pr, [], 'Empty value with inline comment yields empty array for array key');
 }
 
+########################################################################
+# Inline '#' and ';' comments on [ignore] section lines
+########################################################################
+{
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = write_conf($dir, <<'EOF');
+[global]
+vcs = git
+output_dir = /tmp
+
+[ignore]
+*.swp    # vim swap files
+*~       ; editor backup files
+*.bak
+
+[track]
+/etc/hosts
+EOF
+    my $cfg = ChangeTrack::Config->load($path);
+    is_deeply($cfg->ignore, ['*.swp', '*~', '*.bak'],
+        'Inline # and ; comments stripped from [ignore] section lines');
+}
+
 done_testing();

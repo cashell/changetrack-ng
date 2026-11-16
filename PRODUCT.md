@@ -18,13 +18,14 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 
 ## Key Features
 
-- **Versioned backup & one-command recovery:** Preserves full revision history (contents, permissions, ownership, symlinks) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>`. Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
+- **Versioned backup & one-command recovery:** Preserves full revision history (contents, permissions, ownership, symlinks via versioned `.changetrack-metadata`) and allows instant restoration of prior states or deleted files with `changetrack-ng revert <path> <rev>` (plus `--dry-run` preview and `show <path> <rev>` / historical `diff` inspection). Out of the box, it tracks its own configuration (`/etc/changetrack-ng`) and writes structured change events to `/var/log/changetrack-ng.jsonl` with logrotate support.
 - **Multi-VCS backends** - Git, RCS, Fossil, SVN, or Mercurial. Choose the tool your team already knows.
 - **Pluggable notifications** - Email, webhook (HTTP POST JSON), OTLP (OpenTelemetry logs), or local JSON file log. Multiple notifiers can be active simultaneously.
 - **Sensitive file protection** - Files without world-read permission are automatically flagged; diffs can be suppressed from notifications to prevent secret leakage.
 - **Metadata tracking** - Records ownership, permissions, file type, and symlink targets alongside content history.
-- **Ignore patterns** - Glob-based exclusions to skip noisy or irrelevant files within tracked directories.
-- **Package manager hooks** - Pre/post-transaction snapshots for apt, dnf, and pacman annotate commits with package operations.
+- **Ignore patterns** - Glob-based exclusions in `[ignore]` sections to skip noisy or irrelevant files and prune excluded subtrees during traversal.
+- **File size guard** - Configurable `max_file_size` (default `10485760` bytes / 10 MB; `0` = unlimited) tracks oversized files as metadata-only without reading file content.
+- **Package manager hooks** - Pre/post-transaction snapshots for apt, dnf, and pacman annotate commits with package-manager markers (`-m "pre-install: <pm>"` / `-m "post-install: <pm>"`) and wait up to `--lock-timeout 30` seconds if a background scan is active.
 - **Heartbeat signaling** - Configurable "no changes" heartbeats for monitoring systems that alert on silence.
 - **Zero non-core dependencies** - Runs on any Perl 5.20+ system with no CPAN modules required.
 - **Execution watchdog** - Bounded external command execution (`command_timeout`, default 120s) with automatic process termination to prevent runaway subprocesses from stalling scheduled runs.
@@ -40,22 +41,22 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 | `run` (default) | Full scan → commit → notify cycle |
 | `init` | Initialize the VCS output directory |
 | `status` | Show files with pending changes - including content modifications and metadata-only changes (chmod/chown) - without modifying the VCS mirror (exit 1 if any) |
-| `diff [path]` | Show unified diff for pending or historical changes |
-| `log [path]` | Show VCS history for a tracked file |
-| `revert <path> <rev>` | Restore a file to a specific historical revision |
-| `update-ignore` | Sync VCS-native ignore file with configured patterns |
+| `diff [path] [rev1] [rev2]` | Show unified diff for pending (including directories/metadata) or historical changes |
+| `log [path]` | Show VCS history for a tracked path, directory, or repository |
+| `show <path> <rev>` | Print historical content (or symlink target) and metadata at a revision |
+| `revert <path> <rev>` | Restore a file to a specific historical revision (supports `--dry-run`) |
 
 ---
 
 ## Configuration
 
-Configuration uses an INI-style format with three section types:
+Configuration uses an INI-style format with `[global]`, `[ignore]`, `[track]`, and `[notifier:<type>:<name>]` sections:
 
 ```ini
 [global]
-output_dir = /var/lib/changetrack-ng
-vcs        = git
-ignore     = *.swp *~ .git
+output_dir    = /var/lib/changetrack-ng
+vcs           = git
+max_file_size = 10485760
 
 [notifier:email:default]
 enabled = true
@@ -65,31 +66,45 @@ to      = ops@example.com
 enabled = true
 url     = https://hooks.example.com/changetrack
 
+[ignore]
+*.swp
+*~
+/etc/letsencrypt/
+
 [track]
-/etc
-/usr/local/etc
-/var/spool/cron
+DIRECTORY /etc
+DIRECTORY /usr/local/etc
+DIRECTORY /var/spool/cron
 /home/deploy/.ssh/authorized_keys
 ```
 
-**`[global]`** controls VCS backend selection, ignore patterns, sensitive file
-behavior, and operational parameters (lock timeout, push remotes, etc.).
+**`[global]`** controls VCS backend selection, file size cap (`max_file_size`), sensitive file
+behavior, and operational parameters (lock timeout, command timeout, push remotes, etc.).
+
+**`[ignore]`** lists glob/path exclusion patterns, one per line. `[ignore]`
+always overrides `[track]` and prunes ignored directories during traversal.
+Ready-to-use whole-`/etc` exclusions are shipped in
+`packaging/etc/examples/track.d/etc-full.conf`.
 
 **`[notifier:<type>:<name>]`** configures a notification instance.  Each
 section requires `enabled = true|false`.  Supported types: `email`, `webhook`,
 `otlp`, `file`.  Multiple instances of the same type are supported.
 
-**`[track]`** lists individual files or directories to monitor.  Directories
-are traversed recursively; ignore patterns apply during traversal.
+**`[track]`** lists individual files or directories (`DIRECTORY /path`) to
+monitor.  Directories are traversed recursively; `[ignore]` patterns apply
+during traversal and post-filtering.
 
-Drop-in directories (`conf.d/`, `track.d/`, `notifier.d/`) and `@include`
-directives allow configs to be split across multiple files for composability.
+Drop-in directories (`conf.d/`, `track.d/` for `[track]` and `[ignore]`,
+`ignore.d/`, `notifier.d/`) and `@include` directives (`@include`,
+`@include-track`, `@include-ignore`, `@include-notifier`) allow configs to be
+split across multiple files for composability.
 Drop-in files in `conf.d/*.conf` can override scalar `[global]` keys (`vcs`,
-`output_dir`, `interval`, etc.) defined in the base config file, while conflicting
+`output_dir`, `max_file_size`, etc.) defined in the base config file, while conflicting
 definitions between multiple drop-in files or duplicate keys within the same file
-remain fatal errors. Array-valued keys (`ignore`, `push_remote`) append across files.
+remain fatal errors. `push_remote` appends across files, and `[ignore]` patterns
+are collected across all loaded files.
 
-The `HOSTNAME` token is interpolated in values, useful for multi-host configs managed by a CM tool.
+The `HOSTNAME` / `${HOSTNAME}` token is interpolated in values, useful for multi-host configs managed by a CM tool.
 
 ---
 
@@ -113,12 +128,12 @@ All whole-repo backends store tracked files in a mirror tree: `/etc/passwd` beco
 |---------|---------|-----------|----------|
 | Email | Plain-text with inline diffs | Always off | Human review; existing alerting workflows |
 | Webhook | JSON POST to one or more URLs | Opt-in | ChatOps, ticketing, custom integrations |
-| OTLP | OpenTelemetry log records (gzip) | On by default | Observability platforms; alert-on-absence |
+| OTLP | OpenTelemetry log records (default uncompressed `''`; optional `compression = gzip`) | On by default | Observability platforms; alert-on-absence |
 | File | Per-event OTel-shaped NDJSON | Opt-in | Local audit trail; log shipping |
 
-Notifications include: hostname, timestamp, list of changed files, metadata diffs, and (unless suppressed) content diffs.
+Notifications include: hostname, timestamp, VCS revision ID (when committed), list of changed files, metadata diffs, and (unless suppressed) content diffs.
 
-The OTLP and File notifiers share a canonical OTel attribute model. Each event record carries `event.name` (`changetrack.file.changed`, `changetrack.file.created`, `changetrack.file.removed`, `changetrack.run.heartbeat`, `changetrack.run.warning`), configurable `severity_text`/`severity_number` per record class, separate occurred-time (file mtime) and observed-time (scan start) timestamps, and an attributes map with canonical keys (`file.path`, `file.name`, `file.directory`, `config_change.type`, `config_change.sensitive`, `config_change.diff`). Diffs can be capped to a configurable byte limit (`max_diff_bytes`); when truncated, a `config_change.diff_truncated` flag is added. Configured recipients can optionally be emitted as a `config_change.notified` attribute (`emit_recipients`).
+The OTLP and File notifiers share a canonical OTel attribute model. Each event record carries `event.name` (`changetrack.file.changed`, `changetrack.file.created`, `changetrack.file.removed`, `changetrack.run.heartbeat`, `changetrack.run.warning`), configurable `severity_text`/`severity_number` per record class, separate occurred-time (file mtime) and observed-time (scan start) timestamps, and an attributes map with canonical keys (`file.path`, `file.name`, `file.directory`, `config_change.type`, `config_change.sensitive`, `config_change.diff`, `vcs.revision`, `config_change.revision`). Diffs can be capped to a configurable byte limit (`max_diff_bytes`); when truncated, a `config_change.diff_truncated` flag is added. Configured recipients can optionally be emitted as a `config_change.notified` attribute (`emit_recipients`).
 
 ---
 
@@ -128,7 +143,7 @@ The OTLP and File notifiers share a canonical OTel attribute model. Each event r
 
 - **systemd timer** (preferred): hourly with `Persistent=true` to catch up after downtime.
 - **cron**: drop-in script for `/etc/cron.hourly/`.
-- **Package hooks**: apt, dnf, and pacman hooks trigger pre/post-transaction runs with annotation messages (`-m "apt: <package list>"`).
+- **Package hooks**: apt, dnf, and pacman hooks trigger pre/post-transaction runs with static commit annotations (`-m "pre-install: <pm>"` / `-m "post-install: <pm>"`, where `<pm>` is `apt`, `dnf`, or `pacman`) and `--lock-timeout 30`.
 
 The flock-based lock ensures concurrent invocations (e.g., cron + package hook) do not conflict.
 
@@ -141,6 +156,7 @@ The flock-based lock ensures concurrent invocations (e.g., cron + package hook) 
 | Regular text file | Full versioned diff | `/etc/passwd` |
 | Symlink | Link target path | `/etc/localtime` |
 | Binary file | Metadata only (size, perms, ownership) | `/etc/selinux/.../policy.kern` |
+| Oversize file (`> max_file_size`) | Metadata only (warns on first detection) | Large log or data files |
 | Empty file | Metadata only | `/etc/machine-id` (before population) |
 | Unreadable file | Metadata only (warns on first detection) | `/etc/shadow` |
 | Special (FIFO, socket, device) | Metadata only (warns) | `/dev/log` |

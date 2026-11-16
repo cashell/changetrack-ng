@@ -81,14 +81,15 @@ to STDERR for every command invoked.
 Copy I<$src> into the mirror path I<$dst>.  For regular files this is a
 plain file copy.  For symlinks this writes a deterministic text snapshot
 record containing the link target (identified by the
-C<__CHANGTRACK_NG_SYMLINK_TARGET__=> prefix).
+C<__CHANGETRACK_NG_SYMLINK_TARGET__=> prefix).
 
 =item restore_mirror_path($mirror, $dst)
 
 Restore I<$dst> from the mirror file I<$mirror>.  If I<$mirror> is a
 symlink snapshot record, recreates the symlink with the recorded target;
 otherwise atomically restores the file via a temporary file and rename,
-preserving existing mode and ownership.
+preserving existing mode and ownership.  If the parent directory of
+I<$dst> does not exist, it is created automatically before restoring.
 
 =item set_debug($bool)
 
@@ -122,6 +123,7 @@ use feature qw(state);
 use Carp qw(croak carp);
 use File::Basename qw(dirname);
 use File::Copy qw(copy);
+use File::Path qw(make_path);
 use File::Temp qw(tempfile);
 
 our $VERSION = do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION };
@@ -393,6 +395,7 @@ sub sync_mirror_path {
     my ($src, $dst) = @_;
     croak 'sync_mirror_path: src required' unless defined $src;
     croak 'sync_mirror_path: dst required' unless defined $dst;
+    return 'file' if ($src eq $dst || $src eq '/.changetrack-metadata') && -f $dst;
 
     if (-l $src) {
         my $target = readlink($src);
@@ -415,12 +418,16 @@ sub sync_mirror_path {
 # restore_mirror_path -- Restore $dst from the mirror file $mirror.
 # If $mirror is a symlink snapshot record, recreates the symlink;
 # otherwise atomically restores the file content via a temporary file
-# and rename, preserving existing mode and ownership.
+# and rename, preserving existing mode and ownership.  Recreates missing
+# parent directories of $dst if needed.
 # Returns 'symlink' or 'file'.
 sub restore_mirror_path {
     my ($mirror, $dst) = @_;
     croak 'restore_mirror_path: mirror required' unless defined $mirror;
     croak 'restore_mirror_path: dst required' unless defined $dst;
+
+    my $dir = dirname($dst);
+    make_path($dir) unless -d $dir;
 
     my $target = _read_symlink_snapshot_target($mirror);
     if (defined $target) {
@@ -444,7 +451,6 @@ sub restore_mirror_path {
         }
     }
 
-    my $dir = dirname($dst);
     my ($tmp_fh, $tmp);
     eval {
         ($tmp_fh, $tmp) = File::Temp::tempfile(

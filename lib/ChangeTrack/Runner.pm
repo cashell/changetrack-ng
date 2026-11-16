@@ -31,7 +31,8 @@ ChangeTrack::Runner - main orchestration for changetrack-ng
 Loads config and metadata, builds the file list (applying ignore patterns),
 processes each file (stat compare, VCS diff, Report accumulation), triggers
 all enabled notifiers, and commits the VCS.  Subcommand helpers (C<status>,
-C<diff_path>, C<log_path>, C<revert_path>) are also exposed for the CLI.
+C<diff_path>, C<log_path>, C<show_path>, C<revert_path>) are also exposed for
+the CLI.
 
 =head1 CLASS METHODS
 
@@ -40,7 +41,7 @@ C<diff_path>, C<log_path>, C<revert_path>) are also exposed for the CLI.
 =item ChangeTrack::Runner->new(%opts)
 
 Accepted options: C<config>, C<message>, C<no_auto_init>, C<quiet>,
-C<verbose>, C<debug>, C<trace>, C<force>.
+C<verbose>, C<debug>, C<trace>, C<dry_run>, C<force>, C<lock_timeout>.
 
 =back
 
@@ -63,20 +64,31 @@ Returns C<($vcs, $output_dir, $already_initialized)>.
 Return an arrayref of hashrefs for files that have changed since the last
 commit.  Each hashref has at least a C<path> key.
 
-=item $runner->diff_path($path)
+=item $runner->diff_path($path, [$rev1, $rev2])
 
 Return a hashref mapping file paths to arrayrefs of diff lines.  If
-I<$path> is undef, all pending diffs are returned.
+I<$path> is undef, all pending diffs are returned.  If I<$path> is a tracked
+directory (with no revisions), diffs for all matching tracked files under
+that directory are returned.  When I<$rev1> (and optionally I<$rev2>) is
+specified, returns historical or live-vs-historical diff lines for I<$path>.
 
-=item $runner->log_path($path)
+=item $runner->log_path([$path])
 
-Return a hashref mapping file paths to arrayrefs of log lines.
+Return a hashref mapping file paths (or C<'(repository)'> when I<$path> is
+undef) to arrayrefs of log lines.
+
+=item $runner->show_path($path, $rev)
+
+Retrieve historical content and recorded metadata for I<$path> at revision
+I<$rev> without mutating disk or mirror state.  Returns a formatted string.
 
 =item $runner->revert_path($path, $rev)
 
 Restore I<$path> to VCS revision I<$rev>.  Acquires the advisory run lock
 (honoring C<lock_timeout>, with C<force =E<gt> 0>) to prevent concurrent
-repository mutations; croaks if the lock cannot be acquired.
+repository mutations; croaks if the lock cannot be acquired.  When
+C<dry_run> is enabled, returns a preview hashref without acquiring the lock
+or modifying disk.
 
 =back
 
@@ -143,7 +155,7 @@ sub builtin_ignore_patterns {
 
 # new -- Construct a Runner.
 # Accepts: config, message, no_auto_init, quiet, verbose, debug, trace,
-#          dry_run, force, warn_special_files.
+#          dry_run, force, warn_special_files, lock_timeout.
 # Enforces the implication chain: trace -> debug -> verbose.
 sub new {
     my ($class, %args) = @_;
@@ -168,6 +180,7 @@ sub new {
         dry_run            => $args{dry_run}            // 0,
         force              => $args{force}              // 0,
         warn_special_files => $args{warn_special_files} // 1,
+        lock_timeout       => $args{lock_timeout},
     }, $class;
 }
 
@@ -199,7 +212,7 @@ sub run {
     $self->_warn_insecure_config_permissions($cfg, $self->{config_path}) unless ref($self->{config_path});
     my @notifiers  = $self->_build_notifiers($cfg);
     $self->_validate_notifiers(\@notifiers);
-    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs')        // 'git');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     $self->_verbose("VCS: $vcs_name, output_dir: $output_dir");
@@ -226,10 +239,18 @@ sub run {
     # Global sensitivity auto-detection toggle (default: enabled)
     $self->{sensitive_auto} = _bool_or_default($cfg->global('sensitive_auto'), 1);
 
+    # Maximum file size threshold for content tracking (default: 10MB)
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
+
     # Instantiate VCS backend
     my $vcs_class = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
     eval "require $vcs_class; 1" or croak "Cannot load $vcs_class: $@";
+    {
+        no warnings 'redefine';
+        no strict 'refs';
+        *{"${vcs_class}::sync_mirror_path"} = \&ChangeTrack::Util::sync_mirror_path;
+    }
 
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
@@ -251,7 +272,7 @@ sub run {
 
     # Load metadata sidecar
     my $meta_path = "$output_dir/.changetrack-metadata";
-    my $md = ChangeTrack::Metadata->load($meta_path);
+    my $md = ChangeTrack::Metadata->load($meta_path, max_file_size => $self->{max_file_size});
     $self->_debug("Metadata sidecar: $meta_path (" . scalar(keys %{ $md->{records} }) . " entries loaded)");
     $self->_debug("Hostname resolved: " . hostname());
     $self->_debug("Lock path: $lock->{path} (running as uid=$>)");
@@ -260,6 +281,9 @@ sub run {
     if ($self->{debug}) {
         for my $key (sort keys %{ $cfg->{global} }) {
             $self->_debug("config: $key = " . _redacted_config_value($key, $cfg->{global}{$key}));
+        }
+        if (my $ign = $cfg->ignore) {
+            $self->_debug("config: ignore = " . join(' ', @$ign)) if @$ign;
         }
         my $notifiers = $cfg->notifiers;
         for my $type (sort keys %$notifiers) {
@@ -274,16 +298,9 @@ sub run {
     }
 
     # Build combined ignore list
-    my @user_ignore = @{ $cfg->global('ignore') // [] };
+    my @user_ignore = @{ $cfg->ignore // [] };
     my @ignore_pats = (@BUILTIN_IGNORE, @user_ignore);
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
-
-    # Build file list from track entries
-    $self->_verbose("Building file list...");
-    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md);
-    my $track_count  = scalar @{ $cfg->tracks };
-    my $ignore_count = scalar @user_ignore;
-    $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
 
     # Commit message
     my $ts         = strftime('%Y-%m-%dT%H:%M:%S', localtime($start_time));
@@ -295,6 +312,13 @@ sub run {
         vcs        => $vcs_name,
         message    => ($self->{message} || $commit_msg),
     );
+
+    # Build file list from track entries
+    $self->_verbose("Building file list...");
+    my @entries = $self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md, $report);
+    my $track_count  = scalar @{ $cfg->tracks };
+    my $ignore_count = scalar @user_ignore;
+    $self->_verbose("Tracking $track_count entries, $ignore_count user ignore patterns, " . scalar(@entries) . " resolved paths");
 
     # Enforce private permissions (0700 dirs, 0600 files) on output_dir and siblings
     $self->_enforce_output_permissions($output_dir, $report);
@@ -315,21 +339,71 @@ sub run {
         }
     }
 
-    # Batch commit for whole-repo VCS
-    if (!$self->{dry_run} && $vcs->model eq 'whole-repo' && $report->has_changes) {
-        my $change_count = scalar @{ $report->changes };
-        $self->_verbose("Committing $change_count changes to $vcs_name");
-        eval { $vcs->commit($commit_msg) };
-        croak "VCS commit failed: $@" if $@;
+    # Batch commit for whole-repo VCS and metadata sidecar saving
+    if (!$self->{dry_run}) {
+        if ($vcs->model eq 'whole-repo') {
+            if ($report->has_changes || $md->is_dirty) {
+                my $change_count = scalar @{ $report->changes };
+                $self->_verbose("Committing $change_count changes to $vcs_name");
+
+                # 1. Back up existing $meta_path bytes in memory so if $vcs->commit fails,
+                # $meta_path can be restored on disk (CORR-6 invariant).
+                my $prev_meta_bytes = -f $meta_path ? do {
+                    open my $fh, '<', $meta_path;
+                    local $/;
+                    <$fh>
+                } : undef;
+
+                # 2. Save $md->save($meta_path) before $vcs->commit($commit_msg)
+                # (whenever $md->is_dirty || !-f $meta_path)
+                if ($md->is_dirty || !-f $meta_path) {
+                    $self->_verbose("Saving metadata sidecar: $meta_path");
+                    eval { $md->save($meta_path); 1 }
+                        or croak "metadata save failed: $@";
+                }
+
+                # 3. Stage .changetrack-metadata into VCS repository
+                $vcs->add('/.changetrack-metadata');
+
+                # 4. Commit to VCS
+                my $commit_res = eval { $vcs->commit($commit_msg) };
+
+                # 5. Handle commit failure: restore $meta_path and croak
+                if ($@) {
+                    my $err = $@;
+                    if (defined $prev_meta_bytes) {
+                        open my $fh, '>', $meta_path;
+                        print {$fh} $prev_meta_bytes;
+                        close $fh;
+                    } else {
+                        unlink $meta_path;
+                    }
+                    croak "VCS commit failed: $err";
+                }
+
+                # 6. Process commit result
+                if (ref($commit_res) eq 'HASH') {
+                    $report->set_revision($commit_res->{revision})
+                        if defined $commit_res->{revision};
+                    for my $w (@{ $commit_res->{warnings} // [] }) {
+                        $self->_warn($w);
+                        $report->add_warning($w);
+                    }
+                }
+            } elsif ($self->{verbose}) {
+                $self->_verbose("No changes to commit");
+            }
+        } else {
+            # per-file (RCS)
+            $vcs->commit($commit_msg);
+            if ($md->is_dirty) {
+                $self->_verbose("Saving metadata sidecar: $meta_path");
+                eval { $md->save($meta_path); 1 }
+                    or croak "metadata save failed (aborting after commit): $@";
+            }
+        }
     } elsif ($self->{verbose} && !$report->has_changes) {
         $self->_verbose("No changes to commit");
-    }
-
-    # Save metadata after VCS commit so that if the commit fails, the on-disk
-    # metadata sidecar is not advanced (preventing permanent loss of changes).
-    unless ($self->{dry_run}) {
-        eval { $md->save($meta_path); 1 }
-            or croak "metadata save failed (aborting after commit): $@";
     }
 
     $report->set_end_time(time());
@@ -415,24 +489,28 @@ sub _process_file {
     # Fast path: if metadata is unchanged, skip without touching VCS.
     # For known files where mtime+size (or symlink target) haven't changed,
     # there is nothing to process regardless of type.
-    if (defined $existing && $md->can_skip_content_diff($real_path, \@st)
-        && !$md->changed_since_load($real_path, \@st)) {
+    if (defined $existing && $md->can_skip_content_diff($real_path, \@st, $self->{max_file_size})
+        && !$md->changed_since_load($real_path, \@st, $self->{max_file_size})) {
         # Refresh the record (preserves the type as-is).
-        $md->update_from_stat($real_path, \@st);
+        $md->update_from_stat($real_path, \@st, $self->{max_file_size});
         $self->_trace("$real_path: skipped (mtime+size unchanged)");
         return;
     }
 
     # Classify the file (stat it once, determine type)
-    $md->update_from_stat($real_path, \@st);
+    my $meta_changed = defined($existing) && $md->changed_since_load($real_path, \@st, $self->{max_file_size});
+    my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st, $self->{max_file_size}) : '';
+
+    $md->update_from_stat($real_path, \@st, $self->{max_file_size});
     my $rec  = $md->record_for($real_path);
     my $type = $rec->{type};
 
-    # Non-trackable types: special, unreadable, binary, empty
-    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary') {
+    # Non-trackable types: special, unreadable, binary, oversize
+    if ($type eq 'special' || $type eq 'unreadable' || $type eq 'binary' || $type eq 'oversize') {
         $self->_handle_non_trackable(
             $real_path, $type, $prev_type, $prev_vcs_eligible,
-            $rec, $recipients, $vcs, $md, $report
+            $rec, $recipients, $vcs, $md, $report,
+            $entry, $meta_changed, $meta_summary, $existing, \@st
         );
         return;
     }
@@ -441,13 +519,20 @@ sub _process_file {
 
     if ($type eq 'empty') {
         # Empty files have no content to diff unless transitioning from a non-empty file.
-        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st)) {
-            my $meta_summary = $md->diff_summary($real_path, \@st);
-            my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+        if (defined $existing && $prev_vcs_eligible && $md->changed_since_load($real_path, \@st, $self->{max_file_size})) {
+            my $meta_summary = $md->diff_summary($real_path, \@st, $self->{max_file_size});
             my $diff_lines = (defined $existing && defined $prev_type && $prev_type eq 'file')
                 ? $vcs->diff($real_path)
                 : [];
-            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    $rev = $vcs->checkin($real_path, "$commit_msg ($meta_summary)");
+                } else {
+                    my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+                    $vcs->checkin($real_path, $msg);
+                }
+            }
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 $mode_oct);
             $report->add_change(
@@ -458,10 +543,18 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("Changed (meta): $real_path ($meta_summary)");
         } elsif (!defined $existing || !$prev_vcs_eligible) {
-            $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    $rev = $vcs->checkin($real_path, $commit_msg);
+                } else {
+                    $vcs->checkin($real_path, $commit_msg);
+                }
+            }
             my $is_sensitive = _resolve_sensitive($real_path, $sensitive, $self->{sensitive_auto},
                 $mode_oct);
             my $trans_meta = (defined $existing && !$prev_vcs_eligible)
@@ -475,6 +568,7 @@ sub _process_file {
                 meta_change  => $trans_meta,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
             $self->_info("New: $real_path");
@@ -497,7 +591,14 @@ sub _process_file {
 
     if (!defined $existing || !$prev_vcs_eligible) {
         # New file / symlink or transitioned from non-trackable
-        $vcs->checkin($real_path, $commit_msg) unless $self->{dry_run};
+        my $rev;
+        unless ($self->{dry_run}) {
+            if ($vcs->model eq 'per-file') {
+                $rev = $vcs->checkin($real_path, $commit_msg);
+            } else {
+                $vcs->checkin($real_path, $commit_msg);
+            }
+        }
         my $trans_meta = (defined $existing && !$prev_vcs_eligible)
             ? "transition from $prev_type to $type"
             : '';
@@ -509,23 +610,34 @@ sub _process_file {
             meta_change  => $trans_meta,
             recipients   => $recipients,
             stat         => $rec,
+            (defined $rev ? (revision => $rev) : ()),
         );
         $self->_debug("New: $real_path (type=$type, mode=" . ($rec->{mode} // '?') . ")");
         $self->_info("New: $real_path");
     } else {
         # Existing file / symlink  --  check for changes
-        my $meta_changed = $md->changed_since_load($real_path, \@st);
-        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st) : '';
+        my $meta_changed = $md->changed_since_load($real_path, \@st, $self->{max_file_size});
+        my $meta_summary = $meta_changed ? $md->diff_summary($real_path, \@st, $self->{max_file_size}) : '';
 
         # Symlinks: content is the target, already captured by changed_since_load.
         # Regular files: diff only if mtime+size moved.
-        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st);
+        my $skip_content_diff = ($type eq 'symlink') ? 1 : $md->can_skip_content_diff($real_path, \@st, $self->{max_file_size});
         my $diff_lines = $skip_content_diff ? [] : $vcs->diff($real_path);
         my $content_changed = @$diff_lines > 0;
 
         if ($meta_changed || $content_changed) {
-            my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
-            $vcs->checkin($real_path, $msg) unless $self->{dry_run};
+            my $rev;
+            unless ($self->{dry_run}) {
+                if ($vcs->model eq 'per-file') {
+                    my $ci_msg = (!$content_changed && $meta_changed)
+                        ? "$commit_msg ($meta_summary)"
+                        : (defined $meta_summary && length $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg);
+                    $rev = $vcs->checkin($real_path, $ci_msg);
+                } else {
+                    my $msg = $meta_summary ? "$commit_msg [meta: $meta_summary]" : $commit_msg;
+                    $vcs->checkin($real_path, $msg);
+                }
+            }
             $report->add_change(
                 path         => $real_path,
                 is_new       => 0,
@@ -534,6 +646,7 @@ sub _process_file {
                 meta_change  => $meta_summary,
                 recipients   => $recipients,
                 stat         => $rec,
+                (defined $rev ? (revision => $rev) : ()),
             );
             $self->_debug("Changed: $real_path"
                 . ($meta_summary ? " (meta: $meta_summary)" : ''));
@@ -543,14 +656,15 @@ sub _process_file {
     }
 }
 
-# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary).
+# _handle_non_trackable -- Handle non-trackable files (special, unreadable, binary, oversize).
 # Inputs: $real_path, $type, $prev_type, $prev_vcs_eligible, $rec, $recipients,
-#         $vcs, $md, $report
+#         $vcs, $md, $report, $entry, $meta_changed, $meta_summary, $existing, $st_ref
 # Handles trace logging, VCS removal staging on transitions from trackable types,
 # change report recording, and skip warnings for non-trackable file types.
 sub _handle_non_trackable {
     my ($self, $real_path, $type, $prev_type, $prev_vcs_eligible,
-        $rec, $recipients, $vcs, $md, $report) = @_;
+        $rec, $recipients, $vcs, $md, $report,
+        $entry, $meta_changed, $meta_summary, $existing, $st_ref) = @_;
 
     $self->_trace("$real_path: classified as $type, metadata only");
 
@@ -565,37 +679,73 @@ sub _handle_non_trackable {
                 return;
             }
         }
+        my $diff_msg = ($type eq 'oversize')
+            ? [ "(file became oversize (" . ($rec->{size} // 0) . " bytes); removed from VCS tracking)" ]
+            : [];
         $report->add_change(
             path         => $real_path,
             is_new       => 0,
             is_removed   => 1,
             is_sensitive => 0,
-            diff         => [],
+            diff         => $diff_msg,
             meta_change  => "transition from $prev_type to $type (removed from VCS)",
+            meta_changed => "transition from $prev_type to $type (removed from VCS)",
             recipients   => $recipients,
             stat         => $rec,
         );
         $self->_debug("Transitioned to non-trackable ($type), removed from VCS: $real_path");
         $self->_info("Removed from VCS (became $type): $real_path");
-    } else {
-        if ($type eq 'special') {
-            if (!($prev_type eq 'special' && !$md->changed_since_load($real_path))) {
-                if ($self->{warn_special_files}) {
-                    $self->_warn("skipping special file (FIFO/socket/device): $real_path");
-                }
-                $report->add_warning("Skipping special file: $real_path");
+        if ($type eq 'oversize') {
+            my $size = $rec->{size} // (-s $real_path) // 0;
+            my $warn_msg = "skipping oversize file ($size bytes > max_file_size $self->{max_file_size}): $real_path";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg);
+        }
+        return;
+    }
+
+    # Already non-trackable file: report metadata changes if any (CORR-17)
+    if (defined $existing && $meta_changed) {
+        my $st_mode = defined($st_ref) ? $st_ref->[2] : undef;
+        my $mode_oct = defined($rec->{mode}) ? oct($rec->{mode}) : (defined($st_mode) ? ($st_mode & 07777) : 0644);
+        my $is_sensitive = _resolve_sensitive($real_path, $entry ? $entry->{sensitive} : undef, $self->{sensitive_auto}, $mode_oct);
+        $report->add_change(
+            path         => $real_path,
+            diff         => [ "(metadata changed: $meta_summary)" ],
+            meta_change  => $meta_summary,
+            meta_changed => $meta_summary,
+            sensitive    => $is_sensitive,
+            is_sensitive => $is_sensitive,
+            recipients   => ($entry && $entry->{recipients}) ? $entry->{recipients} : ($recipients // []),
+            stat         => $rec,
+        );
+        $self->_debug("Changed (non-trackable meta): $real_path ($meta_summary)");
+    }
+
+    if ($type eq 'special') {
+        if (!($prev_type eq 'special' && !$meta_changed)) {
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping special file (FIFO/socket/device): $real_path");
             }
-        } elsif ($type eq 'unreadable') {
-            if (!($prev_type eq 'unreadable' && !$md->changed_since_load($real_path))) {
-                $report->add_warning("Skipping unreadable: $real_path");
+            $report->add_warning("Skipping special file: $real_path");
+        }
+    } elsif ($type eq 'unreadable') {
+        if (!($prev_type eq 'unreadable' && !$meta_changed)) {
+            $report->add_warning("Skipping unreadable: $real_path");
+        }
+    } elsif ($type eq 'binary') {
+        if ($prev_type ne 'binary') {
+            if ($self->{warn_special_files}) {
+                $self->_warn("skipping binary file: $real_path");
             }
-        } elsif ($type eq 'binary') {
-            if ($prev_type ne 'binary') {
-                if ($self->{warn_special_files}) {
-                    $self->_warn("skipping binary file: $real_path");
-                }
-                $report->add_warning("Skipping binary file: $real_path");
-            }
+            $report->add_warning("Skipping binary file: $real_path");
+        }
+    } elsif ($type eq 'oversize') {
+        if ($prev_type ne 'oversize') {
+            my $size = $rec->{size} // (-s $real_path) // 0;
+            my $warn_msg = "skipping oversize file ($size bytes > max_file_size $self->{max_file_size}): $real_path";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg);
         }
     }
 
@@ -668,22 +818,31 @@ sub _merge_file_entry {
 # { path, sensitive, recipients } hashrefs, applying ignore and exclude
 # patterns.  Directory entries are expanded recursively via File::Find.
 # When $md is provided, reconciles deleted files from tracked directories.
+# When $report is provided, records warnings directly to the report.
 sub _build_file_list {
-    my ($self, $tracks, $ignore_pats, $exclude_paths, $md) = @_;
+    my ($self, $tracks, $ignore_pats, $exclude_paths, $md, $report) = @_;
     my %by_path;
     $exclude_paths ||= [];
 
     my %dir_opts;
 
     for my $track (@$tracks) {
+        my $kind          = $track->{kind};
+        my $p             = $track->{path};
         my $opt_sensitive = $track->{options}{sensitive};
 
         my $recips = $track->{emails} && ref($track->{emails}) eq 'ARRAY'
             ? [ @{ $track->{emails} } ]
             : [];
 
-        if ($track->{kind} eq 'file') {
-            my $p = $track->{path};
+        if ($kind eq 'file' && -d $p && !-l $p) {
+            my $warn_msg = "[track] entry '$p' is a directory; treating as 'DIRECTORY $p'";
+            $self->_warn($warn_msg);
+            $report->add_warning($warn_msg) if $report;
+            $kind = 'directory';
+        }
+
+        if ($kind eq 'file') {
             if (_is_foreign_vcs_path($p)) {
                 $self->_trace("$p: skipped (foreign VCS path)");
                 next;
@@ -698,8 +857,8 @@ sub _build_file_list {
             }
             _merge_file_entry(\%by_path, $p, $opt_sensitive, $recips, 1);
 
-        } elsif ($track->{kind} eq 'directory') {
-            my $dir = $track->{path};
+        } elsif ($kind eq 'directory') {
+            my $dir = $p;
             if (!$dir_opts{$dir}) {
                 $dir_opts{$dir} = {
                     sensitive  => $opt_sensitive,
@@ -728,6 +887,10 @@ sub _build_file_list {
                 $self->_trace("$dir: pruned (foreign VCS dir)");
                 next;
             }
+            if (_should_ignore($dir, basename($dir), $ignore_pats)) {
+                $self->_trace("$dir: pruned (ignored directory)");
+                next;
+            }
 
             find({
                 wanted => sub {
@@ -736,6 +899,12 @@ sub _build_file_list {
                         if ($FOREIGN_VCS_DIRS{ basename($p) } || _is_excluded_path($p, $exclude_paths)) {
                             $self->_trace("$p: pruned (foreign VCS dir or internal path)");
                             $File::Find::prune = 1;
+                            return;
+                        }
+                        if (_should_ignore($p, basename($p), $ignore_pats)) {
+                            $self->_trace("$p: pruned (ignored directory)");
+                            $File::Find::prune = 1;
+                            return;
                         }
                         return;
                     }
@@ -760,6 +929,14 @@ sub _build_file_list {
         }
     }
 
+    # Post-filter so [ignore] always overrides [track]
+    for my $p (keys %by_path) {
+        if (_should_ignore($p, basename($p), $ignore_pats)) {
+            $self->_trace("$p: ignored by pattern (post-filter)");
+            delete $by_path{$p};
+        }
+    }
+
     # Reconcile deleted files from tracked directories using metadata
     if ($md && $md->{records}) {
         for my $stored_path (sort keys %{ $md->{records} }) {
@@ -767,28 +944,41 @@ sub _build_file_list {
                 $md->mark_removed($stored_path);
                 next;
             }
+            if (_should_ignore($stored_path, basename($stored_path), $ignore_pats)) {
+                $md->mark_removed($stored_path);
+                next;
+            }
             next if $by_path{$stored_path};
             next if -e $stored_path || -l $stored_path;
 
             # Check if stored path falls under an actively tracked directory
-            my $matched_dir;
-            for my $dir (sort { length($b) <=> length($a) } keys %dir_opts) {
-                my $prefix = $dir =~ m{/$} ? $dir : "$dir/";
-                if (index($stored_path, $prefix) == 0) {
-                    $matched_dir = $dir;
-                    last;
+            my @matching_dirs = grep {
+                my $prefix = $_ =~ m{/$} ? $_ : "$_/";
+                index($stored_path, $prefix) == 0;
+            } sort { length($b) <=> length($a) } keys %dir_opts;
+
+            next unless @matching_dirs;
+
+            # Skip if the path matches exclude patterns
+            next if _is_excluded_path($stored_path, $exclude_paths);
+
+            # Most specific (longest prefix) directory determines sensitive override
+            my $sensitive_override = $dir_opts{ $matching_dirs[0] }{sensitive};
+
+            # Collect and union recipients across all enclosing tracked directories
+            my %seen_recips;
+            my @all_recips;
+            for my $dir (@matching_dirs) {
+                for my $r (@{ $dir_opts{$dir}{recipients} || [] }) {
+                    next unless defined $r && length $r;
+                    push @all_recips, $r unless $seen_recips{$r}++;
                 }
             }
-            next unless $matched_dir;
-
-            # Skip if the path matches ignore or exclude patterns
-            next if _should_ignore($stored_path, basename($stored_path), $ignore_pats);
-            next if _is_excluded_path($stored_path, $exclude_paths);
 
             $by_path{$stored_path} = {
                 path       => $stored_path,
-                sensitive  => $dir_opts{$matched_dir}{sensitive},
-                recipients => [ @{ $dir_opts{$matched_dir}{recipients} || [] } ],
+                sensitive  => $sensitive_override,
+                recipients => \@all_recips,
             };
         }
     }
@@ -805,7 +995,7 @@ sub _build_file_list {
 sub _internal_exclude_paths {
     my ($cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
-    my $vcs_name   = lc($cfg->global('vcs') // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs') // 'git');
 
     my @exclude = (
         $output_dir,
@@ -865,48 +1055,122 @@ sub _should_ignore {
     }
     my $norm_full_path = $full_path;
     $norm_full_path =~ s{\\}{/}g;
+    $base = basename($norm_full_path) unless defined $base;
     for my $spec (@$compiled_patterns) {
         if ($spec->{path}) {
             return 1 if $norm_full_path =~ $spec->{re};
         } else {
-            return 1 if $base =~ $spec->{re};
+            return 1 if (defined $spec->{seg_re} && $norm_full_path =~ $spec->{seg_re})
+                     || ($base =~ $spec->{re});
         }
     }
     return 0;
 }
 
 # _compile_ignore_patterns -- Convert a list of glob strings to an
-# arrayref of { path => bool, re => qr// } hashrefs.
-# Path-containing patterns (with /) match as a path suffix;
-# plain patterns match only the filename.
+# arrayref of { path => bool, re => qr//, seg_re => qr// } hashrefs.
+# Path-containing patterns (with /) match directory prefixes/suffixes or full paths;
+# plain patterns match only the filename or individual path segments.
 sub _compile_ignore_patterns {
     my ($patterns) = @_;
     my @compiled;
     for my $pat (@$patterns) {
-        next unless defined $pat && $pat ne '';
+        next unless defined $pat;
+        $pat =~ s{/+$}{};
+        next if $pat eq '';
         if ($pat =~ m{/}) {
             my $re = _glob_to_re($pat);
-            push @compiled, { path => 1, re => qr{(?:^|/)${re}$} };
+            push @compiled, { path => 1, re => qr{(?:^|/)${re}(?:/|$)} };
         } else {
             my $re = _glob_to_re($pat);
-            push @compiled, { path => 0, re => qr/^${re}$/ };
+            push @compiled, {
+                path   => 0,
+                re     => qr/^${re}$/,
+                seg_re => qr{(?:^|/)${re}(?:/|$)},
+            };
         }
     }
     return \@compiled;
 }
 
-
-# _glob_to_re -- Convert a simple glob pattern to a regex fragment.
-# Handles *, ?, and escapes regex metacharacters.  Does not support ** or [].
+# _glob_to_re -- Convert a glob pattern to a regex fragment.
+# Handles **, /**/, *, ?, [...], and escapes regex metacharacters.
 sub _glob_to_re {
     my ($glob) = @_;
+    return '' unless defined $glob;
+
     my $re = '';
-    for my $ch (split //, $glob) {
-        if    ($ch eq '*') { $re .= '[^/]*' }
-        elsif ($ch eq '?') { $re .= '[^/]'  }
-        elsif ($ch eq '.') { $re .= '\.'    }
-        elsif ($ch =~ /[\[\]{}()+^\$|\\]/) { $re .= "\\$ch" }
-        else               { $re .= $ch     }
+    my $len = length($glob);
+    my $i = 0;
+
+    while ($i < $len) {
+        # Check for '/**/'
+        if (substr($glob, $i, 4) eq '/**/') {
+            $re .= '(?:/|/.*/)';
+            $i += 4;
+            next;
+        }
+
+        # Check for '**'
+        if (substr($glob, $i, 2) eq '**') {
+            $re .= '.*';
+            $i += 2;
+            next;
+        }
+
+        my $ch = substr($glob, $i, 1);
+
+        if ($ch eq '*') {
+            $re .= '[^/]*';
+            $i++;
+        } elsif ($ch eq '?') {
+            $re .= '[^/]';
+            $i++;
+        } elsif ($ch eq '.') {
+            $re .= '\.';
+            $i++;
+        } elsif ($ch eq '[') {
+            # Character class parsing (DEBT-5):
+            # scan for closing ']'
+            # handling leading '!' or '^' as negation '[^...]' and disallowing '/' inside the class
+            # if unclosed '[', escape as '\['
+            my $j = $i + 1;
+            my $neg = '';
+            if ($j < $len && (substr($glob, $j, 1) eq '!' || substr($glob, $j, 1) eq '^')) {
+                $neg = '^';
+                $j++;
+            }
+            my $found_close = 0;
+            my $class_start = $j;
+            while ($j < $len) {
+                my $c = substr($glob, $j, 1);
+                if ($c eq '/') {
+                    # / is not allowed inside a character class
+                    last;
+                }
+                if ($c eq ']') {
+                    if ($j > $class_start) {
+                        $found_close = 1;
+                    }
+                    last;
+                }
+                $j++;
+            }
+            if ($found_close) {
+                my $body = substr($glob, $class_start, $j - $class_start);
+                $re .= '[' . $neg . $body . ']';
+                $i = $j + 1;
+            } else {
+                $re .= '\[';
+                $i++;
+            }
+        } elsif ($ch =~ /[\[\]{}()+^\$|\\]/) {
+            $re .= "\\$ch";
+            $i++;
+        } else {
+            $re .= $ch;
+            $i++;
+        }
     }
     return $re;
 }
@@ -966,7 +1230,7 @@ sub _lock_for {
     _ensure_lock_parent_dir($lock_path);
     return ChangeTrack::Lock->new(
         path    => $lock_path,
-        timeout => $cfg->global('lock_timeout') // 0,
+        timeout => $self->{lock_timeout} // $cfg->global('lock_timeout') // 0,
         force   => $force ? 1 : 0,
     );
 }
@@ -981,7 +1245,9 @@ sub _default_lock_path {
     # a bare, world-writable /tmp path (predictable name -> symlink/DoS prone);
     # use a per-UID name only as a last resort.
     for my $dir ($ENV{XDG_RUNTIME_DIR}, $ENV{XDG_CACHE_HOME}) {
-        return "$dir/changetrack-ng.lock" if defined($dir) && $dir =~ /\S/;
+        next unless defined($dir) && $dir =~ /\S/;
+        next unless -d $dir || eval { make_path($dir, { mode => 0700 }); 1 };
+        return "$dir/changetrack-ng.lock";
     }
 
     my $home = $ENV{HOME};
@@ -1018,7 +1284,7 @@ sub _setup {
     my $cfg = (ref($self->{config_path}) && ref($self->{config_path})->isa('ChangeTrack::Config'))
         ? $self->{config_path}
         : ChangeTrack::Config->load($self->{config_path});
-    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs')        // 'git');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     ChangeTrack::Util::set_default_timeout($cfg->global('command_timeout') // 120);
@@ -1026,6 +1292,11 @@ sub _setup {
     my $vcs_class  = $VCS_CLASSES{$vcs_name}
         or croak "Unknown VCS '$vcs_name'";
     eval "require $vcs_class; 1" or croak "Cannot load $vcs_class: $@";
+    {
+        no warnings 'redefine';
+        no strict 'refs';
+        *{"${vcs_class}::sync_mirror_path"} = \&ChangeTrack::Util::sync_mirror_path;
+    }
 
     my $vcs = $vcs_class->new(
         output_dir => $output_dir,
@@ -1056,7 +1327,7 @@ sub init_vcs {
 # applying ignore and exclude patterns.  Returns an arrayref.
 sub _tracked_entries {
     my ($self, $cfg, $md) = @_;
-    my @user_ignore = @{ $cfg->global('ignore') // [] };
+    my @user_ignore = @{ $cfg->ignore // [] };
     my @ignore_pats = ($self->builtin_ignore_patterns, @user_ignore);
     my $compiled_ignore = _compile_ignore_patterns(\@ignore_pats);
     return [$self->_build_file_list($cfg->tracks, $compiled_ignore, _internal_exclude_paths($cfg), $md)];
@@ -1080,8 +1351,27 @@ sub _build_notifiers {
             $self->_warn("cannot load $nclass: $@");
             next;
         };
-        for my $inst (@{ $all_notifiers->{$type} }) {
-            push @objects, $nclass->new(%$inst, sensitive_notify => $sensitive_notify);
+        my @instances = @{ $all_notifiers->{$type} // [] };
+        if ($type eq 'email') {
+            my $primary_idx = 0;
+            for my $i (0 .. $#instances) {
+                if (($instances[$i]{instance_name} // '') eq 'default') {
+                    $primary_idx = $i;
+                    last;
+                }
+            }
+            for my $i (0 .. $#instances) {
+                my $inst = $instances[$i];
+                my %extra = (sensitive_notify => $sensitive_notify);
+                if (@instances > 1) {
+                    $extra{use_track_recipients} = ($i == $primary_idx) ? 1 : 0;
+                }
+                push @objects, $nclass->new(%$inst, %extra);
+            }
+        } else {
+            for my $inst (@instances) {
+                push @objects, $nclass->new(%$inst, sensitive_notify => $sensitive_notify);
+            }
         }
     }
 
@@ -1092,6 +1382,7 @@ sub _build_notifiers {
 sub status {
     my ($self) = @_;
     my ($vcs, $cfg) = $self->_setup;
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
     my $md      = $self->_load_metadata($cfg);
     my $entries = $self->_tracked_entries($cfg, $md);
 
@@ -1104,168 +1395,377 @@ sub status {
             }
             next;
         }
-        next if $self->_is_non_diffable($path, $md);
-        my $meta_changed = defined($md->record_for($path)) && $md->changed_since_load($path);
-        next if defined $md->record_for($path)
-             && $md->can_skip_content_diff($path)
+        my $has_rec      = defined $md->record_for($path);
+        my $meta_changed = $has_rec && $md->changed_since_load($path, undef, $self->{max_file_size});
+        if ($self->_is_non_diffable($path, $md)) {
+            if ($meta_changed) {
+                push @results, {
+                    path => $path,
+                    diff => ['(meta: ' . $md->diff_summary($path, undef, $self->{max_file_size}) . ')'],
+                };
+            }
+            next;
+        }
+        next if $has_rec
+             && $md->can_skip_content_diff($path, undef, $self->{max_file_size})
              && !$meta_changed;
         my $diff = eval { $vcs->diff($path) };
         croak "status: diff failed for $path: $@" if $@;
         $diff //= [];
         if (!@$diff && $meta_changed) {
-            $diff = ['(meta: ' . $md->diff_summary($path) . ')'];
+            $diff = ['(meta: ' . $md->diff_summary($path, undef, $self->{max_file_size}) . ')'];
         }
         push @results, { path => $path, diff => $diff } if @$diff;
     }
     return \@results;
 }
 
-# diff_path -- Return a hashref of path => diff_lines for tracked files with pending diffs.
-# If $path is defined, only that file is checked.
+# _pending_diff_for -- Compute pending diff lines (content or metadata-only)
+# for a single tracked path against the live filesystem.
+sub _pending_diff_for {
+    my ($self, $ep, $vcs, $md) = @_;
+    if (!-e $ep && !-l $ep) {
+        return defined($md->record_for($ep)) ? ['(deleted)'] : [];
+    }
+    my $has_rec      = defined $md->record_for($ep);
+    my $meta_changed = $has_rec && $md->changed_since_load($ep, undef, $self->{max_file_size});
+    if ($self->_is_non_diffable($ep, $md)) {
+        return $meta_changed
+            ? ['(metadata changed: ' . $md->diff_summary($ep, undef, $self->{max_file_size}) . ')']
+            : [];
+    }
+    return [] if $has_rec
+        && $md->can_skip_content_diff($ep, undef, $self->{max_file_size})
+        && !$meta_changed;
+
+    my $diff = eval { $vcs->diff($ep) };
+    croak "diff failed for $ep: $@" if $@;
+    $diff //= [];
+    if (!@$diff && $meta_changed) {
+        return ['(metadata changed: ' . $md->diff_summary($ep, undef, $self->{max_file_size}) . ')'];
+    }
+    return $diff;
+}
+
+# diff_path -- Return a hashref of path => diff_lines for tracked files.
+# When $rev1 (and optionally $rev2) is given, returns historical or
+# rev-vs-live diff for $path.  Otherwise computes pending diffs for $path
+# (expanding directory paths) or for all tracked paths when $path is undef.
 sub diff_path {
-    my ($self, $path) = @_;
+    my ($self, $path, $rev1, $rev2) = @_;
     my ($vcs, $cfg) = $self->_setup;
-    my $md          = $self->_load_metadata($cfg);
+    $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
+
+    if (defined $rev1) {
+        croak 'diff: path required when revision is specified'
+            unless defined $path && length $path;
+        return { $path => $vcs->diff($path, $rev1, $rev2) };
+    }
+
+    my $md = $self->_load_metadata($cfg);
 
     if (defined $path) {
-        if (!-e $path && !-l $path) {
-            if (defined $md->record_for($path)) {
-                return { $path => ['(deleted)'] };
+        (my $dir_prefix = $path) =~ s{/+$}{};
+        $dir_prefix = '/' if $path =~ m{\A/+\z};
+        my $prefix_slash = $dir_prefix eq '/' ? '/' : "$dir_prefix/";
+        my $entries      = $self->_tracked_entries($cfg, $md);
+        my @matching     = grep {
+            $_->{path} eq $dir_prefix || index($_->{path}, $prefix_slash) == 0
+        } @$entries;
+
+        if ((-d $path && !-l $path) || @matching > 1) {
+            my %result;
+            for my $entry (@matching) {
+                my $ep   = $entry->{path};
+                my $diff = $self->_pending_diff_for($ep, $vcs, $md);
+                $result{$ep} = $diff if @$diff;
             }
-            return { $path => [] };
+            return \%result;
         }
-        if (defined $md->record_for($path)
-            && $md->can_skip_content_diff($path)
-            && !$md->changed_since_load($path)) {
-            return { $path => [] };
-        }
-        return { $path => $vcs->diff($path) };
+
+        return { $path => $self->_pending_diff_for($path, $vcs, $md) };
     }
 
     my $entries = $self->_tracked_entries($cfg, $md);
     my %result;
     for my $entry (@$entries) {
-        my $ep = $entry->{path};
-        if (!-e $ep && !-l $ep) {
-            if (defined $md->record_for($ep)) {
-                $result{$ep} = ['(deleted)'];
-            }
-            next;
-        }
-        next if _is_non_diffable($ep);
-        next if defined $md->record_for($ep)
-             && $md->can_skip_content_diff($ep)
-             && !$md->changed_since_load($ep);
-        my $diff = eval { $vcs->diff($ep) };
-        croak "diff failed for $ep: $@" if $@;
-        $diff //= [];
+        my $ep   = $entry->{path};
+        my $diff = $self->_pending_diff_for($ep, $vcs, $md);
         $result{$ep} = $diff if @$diff;
     }
     return \%result;
 }
 
 # log_path -- Return a hashref of path => log_lines for tracked files.
-# If $path is defined, only that file's history is returned.
+# When $path is undef, returns repo-wide history under '(repository)'.
+# When $path is a directory on per-file/non-dir backends (RCS/Fossil),
+# expands matching tracked, metadata-recorded, and archive paths under $path.
 sub log_path {
     my ($self, $path) = @_;
     my ($vcs, $cfg) = $self->_setup;
 
-    if (defined $path) {
-        return { $path => $vcs->log_history($path) };
+    if (!defined $path) {
+        return { '(repository)' => $vcs->log_history(undef) };
     }
 
-    my $entries = $self->_tracked_entries($cfg);
-    my %result;
-    for my $entry (@$entries) {
-        my $ep = $entry->{path};
-        next unless -e $ep || -l $ep;
-        next if _is_non_diffable($ep);
-        next unless -e $vcs->output_path($ep);
-        my $log = eval { $vcs->log_history($ep) };
-        croak "log failed for $ep: $@" if $@;
-        $log //= [];
-        $result{$ep} = $log;
+    if (-d $path && !-l $path && ($vcs->isa('ChangeTrack::VCS::RCS') || $vcs->isa('ChangeTrack::VCS::Fossil'))) {
+        my $md = $self->_load_metadata($cfg);
+        (my $dir_prefix = $path) =~ s{/+$}{};
+        $dir_prefix = '/' if $path =~ m{\A/+\z};
+        my $prefix_slash = $dir_prefix eq '/' ? '/' : "$dir_prefix/";
+
+        my %seen;
+        my @paths;
+        my $entries = $self->_tracked_entries($cfg, $md);
+        for my $e (@$entries) {
+            my $p = $e->{path};
+            next unless index($p, $prefix_slash) == 0;
+            push @paths, $p unless $seen{$p}++;
+        }
+        if ($md && $md->{records}) {
+            for my $p (keys %{ $md->{records} }) {
+                next unless index($p, $prefix_slash) == 0;
+                push @paths, $p unless $seen{$p}++;
+            }
+        }
+        if ($vcs->isa('ChangeTrack::VCS::RCS')) {
+            my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
+            my $rcs_dir    = "$output_dir/RCS";
+            if (-d $rcs_dir && opendir(my $dh, $rcs_dir)) {
+                my $enc_prefix = '';
+                if ($dir_prefix ne '/') {
+                    my $rel = $dir_prefix;
+                    $rel =~ s{\A/+}{};
+                    $rel =~ s/%/%25/g;
+                    $rel =~ s/:/%3A/g;
+                    $rel =~ s{/}{:}g;
+                    $enc_prefix = "$rel:";
+                }
+                while (my $arch = readdir($dh)) {
+                    next unless $arch =~ s/,v\z//;
+                    next if $arch eq '.changetrack-metadata';
+                    next unless $enc_prefix eq '' || index($arch, $enc_prefix) == 0;
+                    my $decoded = $arch;
+                    $decoded =~ s{:}{/}g;
+                    $decoded =~ s{%3A}{:}gi;
+                    $decoded =~ s{%25}{%}g;
+                    $decoded = "/$decoded";
+                    push @paths, $decoded unless $seen{$decoded}++;
+                }
+                closedir($dh);
+            }
+        }
+        @paths = sort @paths;
+        if (@paths) {
+            my %result;
+            for my $p (@paths) {
+                my $log = eval { $vcs->log_history($p) };
+                croak "log failed for $p: $@" if $@;
+                $result{$p} = $log // [];
+            }
+            return \%result;
+        }
     }
-    return \%result;
+
+    return { $path => $vcs->log_history($path) };
+}
+
+# show_path -- Retrieve historical content and metadata for $path at $rev.
+# Returns a formatted string suitable for printing to STDOUT.
+sub show_path {
+    my ($self, $path, $rev) = @_;
+    croak 'show: path and revision required'
+        unless defined $path && length $path && defined $rev && length $rev;
+
+    my ($vcs, $cfg) = $self->_setup;
+    my $show      = $vcs->show_at_revision($path, $rev);
+    my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+
+    my $out = "# Path: $path\n# Revision: $rev\n";
+    if (defined $hist_meta && ref($hist_meta) eq 'HASH' && keys %$hist_meta) {
+        my $type  = $hist_meta->{type} // ($show->{is_symlink} ? 'symlink' : 'file');
+        my $mode  = $hist_meta->{mode} // '-';
+        my $owner = (defined $hist_meta->{user} && defined $hist_meta->{group})
+            ? "$hist_meta->{user}:$hist_meta->{group}"
+            : (defined $hist_meta->{uid} && defined $hist_meta->{gid})
+                ? "$hist_meta->{uid}:$hist_meta->{gid}"
+                : '-';
+        $out .= "# Type: $type  Mode: $mode  Owner: $owner\n";
+    }
+    if ($show->{is_symlink}) {
+        $out .= "# Symlink-Target: $show->{target}\n";
+        $out .= "symlink -> $show->{target}\n";
+    } else {
+        my $content = $show->{content} // '';
+        $out .= $content;
+        $out .= "\n" if length($content) && $content !~ /\n\z/;
+    }
+    return $out;
 }
 
 # _load_metadata -- Load the metadata sidecar for the configured output_dir.
 sub _load_metadata {
     my ($self, $cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
-    return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata");
+    my $max_size   = $self->{max_file_size} // $cfg->global('max_file_size') // (10 * 1024 * 1024);
+    return ChangeTrack::Metadata->load("$output_dir/.changetrack-metadata", max_file_size => $max_size);
 }
 
 # _is_non_diffable -- Return true for file types that cannot produce meaningful diffs.
-# (binary, special, unreadable).  Symlinks are always diffable (target is text).
+# (binary, special, unreadable, oversize).  Symlinks are always diffable (target is text).
 # Empty files (0 bytes) are considered diffable so truncations show deleted content.
 sub _is_non_diffable {
-    my $path = @_ > 1 && (ref($_[0]) || $_[0] eq __PACKAGE__) ? $_[1] : $_[0];
+    my $self = (ref($_[0]) || $_[0] eq __PACKAGE__) ? shift : undef;
+    my ($path, $md) = @_;
     return 1 unless defined $path;
     return 0 if -l $path;          # symlinks are always diffable (target is text)
     return 1 unless -f $path;      # special files
     return 1 unless -r $path;      # unreadable
     return 0 if -z $path;          # empty files are diffable (truncations show deleted content)
+    if (defined $md && $md->can('record_for')) {
+        my $rec = $md->record_for($path);
+        if ($rec && defined $rec->{type}) {
+            return 1 if $rec->{type} eq 'oversize' || $rec->{type} eq 'binary' || $rec->{type} eq 'special' || $rec->{type} eq 'unreadable';
+        }
+    }
+    my $max_size = $self ? $self->{max_file_size} : undef;
+    if (defined $max_size && $max_size > 0) {
+        my @s = stat($path);
+        return 1 if @s && $s[7] > $max_size;
+    }
     return (-B $path) ? 1 : 0;     # binary
 }
 
+# validate_revert -- Verify config, initialized VCS, and that $path exists
+# at $rev before prompting for interactive confirmation.
+sub validate_revert {
+    my ($self, $path, $rev) = @_;
+    my ($vcs, $cfg) = $self->_setup;
+    $vcs->show_at_revision($path, $rev);
+    return 1;
+}
+
 # revert_path -- Revert $path to $rev via the VCS under the run lock,
-# preserving original file mode and ownership after the VCS restore.
+# restoring historical mode and ownership after the VCS restore.
+# When dry_run is enabled, returns a preview hashref without locking or mutating disk.
 sub revert_path {
     my ($self, $path, $rev) = @_;
     my ($vcs, $cfg) = $self->_setup;
+
+    if ($self->{dry_run}) {
+        my $show      = $vcs->show_at_revision($path, $rev);
+        my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+        my $md        = $self->_load_metadata($cfg);
+        my $curr_meta = $md ? $md->record_for($path) : undef;
+        my $target_meta = (defined $hist_meta && keys %$hist_meta)
+            ? $hist_meta
+            : (defined $curr_meta && keys %$curr_meta)
+                ? $curr_meta
+                : undef;
+
+        my $diff;
+        if (-e $path || -l $path) {
+            $diff = eval { $vcs->diff($path, $rev) };
+            $diff //= [];
+        } else {
+            $diff = ['(file not currently on disk; would restore from revision)'];
+        }
+
+        return {
+            dry_run  => 1,
+            path     => $path,
+            revision => $rev,
+            metadata => $target_meta,
+            show     => $show,
+            diff     => $diff,
+        };
+    }
 
     # Never pass force => 1: CLI --force skips the revert prompt, not the run lock.
     my $lock = $self->_lock_for($cfg, 0);
     $lock->acquire
         or croak "Another changetrack-ng run holds the lock ($lock->{path}); retry shortly";
 
-    my $pre = _snapshot_existing_file($path);
-    $vcs->revert($path, $rev);
-    _restore_file_metadata($self, $path, $pre) if $pre;
+    my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+    my $md        = $self->_load_metadata($cfg);
+    my $curr_meta = $md ? $md->record_for($path) : undef;
+    my $pre       = $self->_snapshot_existing_file($path);
+
+    my $target_meta = (defined $hist_meta && keys %$hist_meta)
+        ? $hist_meta
+        : (defined $curr_meta && keys %$curr_meta)
+            ? $curr_meta
+            : ($pre && !$pre->{is_symlink})
+                ? $pre
+                : undef;
+
+    eval {
+        $vcs->revert($path, $rev);
+        $self->_restore_file_metadata($path, $target_meta);
+    };
+    my $err = $@;
     $lock->release;
+    croak $err if $err;
 }
 
 # _snapshot_existing_file -- Capture the current mode/uid/gid of $path
 # before a VCS revert so ownership can be restored afterwards.
 sub _snapshot_existing_file {
-    my ($path) = @_;
+    my $path = @_ > 1 ? $_[1] : $_[0];
     return undef unless defined $path && (-e $path || -l $path);
 
     my @st = lstat($path);
     return undef unless @st;
 
     return {
-        mode => $st[2] & 07777,
-        uid  => $st[4] + 0,
-        gid  => $st[5] + 0,
+        mode       => $st[2] & 07777,
+        uid        => $st[4] + 0,
+        gid        => $st[5] + 0,
         is_symlink => (-l $path ? 1 : 0),
     };
 }
 
-# _restore_file_metadata -- Re-apply pre-revert mode and ownership to $path.
+# _restore_file_metadata -- Re-apply historical or target mode and ownership to $path.
 # chown is only attempted when running as root (uid 0).  The target is
 # re-checked immediately before chmod/chown: mode/ownership restore applies
 # only to a regular file, so if the path now resolves to a symlink or a
-# non-regular file (a swap between revert and restore) it is skipped rather
-# than risk operating on the wrong target.
+# non-regular file it is skipped rather than risk operating on the wrong target.
 sub _restore_file_metadata {
-    my ($self, $path, $pre) = @_;
-    return unless defined $pre;
+    my ($self, $path, $target_meta) = @_;
+    if (@_ == 2 && !ref($_[0])) {
+        ($self, $path, $target_meta) = (undef, @_);
+    }
 
-    my @cur = lstat($path);
-    return unless @cur;
-    if (-l _ || !-f _) {
-        $self->_warn("revert metadata restore skipped (not a regular file): $path");
+    my @st = lstat($path);
+    # Return immediately without warning if !@st or -l _ (CORR-14)
+    return if !@st || -l _;
+
+    # If !-f _: emit warning and return
+    if (!-f _) {
+        $self->_warn("revert metadata restore skipped (not a regular file): $path") if $self;
         return;
     }
 
-    chmod($pre->{mode}, $path)
-        or $self->_warn("revert metadata restore failed (chmod $path): $!");
+    # Determine $mode:
+    my $mode;
+    if (defined $target_meta && defined $target_meta->{mode}
+        && !$target_meta->{is_symlink}
+        && (($target_meta->{type} // '') ne 'symlink')) {
+        if ($target_meta->{mode} =~ /^0[0-7]+$/) {
+            $mode = oct($target_meta->{mode});
+        } else {
+            $mode = $target_meta->{mode} & 07777;
+        }
+    } else {
+        $mode = 0644;
+    }
 
-    if ($> == 0) {
-        chown($pre->{uid}, $pre->{gid}, $path)
-                or $self->_warn("revert metadata restore failed (chown $path): $!");
+    chmod($mode, $path)
+        or ($self && $self->_warn("revert metadata restore failed (chmod $path): $!"));
+
+    if ($> == 0 && defined $target_meta && defined $target_meta->{uid} && defined $target_meta->{gid}) {
+        chown($target_meta->{uid}, $target_meta->{gid}, $path)
+            or ($self && $self->_warn("revert metadata restore failed (chown $path): $!"));
     }
 }
 

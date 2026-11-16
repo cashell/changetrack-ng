@@ -2,8 +2,8 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-Date: 2026-10-12
-Version: 0.7.3
+Date: 2026-11-16
+Version: 0.7.5
 
 For quick start and CLI reference, see [README.md](README.md). For operational capabilities, see [PRODUCT.md](PRODUCT.md). For deployment and install guides, see [INSTALL.md](INSTALL.md). For developer conventions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -73,13 +73,13 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
 |--------|---------------|
 | `bin/changetrack-ng` | CLI dispatch, option parsing (`Getopt::Long`), subcommand routing |
 | `ChangeTrack::Runner` | Main orchestration: config load → lock → build file list → per-file stat+diff → Report accumulation → VCS commit → notification dispatch |
-| `ChangeTrack::Config` | INI v2 parser with strict key whitelist (unknown keys fatal) and per-type value coercion/validation; `conf.d`/`track.d`/`notifier.d` drop-in dirs and `@include*` directives; `HOSTNAME` token + `${VAR}` env interpolation (undefined env var is fatal) |
+| `ChangeTrack::Config` | INI v2 parser with strict key whitelist (unknown keys fatal) and per-type value coercion/validation; `conf.d`/`track.d`/`ignore.d`/`notifier.d` drop-in dirs and `@include*` directives; `[ignore]` section; `HOSTNAME`/`${HOSTNAME}` token + `${VAR}` env interpolation (undefined env var is fatal) |
 | `ChangeTrack::Lock` | `flock(2)`-based pidfile with timeout/force modes; non-blocking skip for cron safety |
-| `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`): per-file stat snapshots with unified type classification; immutable-on-load snapshot for change detection; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
-| `ChangeTrack::Report` | Accumulates changes/warnings during a run; provides `to_text()` and structured data for notifiers |
+| `ChangeTrack::Metadata` | JSONL sidecar (`.changetrack-metadata`, versioned in whole-repo VCS): per-file stat snapshots with unified type classification (`oversize`, `binary`, etc.); dirty tracking; `can_skip_content_diff` fast path; atomic save (tmpfile + rename) |
+| `ChangeTrack::Report` | Accumulates changes/warnings and VCS revision IDs during a run; provides `to_text()` and structured data for notifiers |
 | `ChangeTrack::Util` | `hostname()`/`fqdn()`, `run_cmd()` (IPC::Open3 list-form, IO::Select drain, no shell, configurable command timeout (`command_timeout`, default 120s)), `sync_mirror_path()`, `restore_mirror_path()`, `set_debug()` |
-| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.3'`) |
-| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `remove`, `log_history`, `revert`, `is_dirty`, `model` |
+| `ChangeTrack::Version` | Single-source version authority (`$VERSION = '0.7.5'`) |
+| `ChangeTrack::VCS::Base` | Abstract interface: `init`, `is_initialized`, `output_path`, `add`, `checkin`, `commit`, `diff`, `remove`, `log_history`, `show_at_revision`, `metadata_at_revision`, `revert`, `is_dirty`, `model` |
 | `ChangeTrack::VCS::Git` | Whole-repo mirror model; `git -C`; batch commit; optional `push_remote` |
 | `ChangeTrack::VCS::RCS` | Per-file model; colon-encoded flat layout; immediate `ci -l` per file |
 | `ChangeTrack::VCS::Fossil` | Whole-repo; `fossil init`/`open`; uses native `--chdir` flag (no Perl `chdir`); sets `FOSSIL_HOME` when `HOME` unset; optional `push_remote` |
@@ -89,7 +89,7 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
 | `ChangeTrack::Notify::Email` | Pipes RFC 2822 messages to sendmail; per-recipient grouping; heartbeat always off |
 | `ChangeTrack::Notify::Webhook` | HTTP POST JSON to one or more URLs via `HTTP::Tiny`; 3-attempt retry; TLS bypass option |
 | `ChangeTrack::Notify::OTLP` | OTLP/HTTP+JSON log records; gzip compression; env-var endpoint/header precedence; heartbeat default ON |
-| `ChangeTrack::Notify::File` | Append-only JSONL log with flock; optional heartbeat |
+| `ChangeTrack::Notify::File` | Append-only per-event OTel-shaped NDJSON log with flock; optional heartbeat |
 
 ---
 
@@ -103,15 +103,15 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
  Lock.acquire()         →  flock(LOCK_EX|LOCK_NB) or timeout loop
                              │
  _build_file_list()     →  Expand [track] entries (files + recursive dirs)
-                         →  Prune foreign VCS directories (.git, .svn, .hg, RCS, CVS, _darcs, .bzr, .fslckout, _FOSSIL_)
-                         →  Apply ignore patterns (each glob precompiled to its own qr//, tested in turn)
+                         →  Prune foreign VCS directories (.git, .svn, .hg, CVS, _darcs, .bzr, .fslckout, _FOSSIL_)
+                         →  Prune ignored directories during File::Find and post-filter all candidates against [ignore] (compiled qr// supporting **, /**/, [...])
                              │
  ┌─ For each tracked path ───────────────────────────────────────────────────┐
  │  1. Missing from disk? → report removed, done                              │
  │  2. Fast path: can_skip_content_diff + !changed_since_load → skip entirely │
- │  3. update_from_stat → classify type (file/symlink/binary/empty/etc.)      │
+ │  3. update_from_stat → classify type (file/symlink/binary/oversize/empty)  │
  │  4. Dispatch on type:                                                       │
- │     • special/unreadable/binary → warn on first detection, skip content    │
+ │     • special/unreadable/binary/oversize → warn once, report meta changes  │
  │     • empty → track metadata changes only                                  │
  │     • symlink → target comparison via metadata (no file I/O)               │
  │     • file → VCS diff (copy to mirror, compare against last commit)        │
@@ -119,10 +119,10 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
  │  6. If changed: VCS checkin, update metadata, add to Report                │
  └────────────────────────────────────────────────────────────────────────────┘
                              │
- VCS.commit()           →  Whole-repo: batch commit (Git/Fossil/SVN/Hg)
-                         →  Per-file: no-op (RCS commits inline)
+ VCS.commit()           →  Whole-repo: stage .changetrack-metadata + batch commit (Git/Fossil/SVN/Hg)
+                         →  Per-file: no-op (RCS commits inline via ci -f -l with embedded metadata tag)
                              │
- Metadata.save()        →  Atomic tmpfile + rename (persisted after VCS commit)
+ Metadata.save()        →  Atomic tmpfile + rename (only written when dirty; persisted before commit on whole-repo with rollback on commit error)
                              │
  Notify dispatch        →  For each enabled notifier:
                               • has_changes → send_changes(report)
@@ -133,7 +133,7 @@ For quick start and CLI reference, see [README.md](README.md). For operational c
 
 All whole-repo backends (Git, Fossil, SVN, Mercurial) use a mirror tree:
 - `/etc/passwd` is copied to `$output_dir/etc/passwd`
-- Symlinks are serialized as a text file containing `__CHANGTRACK_NG_SYMLINK_TARGET__=<target>`
+- Symlinks are serialized as a text file containing `__CHANGETRACK_NG_SYMLINK_TARGET__=<target>`
 - The mirror tree is the VCS working copy; diffs are computed by comparing the copy against HEAD/tip
 - Revert restores mirror → real file (or recreates symlink)
 - Mirror isolation protections ensure tracked VCS configuration (e.g. tracked `.gitignore` or `.gitattributes` from tools like `etckeeper`) cannot suppress or alter tracking: Git neutralizes attributes via `$GIT_DIR/info/attributes` and uses `add -f --`; SVN passes `--no-ignore`; Mercurial passes `-A`; Fossil passes `--force`. Nested foreign VCS control directories are pruned during discovery.
@@ -161,6 +161,7 @@ The `type` field is the single source of truth for file classification:
 | `file` | Regular text file | Full VCS diff |
 | `symlink` | Symbolic link | Target path (via `readlink`) |
 | `binary` | Regular file with binary content | Metadata only |
+| `oversize` | Regular file exceeding `max_file_size` | Metadata only |
 | `empty` | Regular file, 0 bytes | Metadata only |
 | `unreadable` | Regular file, no read permission | Metadata only |
 | `special` | FIFO, socket, device node | Metadata only |
@@ -177,16 +178,16 @@ The fast path (`can_skip_content_diff`) skips all further processing when mtime+
 
 ### 4.1 Format
 
-INI format with three section types: `[global]` (key=value settings), `[notifier:<type>:<name>]` (one notification instance per section), and `[track]` (file/directory entries).
+INI format with four section types: `[global]` (key=value settings), `[ignore]` (one glob/path pattern per line), `[notifier:<type>:<name>]` (one notification instance per section), and `[track]` (file/directory entries).
 
-- Recognized `[global]` keys (whitelist, `Config.pm`): `vcs`, `output_dir`, `push_remote`, `ignore`, `sensitive_auto`, `sensitive_notify`, `warn_special_files`, `interval`, `lock_path`, `lock_timeout`
-- Array-valued `[global]` keys (`ignore`, `push_remote`) are split on whitespace → arrayrefs; all other `[global]` keys return scalar strings
-- Values are type-coerced/validated by class: booleans (`sensitive_auto`, `warn_special_files`), integers (`lock_timeout`, `interval`), paths (`output_dir`, `lock_path`), enums (`vcs` ∈ {rcs,git,fossil,svn,hg,mercurial}; `sensitive_notify` ∈ {suppress,allow})
+- Recognized `[global]` keys (whitelist, `Config.pm`): `vcs`, `output_dir`, `push_remote`, `sensitive_auto`, `sensitive_notify`, `warn_special_files`, `interval`, `lock_path`, `lock_timeout`, `command_timeout`, `max_file_size`
+- Array-valued `[global]` key (`push_remote`) is split on whitespace/commas → arrayref; all other `[global]` keys return scalar strings. `[ignore]` sections return a deduplicated arrayref via `$cfg->ignore()`
+- Values are type-coerced/validated by class: booleans (`sensitive_auto`, `warn_special_files`), integers (`lock_timeout`, `interval`, `command_timeout`, `max_file_size`), paths (`output_dir`, `lock_path`), enums (`vcs` ∈ {rcs,git,fossil,svn,hg,mercurial}; `sensitive_notify` ∈ {suppress,allow})
 - **Dead key:** `interval` is whitelisted and integer-validated (`Config.pm`) but never read anywhere in the codebase - it is accepted silently and has no effect. Scheduling is driven entirely by the systemd timer / cron entry, not this key.
 - `[notifier:*]` keys are per-instance scalars validated against a per-type whitelist (`email`/`webhook`/`file`/`otlp`); the `enabled` key is required in every notifier section; `email.to` and `webhook.url` are array-valued
-- `HOSTNAME` in values is replaced with the system FQDN at parse time; `${VAR}` performs environment-variable expansion (an undefined variable is a fatal error)
-- Strict key validation: unknown keys cause a fatal parse error (fail-fast)
-- Multi-file loading: `conf.d/`, `track.d/`, `notifier.d/` drop-in directories and `@include`/`@include-track`/`@include-notifier` directives compose at load time (recursion-guarded against include cycles); duplicate notifier `<type>:<name>` pairs across any files are a fatal error
+- `HOSTNAME` / `${HOSTNAME}` in values is replaced with the system FQDN at parse time; `${VAR}` performs environment-variable expansion (an undefined variable is a fatal error)
+- Strict key validation: unknown keys (and unknown `[track]` option keys) cause a fatal parse error (fail-fast)
+- Multi-file loading: `conf.d/`, `track.d/` (`[track]` and `[ignore]`), `ignore.d/` (`[ignore]`), `notifier.d/` drop-in directories and `@include`/`@include-track`/`@include-ignore`/`@include-notifier` directives compose at load time (recursion-guarded against include cycles); duplicate notifier `<type>:<name>` pairs across any files are a fatal error
 
 ### 4.2 Precedence (OTLP-specific)
 
@@ -204,12 +205,14 @@ OTEL_EXPORTER_OTLP_HEADERS > config headers
 |--------|---------------|-------------------------------|
 | `init` | Creates output_dir + RCS/ | Creates repo (git init / fossil init+open / svnadmin+co / hg init) |
 | `output_path($path)` | Colon-encoded flat path | Mirror-tree path under output_dir |
-| `checkin($path, $msg)` | Copy + `ci -l` immediately | Copy + stage (add); commit deferred |
+| `checkin($path, $msg)` | Copy + `ci -f -l` immediately (returns revision ID) | Copy + stage (add); commit deferred |
 | `add($path)` | No-op | Copy to mirror + VCS add |
-| `commit($msg)` | No-op | Batch commit all staged; optional `push_remote` (Git, Fossil, Hg) |
-| `diff($path)` | `rcsdiff -u` on mirror | Copy to mirror, diff against HEAD/tip |
-| `revert($path,$rev)` | `co -r` from RCS archive | Restore file/symlink from a revision |
-| `log_history($path)` | `rlog` | Native VCS log |
+| `commit($msg)` | No-op | Batch commit all staged (returns `{ committed, revision, warnings }`); optional `push_remote` (Git, Fossil, Hg) |
+| `diff($path, $r1, $r2)` | `rcsdiff -u` on mirror or between revisions | Diff live vs HEAD/tip, rev1 vs live, or rev1 vs rev2 |
+| `show_at_revision($p, $rev)` | `co -q -p$rev` | Native `show`/`cat` at `$rev` |
+| `metadata_at_revision($p, $rev)` | Parse `[changetrack-meta: ...]` from `rlog -r$rev` | Parse `.changetrack-metadata` at `$rev` |
+| `revert($path,$rev)` | `co -p$rev` from RCS archive (leaves mirror clean) | Restore file/symlink from a revision (leaves mirror clean at HEAD) |
+| `log_history($path)` | `rlog` (single file or all `,v` archives) | Native VCS log (file or repository-wide) |
 | `is_dirty` | `rcsdiff -q` vs latest revision (true if no `,v` archive yet) | True if working copy has staged/uncommitted changes |
 | `model` | `'per-file'` | `'whole-repo'` |
 
@@ -246,7 +249,7 @@ The File and OTLP notifiers emit OpenTelemetry-style structured log records. Eac
 
 - `event.name`: one of `changetrack.file.changed`, `changetrack.file.created`, `changetrack.file.removed`, `changetrack.run.heartbeat`, `changetrack.run.warning`
 - File attributes: `file.path`, `file.name`, `file.directory`, `file.mode`, `file.owner.name`, `file.group.name`, `file.size`
-- Change attributes: `config_change.type`, `config_change.sensitive`, `config_change.meta_summary`, `config_change.diff`, `config_change.diff_truncated`, `config_change.notified`
+- Change attributes: `config_change.type`, `config_change.sensitive`, `config_change.meta_summary`, `config_change.diff`, `config_change.diff_truncated`, `config_change.notified`, `config_change.revision` (`vcs.revision` also emitted when committed)
 - Run attributes: `changetrack.files_tracked`, `changetrack.run_duration_ms`
 - OTLP resource attributes: `service.*`, `host.*`, `os.type`, plus machine-id
 
@@ -296,7 +299,7 @@ VCS backend working-directory management differs by backend:
 ### 7.3 Privilege model
 
 - Designed to run as root (to read all tracked files)
-- Lock path adapts: root → `/var/run/`, non-root → `$XDG_CACHE_HOME/`
+- Lock path adapts: root → `/var/run/`, non-root → `$XDG_RUNTIME_DIR/` → `$XDG_CACHE_HOME/` → `~/.cache/`
 - Config file should be 0640 (contains potential webhook secrets / OTLP auth headers); the Runner warns at load time if the config file is group- or world-readable
 - Mirror directory created mode 0700 (enforced and tightened at runtime by Runner)
 
@@ -322,18 +325,18 @@ VCS backend working-directory management differs by backend:
 |-----------|-------|-------|
 | systemd timer | `packaging/systemd/changetrack-ng.timer` + `.service` | Hourly, persistent (catches up on boot) |
 | cron | `packaging/cron/changetrack-ng` | Placed in `/etc/cron.hourly/` |
-| Package hooks | `packaging/hooks/apt-pre`, `apt-post`, `pacman-*.hook`, `packaging/hooks/dnf/changetrack_ng.py` | Pre/post transaction with `-m` annotation |
+| Package hooks | `packaging/hooks/apt-pre`, `apt-post`, `pacman-*.hook`, `packaging/hooks/dnf/{changetrack_ng.py,changetrack-ng.actions}` | Pre/post transaction with static `-m` annotation and `--lock-timeout 30` |
 
 ### 8.2 Installation layout
 
 ```
 $PREFIX/bin/changetrack-ng           Main executable (shebang rewritten at install)
 $PREFIX/lib/changetrack-ng/          Library modules (use lib path rewritten)
-$SYSCONFDIR/changetrack-ng/          Config directory (0640)
+$SYSCONFDIR/changetrack-ng/          Config directory (default /etc/changetrack-ng, mode 0640)
 /var/lib/changetrack-ng/             Default output_dir (VCS repo + mirror tree)
 /var/lib/changetrack-ng/.changetrack-metadata    Metadata sidecar
 /var/run/changetrack-ng.lock         Lock file (root)
-/var/log/changetrack-ng.log          File notifier output
+/var/log/changetrack-ng.jsonl        File notifier output
 ```
 
 ### 8.3 Subcommands
@@ -343,20 +346,20 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 | `run` (default) | Full scan-commit-notify cycle |
 | `init` | Explicitly initialize VCS output directory |
 | `status` | Show files with pending changes (exit 1 if changes) |
-| `diff [path]` | Show unified diff for pending changes |
-| `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file to a specific revision (acquires advisory run lock) |
-| `update-ignore` | Sync VCS-native ignore file with configured patterns |
+| `diff [path] [rev1] [rev2]` | Show unified diff for pending (including directories/metadata) or historical changes |
+| `log [path]` | Show VCS history for a path, directory, or repository |
+| `show <path> <rev>` | Print historical content and metadata at a revision |
+| `revert <path> <rev>` | Restore file to a specific revision (acquires advisory run lock; supports `--dry-run`) |
 
-There is no `migrate-config` subcommand and no v1→v2 config migration tooling. (`Metadata::import_from_v1_statistics` exists only as a stub that `carp`s "not yet implemented".)
+There is no `migrate-config` subcommand and no v1→v2 config migration tooling.
 
 ### 8.4 Global options and diagnostics
 
-CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `--system`, `--user`, `-m`/`--message`, `--no-auto-init`, `-n`/`--dry-run`, `-q`/`--quiet`, `-v`/`--verbose`, `-d`/`--debug`, `-t`/`--trace`, `-f`/`--force`, `-V`/`--version`, `-h`/`--help`.
+CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `--system`, `--user`, `-m`/`--message`, `--no-auto-init`, `-n`/`--dry-run`, `--lock-timeout`, `-q`/`--quiet`, `-v`/`--verbose`, `-d`/`--debug`, `-t`/`--trace`, `-f`/`--force`, `-V`/`--version`, `-h`/`--help`.
 
 - Config resolution order: `-c` > `$CHANGETRACK_CONFIG` > `--user`/`--system` > default `/etc/changetrack-ng/changetrack-ng.conf`.
 - Diagnostic tiers imply downward: `--trace` ⇒ `--debug` ⇒ `--verbose`. All diagnostics go to STDERR; STDOUT stays clean.
-- A `run`/`status`/`diff` against an uninitialized output dir auto-initializes the VCS unless `--no-auto-init` is given.
+- Only `run` auto-initializes an uninitialized output dir (unless `--no-auto-init` is given); `status`, `diff`, `log`, `show`, and `revert` croak if the repository is not yet initialized.
 - `-m`/`--message` supplies the commit annotation; the apt/dnf/pacman hooks pass a `-m` describing the package transaction so pre/post snapshots are labeled.
 - All write operations are skipped under `--dry-run`.
 
@@ -399,7 +402,7 @@ CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `
 
 ### 9.3 Version management
 
-- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.7.3'`)
+- Single source: `lib/ChangeTrack/Version.pm` (`our $VERSION = '0.7.5'`)
 - All modules: `do { require ChangeTrack::Version; $ChangeTrack::Version::VERSION }`
 - Makefile `VERSION` variable must be kept in sync
 - RPM spec `Version:` and `%changelog` updated manually
@@ -460,6 +463,6 @@ All runtime dependencies are Perl core (≥5.14):
 | `FindBin` | Locate lib/ relative to bin/ | 5.0 |
 | `Sys::Hostname` | Short hostname (`Util::hostname`) | 5.0 |
 | `Net::Domain` | FQDN fallback (`Util::fqdn`) | 5.7 |
-| `Cwd` | Save/restore cwd in SVN backend (`getcwd`) | 5.0 |
+| `Cwd` | Resolve relative config paths (`abs_path` in `Config.pm`) | 5.0 |
 
 Build-time tooling (`tools/manifest-query`) additionally uses `TOML::Tiny`, which is **not** a Perl core module. It is required only for the manifest-driven `dist*`/`manifest-*` Makefile targets, never at runtime, so the zero-non-core-runtime-dependency guarantee holds.

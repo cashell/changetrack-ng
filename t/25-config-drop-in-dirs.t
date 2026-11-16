@@ -78,11 +78,11 @@ sub base_dir {
 {
     my $dir = base_dir();
     mkdir "$dir/conf.d" or die $!;
-    write_file("$dir/conf.d", 'extra.conf', "[global]\nignore = *.swp\n");
+    write_file("$dir/conf.d", 'extra.conf', "[global]\npush_remote = origin\n");
 
     my $cfg = ChangeTrack::Config->load("$dir/main.conf");
-    my $ign = $cfg->global('ignore') // [];
-    ok(grep { $_ eq '*.swp' } @$ign, 'conf.d/extra.conf extends global ignore list');
+    my $pr  = $cfg->global('push_remote') // [];
+    ok(grep { $_ eq 'origin' } @$pr, 'conf.d/extra.conf extends global push_remote list');
 }
 
 ########################################################################
@@ -211,6 +211,75 @@ sub base_dir {
     my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
     ok(!$ok, 'conf.d/ file with [track] section is a fatal parse error');
     like($@, qr/not allowed/i, 'Error message mentions restriction');
+}
+
+########################################################################
+# track.d/ Supports Both [track] and [ignore] Sections
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/track.d" or die $!;
+    write_file("$dir/track.d", 'combo.conf',
+        "[track]\n/var/log/app.log\n\n[ignore]\n*.tmp\n*.log.bak\n");
+
+    my $cfg   = ChangeTrack::Config->load("$dir/main.conf");
+    my @paths = map { $_->{path} } @{ $cfg->tracks };
+    ok(grep { $_ eq '/var/log/app.log' } @paths, 'track.d/ combo file adds track entry');
+    is_deeply($cfg->ignore, ['*.tmp', '*.log.bak'], 'track.d/ combo file adds ignore patterns');
+}
+
+########################################################################
+# ignore.d/ Adds [ignore] Patterns
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/ignore.d" or die $!;
+    write_file("$dir/ignore.d", 'filters.conf', "[ignore]\n*.pid\n*.sock\n");
+
+    my $cfg = ChangeTrack::Config->load("$dir/main.conf");
+    is_deeply($cfg->ignore, ['*.pid', '*.sock'], 'ignore.d/filters.conf populates ignore list');
+}
+
+########################################################################
+# ignore.d/ May Not Contain [track] Section (fatal)
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/ignore.d" or die $!;
+    write_file("$dir/ignore.d", 'bad.conf', "[track]\n/etc/shadow\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, 'ignore.d/ file with [track] section is a fatal parse error');
+    like($@, qr/\[track\] section is not allowed in a 'ignore'-restricted file/,
+        'Error message mentions ignore restriction');
+}
+
+########################################################################
+# ignore.d/ May Not Contain [global] Section (fatal)
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/ignore.d" or die $!;
+    write_file("$dir/ignore.d", 'bad.conf', "[global]\nvcs = git\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, 'ignore.d/ file with [global] section is a fatal parse error');
+    like($@, qr/\[global\] section is not allowed in a 'ignore'-restricted file/,
+        'Error message mentions ignore restriction');
+}
+
+########################################################################
+# conf.d/ May Not Contain [ignore] Section (fatal)
+########################################################################
+{
+    my $dir = base_dir();
+    mkdir "$dir/conf.d" or die $!;
+    write_file("$dir/conf.d", 'bad_ignore.conf', "[ignore]\n*.swp\n");
+
+    my $ok = eval { ChangeTrack::Config->load("$dir/main.conf"); 1 };
+    ok(!$ok, 'conf.d/ file with [ignore] section is a fatal parse error');
+    like($@, qr/\[ignore\] section is not allowed in a 'global'-restricted file/,
+        'Error message mentions global restriction');
 }
 
 done_testing();

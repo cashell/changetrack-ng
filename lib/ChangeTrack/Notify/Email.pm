@@ -20,7 +20,12 @@ ChangeTrack::Notify::Email - email notifier for changetrack-ng
 
 Sends per-file change notifications by piping RFC 2822 messages to
 C<sendmail -oi -t>.  Per-file recipient lists are taken from the C<[track]>
-section.  Heartbeat is always disabled (anti-spam).
+section by default.  When C<use_track_recipients> is set to false (0),
+per-track recipients are ignored and notifications are delivered only to
+the instance's configured C<to> list, preventing duplicate emails when
+multiple email notifier instances are defined.  When revision information is
+recorded in the report or on individual changes, it is included in the email
+message header and file change blocks.  Heartbeat is always disabled (anti-spam).
 
 =cut
 
@@ -39,12 +44,14 @@ my @SENDMAIL_PATHS = qw(
     /usr/lib/sendmail
 );
 
-# new -- Construct the notifier with defaults for from and sensitive_notify.
+# new -- Construct the notifier with defaults for from, sensitive_notify,
+# and use_track_recipients.
 sub new {
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
-    $self->{from}             //= 'changetrack-ng@' . fqdn();
-    $self->{sensitive_notify} //= 'suppress';
+    $self->{from}                 //= 'changetrack-ng@' . fqdn();
+    $self->{sensitive_notify}     //= 'suppress';
+    $self->{use_track_recipients} //= 1;
     return $self;
 }
 
@@ -54,8 +61,9 @@ sub heartbeat_enabled { 0 }
 sub name { 'email' }
 
 # send_changes -- Send per-recipient change digest emails.
-# Changes are grouped by recipient address.  Per-track recipients take
-# precedence over the global email_to list.
+# Changes are grouped by recipient address. When use_track_recipients is true,
+# per-track recipients take precedence over the global email_to list. When
+# use_track_recipients is false, per-track recipients are ignored.
 sub send_changes {
     my ($self, $report) = @_;
 
@@ -65,12 +73,16 @@ sub send_changes {
             return;
         };
 
-    # Group changes by recipient.  Per-track recipients override global;
-    # global email_to is the fallback when a track entry has none.
+    # Group changes by recipient. When use_track_recipients is true (default),
+    # per-track recipients override global; global email_to is the fallback
+    # when a track entry has none. When use_track_recipients is false,
+    # per-track recipients are ignored and notifications fall back to global.
     my @global_recips = grep { defined $_ && /\S/ } @{ $self->{to} // [] };
     my %by_recipient;
     for my $c (@{ $report->changes }) {
-        my @track_recips = grep { defined $_ && /\S/ } @{ $c->{recipients} // [] };
+        my @track_recips = $self->{use_track_recipients}
+            ? grep { defined $_ && /\S/ } @{ $c->{recipients} // [] }
+            : ();
         my @recips = @track_recips ? @track_recips : @global_recips;
 
         my %seen;
@@ -93,16 +105,29 @@ sub send_changes {
 
     for my $recipient (sort keys %by_recipient) {
         my $changes = $by_recipient{$recipient};
-        my $body    = $self->_format_body($changes, $host, $date);
+        my $body    = $self->_format_body($changes, $host, $date, $report);
         $self->_send_one($sendmail, $recipient, $host, $date, $body);
     }
 }
 
 # _format_body -- Build the plain-text email body from a list of change entries.
 sub _format_body {
-    my ($self, $changes, $host, $date) = @_;
+    my ($self, $changes, $host, $date, $report_or_rev) = @_;
+
+    my $revision;
+    if (ref($report_or_rev) && eval { $report_or_rev->can('revision') }) {
+        $revision = $report_or_rev->revision;
+    } elsif (ref($report_or_rev) eq 'HASH') {
+        $revision = $report_or_rev->{revision};
+    } elsif (defined $report_or_rev && !ref($report_or_rev)) {
+        $revision = $report_or_rev;
+    }
+
     my @lines;
     push @lines, "changetrack-ng detected changes on $host at $date";
+    if (defined $revision && length $revision) {
+        push @lines, "Revision: $revision";
+    }
     push @lines, '';
 
     for my $c (@$changes) {
@@ -110,6 +135,11 @@ sub _format_body {
                   : $c->{is_new}     ? 'NEW'
                   :                    'CHANGED';
         push @lines, "$label: $c->{path}";
+
+        if (defined $c->{revision} && length $c->{revision}
+            && (!defined $revision || $c->{revision} ne $revision)) {
+            push @lines, "  Revision: $c->{revision}";
+        }
 
         if ($c->{meta_change}) {
             push @lines, "  Metadata: $c->{meta_change}";

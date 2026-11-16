@@ -20,7 +20,8 @@
 # Automatic drop-ins are fixed sibling directories next to the main config:
 #
 #   conf.d/*.conf      [global] only
-#   track.d/*.conf     [track] only
+#   track.d/*.conf     [track] and [ignore]
+#   ignore.d/*.conf    [ignore] only
 #   notifier.d/*.conf  [notifier:*] only
 #
 # Custom drop-in locations are supported through explicit include directives.
@@ -28,6 +29,7 @@
 #
 # @include /etc/changetrack-ng/site.conf
 # @include-track /etc/changetrack-ng/local-track.d/
+# @include-ignore /etc/changetrack-ng/local-ignore.d/
 # @include-notifier /etc/changetrack-ng/local-notifier.d/
 
 ###################################################################
@@ -49,7 +51,7 @@ vcs = git
 output_dir = /var/lib/changetrack-ng
 
 # Remote(s) to push to after each commit (space-separated).
-# Applies to whole-repo backends (git, fossil, svn, hg).
+# Applies to whole-repo backends (git, fossil, hg).
 # Leave empty to skip push.
 push_remote =
 
@@ -87,8 +89,8 @@ command_timeout = 120
 ##########################
 #
 # Auto-detect sensitive files by permission mode.
-# A file is treated as sensitive when it lacks both group-read and world-read
-# permission (mode & 0044 == 0), e.g. mode 0600 or 0640.
+# A file is treated as sensitive when it lacks world-read permission
+# ((mode & 0004) == 0), e.g. mode 0600 or 0640.
 # 1 = auto-detect (default) | 0 = disable auto-detection
 sensitive_auto = 1
 
@@ -106,26 +108,15 @@ sensitive_notify = suppress
 # 1 = warn (default) | 0 = suppress
 warn_special_files = 1
 
-###################################################################
-# File Tracking
-###################################################################
-
 ##########################
-# Ignore Patterns
+# File Size Limits
 ##########################
 #
-# Additional glob patterns to skip during directory traversal
-# (space-separated).  Applied on top of built-in defaults.
-#
-# Built-in defaults already exclude common noise:
-#   editor temp files:  *.swp  *~  #*#  .*.sw?  *.bak
-#   archives:           *.gz  *.bz2  *.bzip2  *.xz  *.zst  *.7z
-#                       *.zip  *.tar  *.tgz  *.tbz2  *.txz
-#   package manager:    *.dpkg-*  *.rpmnew  *.rpmsave  *.pacnew  *.pacorig
-#   compiled bytecode:  *.pyc  *.pyo  *.elc
-#   system runtime:     mtab  ld.so.cache  prelink.cache  adjtime
-#                       udev/hwdb.bin  lvm/cache  lvm/archive
-ignore =
+# Maximum file size in bytes to record in VCS (default: 10485760 = 10 MB).
+# Files exceeding this byte limit are tracked as metadata-only (permissions,
+# ownership, and timestamps are recorded, but file content is omitted).
+# 0 = unlimited.
+max_file_size = 10485760
 
 ###################################################################
 # Notifiers
@@ -214,7 +205,7 @@ endpoint =
 full_diff = 0
 
 # HTTP body compression for OTLP exports.
-# Accepted: gzip (default) | none
+# Accepted: gzip | none (default: uncompressed unless set to gzip)
 compression = gzip
 
 # Additional HTTP request headers (space-separated key=value pairs).
@@ -305,6 +296,34 @@ heartbeat = 0
 # severity_warning = WARN
 
 ###################################################################
+# Ignore Patterns
+###################################################################
+#
+[ignore]
+#
+# Patterns to exclude from tracking, one pattern per line.
+# Globs (* and ?) and paths are supported.  Patterns containing '/'
+# match against directory subtrees or relative paths.
+#
+# Built-in defaults already exclude common noise:
+#   editor temp files:  *.swp  *~  #*#  .*.sw?  *.bak
+#   archives:           *.gz  *.bz2  *.bzip2  *.xz  *.zst  *.7z
+#                       *.zip  *.tar  *.tgz  *.tbz2  *.txz
+#   package manager:    *.dpkg-*  *.rpmnew  *.rpmsave  *.pacnew  *.pacorig
+#   compiled bytecode:  *.pyc  *.pyo  *.elc
+#   system runtime:     mtab  ld.so.cache  prelink.cache  adjtime
+#                       udev/hwdb.bin  lvm/cache  lvm/archive
+#                       network/run  .pwd.lock  nologin
+#
+# Additional patterns can also be placed in track.d/*.conf,
+# ignore.d/*.conf, or included with @include-ignore.
+#
+# Examples:
+# *.tmp
+# *.lock
+# /etc/letsencrypt
+
+###################################################################
 # Track List
 ###################################################################
 #
@@ -317,10 +336,11 @@ heartbeat = 0
 #   DIRECTORY /absolute/path [: email@example.com ...] [option=value ...]
 #
 # Optional per-entry recipients (after the colon) override the global email
-# notifier's default to= for that entry.  Multiple addresses are space-separated.
+# notifier's default to= for that entry.  Multiple addresses may be space-
+# or comma-separated.
 #
 # Per-entry options (key=value after the path/recipients):
-#   sensitive=yes|no|auto   Override automatic sensitive-file detection
+#   sensitive=yes|no|true|false|auto   Override automatic sensitive-file detection
 #
 # Examples:
 #   /etc/passwd : root@localhost

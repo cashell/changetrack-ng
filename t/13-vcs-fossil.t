@@ -124,8 +124,12 @@ ok(!-e $vcs->output_path($untracked_file), 'diff: untracked file does not create
 ########################################################################
 # Commit
 ########################################################################
-$err = do { local $@; eval { $vcs->commit('Initial commit') }; $@ };
+my $commit_res;
+$err = do { local $@; eval { $commit_res = $vcs->commit('Initial commit') }; $@ };
 is($err, '', 'commit: no error');
+is($commit_res->{committed}, 1, 'commit: returns committed => 1');
+like($commit_res->{revision}, qr/^[0-9a-f]{10,64}$/, 'commit: returns revision hash');
+is_deeply($commit_res->{warnings}, [], 'commit: warnings empty');
 
 # Verify commit appears in fossil timeline
 my $tl = run_cmd(cmd => ['fossil', 'timeline', '-R', "$output_dir.fossil", '-n', '5']);
@@ -193,8 +197,11 @@ like($after_tl->{stdout}, qr/Atomic batch commit/, 'atomic commit message in tim
 ########################################################################
 my $tl_before_noop = run_cmd(cmd => ['fossil', 'timeline', '-R', "$output_dir.fossil", '-n', '20'])->{stdout};
 
-$err = do { local $@; eval { $vcs->commit('Should not appear') }; $@ };
+my $noop_res;
+$err = do { local $@; eval { $noop_res = $vcs->commit('Should not appear') }; $@ };
 is($err, '', 'commit with nothing staged: no error');
+is_deeply($noop_res, { committed => 0, revision => undef, warnings => [] },
+    'commit with nothing staged: returns committed => 0');
 
 my $tl_after_noop = run_cmd(cmd => ['fossil', 'timeline', '-R', "$output_dir.fossil", '-n', '20'])->{stdout};
 is($tl_before_noop, $tl_after_noop, 'commit with nothing staged: no new commit');
@@ -320,6 +327,202 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
     my $err = do { local $@; eval { $vcs->_run('fossil', 'changes') }; $@ };
     is($err, '', '_run: fossil succeeds with pre-set FOSSIL_HOME');
     is($ENV{FOSSIL_HOME}, $custom_fossil_home, '_run: pre-set FOSSIL_HOME not overridden');
+}
+
+########################################################################
+# Revert: Recreate Missing Parent and Clean Checkout at Tip (CORR-14)
+########################################################################
+{
+    my $sub_dir  = "$tracked_dir/fossil_rev_dir";
+    mkdir $sub_dir or die $!;
+    my $sub_file = "$sub_dir/revert.conf";
+
+    open(my $rfh, '>', $sub_file) or die $!;
+    print {$rfh} "fossil rev v1\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'Fossil revert test v1');
+    my $c1 = $vcs->commit('Fossil revert commit v1');
+    my $rev1 = $c1->{revision};
+
+    open($rfh, '>', $sub_file) or die $!;
+    print {$rfh} "fossil rev v2\n";
+    close($rfh);
+
+    $vcs->checkin($sub_file, 'Fossil revert test v2');
+    my $c2 = $vcs->commit('Fossil revert commit v2');
+    my $rev2 = $c2->{revision};
+
+    # Delete the live file and its parent directory
+    unlink $sub_file or die $!;
+    rmdir $sub_dir   or die $!;
+    ok(!-d $sub_dir, 'fossil revert: parent directory removed before revert');
+
+    # Revert to rev1
+    my $rev_err = do { local $@; eval { $vcs->revert($sub_file, $rev1) }; $@ };
+    is($rev_err, '', 'revert: succeeded without error with missing parent directory');
+    ok(-f $sub_file, 'revert: live file restored');
+
+    open(my $check_fh, '<', $sub_file) or die $!;
+    my $reverted_content = do { local $/; <$check_fh> };
+    close($check_fh);
+    is($reverted_content, "fossil rev v1\n", 'revert: restored content matches v1');
+
+    # Fossil checkout must remain clean at tip
+    my $changes = $vcs->_run('fossil', 'changes');
+    is($changes->{stdout}, '', 'revert: fossil checkout remains clean at tip');
+
+    # is_dirty must be true because live file (v1) differs from tip (v2)
+    ok($vcs->is_dirty($sub_file), 'is_dirty: true after revert because live file differs from tip');
+}
+
+########################################################################
+# Metadata At Revision (FEAT-5)
+########################################################################
+{
+    my $meta_file = "$output_dir/.changetrack-metadata";
+    open(my $mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0644","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    $vcs->_run('fossil', 'add', '--', '.changetrack-metadata');
+    my $m_c1 = $vcs->commit('Add metadata record 1');
+    my $m_rev1 = $m_c1->{revision};
+
+    open($mfh, '>', $meta_file) or die "Cannot write $meta_file: $!";
+    print {$mfh} qq|{"path":"/etc/demo.conf","mode":"0600","uid":1000,"gid":1000,"user":"tester","group":"users"}\n|;
+    close($mfh);
+
+    my $m_c2 = $vcs->commit('Update metadata record 2');
+    my $m_rev2 = $m_c2->{revision};
+
+    my $rec1 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev1);
+    is($rec1->{mode}, '0644', 'metadata_at_revision: retrieves mode from rev1');
+    is($rec1->{user}, 'tester', 'metadata_at_revision: retrieves user from rev1');
+
+    my $rec2 = $vcs->metadata_at_revision('/etc/demo.conf', $m_rev2);
+    is($rec2->{mode}, '0600', 'metadata_at_revision: retrieves updated mode from rev2');
+
+    is($vcs->metadata_at_revision('/etc/nonexistent', $m_rev1), undef,
+        'metadata_at_revision: returns undef for untracked path');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '000000000000'), undef,
+        'metadata_at_revision: returns undef for non-existent revision');
+    is($vcs->metadata_at_revision('/etc/demo.conf', '-invalid'), undef,
+        'metadata_at_revision: rejects revision starting with hyphen');
+}
+
+########################################################################
+# Push_Remote: Failure Populates Warnings (NOTIFY-4)
+########################################################################
+{
+    my $bad_remote_vcs = ChangeTrack::VCS::Fossil->new(
+        output_dir => $output_dir,
+        options    => { push_remote => '/nonexistent/path/cannot/exist.fossil' },
+    );
+
+    my $warn_file = "$tracked_dir/warn_test.conf";
+    open(my $wfh, '>', $warn_file) or die $!;
+    print {$wfh} "warn test content\n";
+    close($wfh);
+
+    $bad_remote_vcs->checkin($warn_file, 'Push warn test');
+    my $res;
+    my $warn_err = do { local $@; eval { $res = $bad_remote_vcs->commit('Push warn commit') }; $@ };
+    is($warn_err, '', 'commit succeeds despite push_remote failure');
+    is($res->{committed}, 1, 'commit reported committed => 1');
+    ok(@{ $res->{warnings} } > 0, 'push warnings captured in returned hashref');
+    like($res->{warnings}[0], qr/fossil push.*failed/i, 'warning string details push failure');
+}
+
+########################################################################
+# Show_At_Revision, Historical Diff, and Repo-Wide Log_History (WP 4A)
+########################################################################
+{
+    my $hist_file = "$tracked_dir/hist_fossil.conf";
+    open(my $hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line one\n";
+    close($hfh);
+    $vcs->checkin($hist_file, 'Hist fossil v1');
+    my $c1 = $vcs->commit('Hist fossil commit v1');
+    my $hr1 = $c1->{revision};
+
+    open($hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line two longer\n";
+    close($hfh);
+    $vcs->checkin($hist_file, 'Hist fossil v2');
+    my $c2 = $vcs->commit('Hist fossil commit v2');
+    my $hr2 = $c2->{revision};
+
+    # Modify live file without committing
+    open($hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line live modified\n";
+    close($hfh);
+
+    # show_at_revision on regular file
+    my $s1 = $vcs->show_at_revision($hist_file, $hr1);
+    is($s1->{is_symlink}, 0, 'show_at_revision: regular file is_symlink is 0');
+    is($s1->{target}, undef, 'show_at_revision: regular file target is undef');
+    is($s1->{content}, "fossil line one\n", 'show_at_revision: retrieves v1 content');
+
+    my $s2 = $vcs->show_at_revision($hist_file, $hr2);
+    is($s2->{content}, "fossil line two longer\n", 'show_at_revision: retrieves v2 content');
+
+    # Checkout remains clean
+    my $ch = $vcs->_run('fossil', 'changes');
+    is($ch->{stdout}, '', 'show_at_revision: fossil checkout remains clean');
+
+    # Symlink show_at_revision
+    my $sym_path = "$tracked_dir/hist_fossil.link";
+    symlink('/etc/nsswitch.conf', $sym_path) or die "symlink failed: $!";
+    $vcs->checkin($sym_path, 'Fossil symlink v1');
+    my $sc1 = $vcs->commit('Fossil symlink commit v1');
+    my $sym_res = $vcs->show_at_revision($sym_path, $sc1->{revision});
+    is($sym_res->{is_symlink}, 1, 'show_at_revision: symlink is_symlink is 1');
+    is($sym_res->{target}, '/etc/nsswitch.conf', 'show_at_revision: symlink target extracted');
+
+    # Error cases for show_at_revision
+    eval { $vcs->show_at_revision($hist_file, 'deadbeefdeadbeef') };
+    ok($@, 'show_at_revision: croaks on invalid revision');
+    eval { $vcs->show_at_revision("$tracked_dir/missing.conf", $hr1) };
+    ok($@, 'show_at_revision: croaks on missing path in revision');
+    eval { $vcs->show_at_revision($hist_file, '-tip') };
+    like($@, qr/unsafe revision/, 'show_at_revision: rejects leading hyphen');
+
+    # 1-arg diff($path, $rev1): rev1 vs live file
+    my $d1 = $vcs->diff($hist_file, $hr1);
+    like(join("\n", @$d1), qr/-fossil line one/,           'diff(path, rev1): shows old rev1 line');
+    like(join("\n", @$d1), qr/\+fossil line live modified/, 'diff(path, rev1): shows live line');
+    $ch = $vcs->_run('fossil', 'changes');
+    is($ch->{stdout}, '', 'diff(path, rev1): checkout restored clean');
+
+    # 2-arg diff($path, $rev1, $rev2): rev1 vs rev2
+    my $d12 = $vcs->diff($hist_file, $hr1, $hr2);
+    like(join("\n", @$d12), qr/-fossil line one/,        'diff(path, rev1, rev2): shows rev1 line');
+    like(join("\n", @$d12), qr/\+fossil line two longer/, 'diff(path, rev1, rev2): shows rev2 line');
+    unlike(join("\n", @$d12), qr/fossil line live/,      'diff(path, rev1, rev2): ignores live file');
+
+    my $d_same = $vcs->diff($hist_file, $hr1, $hr1);
+    is_deeply($d_same, [], 'diff(path, rev1, rev1): empty diff for identical revisions');
+
+    eval { $vcs->diff($hist_file, undef, $hr2) };
+    ok($@, 'diff: croaks when rev2 provided without rev1');
+    eval { $vcs->diff($hist_file, '-tip') };
+    like($@, qr/unsafe revision/, 'diff: rejects leading hyphen');
+
+    # Remove hist_file and commit deletion; verify repo-wide log_history(undef) and dir fallback
+    $vcs->remove($hist_file);
+    $vcs->commit('Remove hist_fossil.conf');
+
+    my $del_show = $vcs->show_at_revision($hist_file, $hr1);
+    is($del_show->{content}, "fossil line one\n", 'show_at_revision: retrieves deleted file at older rev');
+
+    my $repo_log = $vcs->log_history(undef);
+    my $repo_log_str = join("\n", @$repo_log);
+    like($repo_log_str, qr/Initial commit/,          'log_history(undef): includes Initial commit');
+    like($repo_log_str, qr/Remove hist_fossil\.conf/, 'log_history(undef): includes deletion commit');
+
+    my $dir_log = $vcs->log_history($tracked_dir);
+    like(join("\n", @$dir_log), qr/Initial commit/, 'log_history(dir): falls back to timeline for directory');
 }
 
 DONE:

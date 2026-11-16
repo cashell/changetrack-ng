@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """dnf plugin for changetrack-ng pre/post transaction snapshots.
 
-Installed by `make install-hooks` to /etc/dnf/plugins/changetrack_ng.py.
+Installed by `make install-hooks` into the DNF4 plugin directory (dnf-plugins/changetrack_ng.py).
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class ChangeTrackNg(dnf.Plugin):
         env = {**os.environ, **defaults}
 
         extra_args = shlex.split(defaults.get("CHANGETRACK_EXTRA_ARGS", ""))
-        cmd = ["@BINDIR@/changetrack-ng", "run", "--system"] + extra_args + ["-m", f"{stage}: dnf"]
+        cmd = ["@BINDIR@/changetrack-ng", "run", "--system", "--lock-timeout", "30"] + extra_args + ["-m", f"{stage}: dnf"]
 
         try:
             result = subprocess.run(

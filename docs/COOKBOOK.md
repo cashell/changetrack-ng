@@ -16,15 +16,21 @@ Monitor `/etc`, `/usr/local/etc`, and scheduled cron jobs on a Linux server usin
 [global]
 vcs               = git
 output_dir        = /var/lib/changetrack-ng
-ignore            = *.swp *~ *.bak *.tmp
 sensitive_auto    = 1
 sensitive_notify  = suppress
 command_timeout   = 120
+max_file_size     = 10485760
 
 [notifier:email:ops]
 enabled = true
 to      = sysadmins@example.com
 from    = changetrack-ng@${HOSTNAME}
+
+[ignore]
+*.swp
+*~
+*.bak
+*.tmp
 
 [track]
 DIRECTORY /etc
@@ -32,6 +38,8 @@ DIRECTORY /usr/local/etc
 DIRECTORY /var/spool/cron
 /etc/shadow
 ```
+
+*Tip:* For a ready-to-use whole-`/etc` configuration with curated `[ignore]` exclusions (such as `letsencrypt/`, `ssl/certs/`, `ld.so.cache`, `lvm/cache/`), see `packaging/etc/examples/track.d/etc-full.conf`.
 
 ### 2. Enable Timers and Hooks
 

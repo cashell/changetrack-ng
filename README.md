@@ -35,7 +35,7 @@ compatibility debt.
 
 ## Features
 
-- **Versioned Config Backup & Rollback:** Acts as a continuous, versioned configuration backup system preserving complete historical revisions (contents, POSIX permissions, ownership, and symlink targets). Easily audit changes with `diff` and `log`, or restore broken or deleted files with a single command (`changetrack-ng revert <path> <rev>`).
+- **Versioned Config Backup & Rollback:** Acts as a continuous, versioned configuration backup system preserving complete historical revisions (contents, POSIX permissions, ownership, and symlink targets via versioned `.changetrack-metadata`). Easily inspect history with `diff`, `log`, and `show`, preview rollbacks with `revert --dry-run`, or restore broken or deleted files with a single command (`changetrack-ng revert <path> <rev>`).
 - **Five VCS backends:** Choose RCS for per-file versioning or Git, Fossil, SVN, and Mercurial for global tree mirrors.
 - **Four Notification Channels:** Deliver unified diffs via Email, JSON to HTTP Webhook endpoints, structured events via OTLP/OpenTelemetry, or to a local File log (enabled out-of-the-box to `/var/log/changetrack-ng.jsonl` with logrotate). 
 - **Sensitive File Protection:** Automatic mode-based detection. Files without world-read permission (`(mode & 0004) == 0`, e.g. `0600` or `0640`) have their contents fully captured in the local secure VCS mirror, but their diff contents are unconditionally stripped from all outbound notifications (Email, Webhook, OTLP).
@@ -121,12 +121,14 @@ DIRECTORY /etc
 
 ## Configuration
 
-Config uses a single INI format with `[global]`, `[track]`, and
+Config uses a single INI format with `[global]`, `[ignore]`, `[track]`, and
 `[notifier:<type>:<name>]` sections.  The installed default at
 `/etc/changetrack-ng/changetrack-ng.conf` is fully commented.
 Ready-to-use template configurations (`changetrack-ng.conf-full`, `-minimal`,
-`-user`) and drop-in examples are installed under `/usr/share/doc/changetrack-ng/examples/`
-and available in `packaging/etc/examples/` (see [INSTALL.md](INSTALL.md#config)).
+`-user`) and drop-in examples (including `track.d/etc-full.conf` for tracking
+`DIRECTORY /etc` with curated `[ignore]` rules) are installed under
+`/usr/share/doc/changetrack-ng/examples/` and available in
+`packaging/etc/examples/` (see [INSTALL.md](INSTALL.md#config)).
 Comments start with `#` or `;` - either as a full line or inline after a
 value (when preceded by whitespace, e.g. `timeout = 10  # seconds`).
 
@@ -143,6 +145,9 @@ Reliability notes:
 - `command_timeout` (global, default `120` seconds, `0` = unlimited) bounds every
   external command with a watchdog that kills the child, so a hung or runaway tool
   cannot stall a scheduled (cron/systemd) run.
+- `max_file_size` (global, default `10485760` bytes / 10 MB, `0` = unlimited)
+  classifies files larger than the limit as `oversize` and tracks them as
+  metadata-only without reading file content into memory or VCS.
 - The webhook notifier honors `max_diff_bytes` (default `0` = unlimited) to cap the
   diff size in the POST payload, mirroring the `otlp` and `file` notifiers.
 
@@ -162,6 +167,10 @@ from    = changetrack-ng@${HOSTNAME}
 enabled   = true
 url       = https://events.example.com/webhook
 full_diff = 1
+
+[ignore]
+*.tmp
+/etc/letsencrypt/
 
 [track]
 # Send diffs to default-admin
@@ -184,31 +193,36 @@ Automatic drop-ins are fixed sibling directories next to the main config file:
 | Directory | Allowed sections |
 |---|---|
 | `conf.d/` | `[global]` only |
-| `track.d/` | `[track]` only |
+| `track.d/` | `[track]` and `[ignore]` |
+| `ignore.d/` | `[ignore]` only |
 | `notifier.d/` | `[notifier:*]` only |
 
 All `*.conf` files in each directory are processed in sorted order and merged
 into the main config. Drop-in files in `conf.d/*.conf` may override scalar
-`[global]` keys (`vcs`, `output_dir`, `interval`, etc.) defined in the base
+`[global]` keys (`vcs`, `output_dir`, `max_file_size`, etc.) defined in the base
 configuration file, while conflicting definitions between two drop-in files
-or duplicate keys within the same file remain fatal errors. Array-valued keys
-(`ignore`, `push_remote`) are appended across files. Custom automatic drop-in
-directories are not configured separately; use explicit `@include` directives
-for custom files or directories.
+or duplicate keys within the same file remain fatal errors. `push_remote`
+appends across files, and `[ignore]` patterns are collected across all loaded
+files (one pattern per line; `[ignore]` always overrides `[track]` and prunes
+ignored directories during traversal). See `packaging/etc/examples/track.d/etc-full.conf`
+for a ready-to-use `track.d/` drop-in that tracks `DIRECTORY /etc` with curated
+`[ignore]` exclusions. Custom automatic drop-in directories are not configured
+separately; use explicit `@include` directives for custom files or directories.
 
 ### `@include` Directives
 
 ```ini
 @include /etc/changetrack-ng/extra.conf
 @include-track /etc/changetrack-ng/track.d/
+@include-ignore /etc/changetrack-ng/ignore.d/
 @include-notifier /etc/changetrack-ng/notifier.d/
 ```
 
 The include path may be a file or a directory. Directory includes process
 sorted `*.conf` files, which makes them the supported mechanism for custom
-drop-in directories. `@include-track` and `@include-notifier` enforce section
-restrictions in the included path.  Recursion is prevented by a visited-paths
-guard.
+drop-in directories. `@include-track`, `@include-ignore`, and `@include-notifier`
+enforce section restrictions in the included path.  Recursion is prevented by a
+visited-paths guard.
 
 For internals and module boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For operational troubleshooting, see [INSTALL.md](INSTALL.md#troubleshooting).
@@ -231,7 +245,8 @@ These flags apply to all subcommands. For full CLI reference, see [man/changetra
 | `--debug` | `-d` | Show all external commands run, effective config values (secrets redacted), per-file actions taken. Implies `--verbose`. |
 | `--trace` | `-t` | Show per-file disposition for every tracked path (O(N): fast-path skips, type classifications, ignore matches). Implies `--debug`. |
 | `--quiet` | `-q` | Suppress all INFO output. Intended for unattended/cron/hook invocations. |
-| `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications. |
+| `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications (or preview `revert`). |
+| `--lock-timeout <secs>` | | Override `lock_timeout` wait duration in seconds (non-negative integer). |
 
 All diagnostic output (`--verbose`, `--debug`, `--trace`) goes to **STDERR**. STDOUT remains clean and contains only subcommand data (diffs, status listings, log output), making it safe to pipe.
 
@@ -258,10 +273,10 @@ unit files. The template is installed by `make install-hooks`.
 | `run --dry-run` or `-n` | Detect and report changes statically without mutating VCS or sending notifications |
 | `init` | Initialize VCS repo explicitly |
 | `status` | List changed files (including content modifications and metadata-only changes like chmod/chown) without modifying the VCS mirror |
-| `diff [path]` | Show pending unified diff |
-| `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file from a revision (acquires the run lock; waits up to `lock_timeout` or refuses while a run holds the lock) |
-| `update-ignore` | Refresh VCS ignore file |
+| `diff [path] [rev1] [rev2]` | Show pending diff (including directories and metadata-only changes), `<rev1>` vs live, or `<rev1>` vs `<rev2>` |
+| `log [path]` | Show VCS history for a path, directory, or repository |
+| `show <path> <rev>` | Print historical content (or symlink target) and metadata at `<rev>` |
+| `revert <path> <rev>` | Restore file from a revision (acquires run lock; supports `--dry-run` preview) |
 
 ## Notification Channels
 
@@ -315,7 +330,7 @@ max_diff_bytes    = 65536
 
 [notifier:file:audit]
 enabled           = true
-path              = /var/log/changetrack-ng.log
+path              = /var/log/changetrack-ng.jsonl
 emit_recipients   = 1
 max_diff_bytes    = 32768
 ```
