@@ -40,10 +40,10 @@ It is a complete rewrite of the original `changetrack` (last maintained 2009), c
 | `run` (default) | Full scan → commit → notify cycle |
 | `init` | Initialize the VCS output directory |
 | `status` | Show files with pending changes - including content modifications and metadata-only changes (chmod/chown) - without modifying the VCS mirror (exit 1 if any) |
-| `diff [path]` | Show unified diff for pending or historical changes |
-| `log [path]` | Show VCS history for a tracked file |
-| `revert <path> <rev>` | Restore a file to a specific historical revision |
-| `update-ignore` | Sync VCS-native ignore file with configured patterns |
+| `diff [path] [rev1] [rev2]` | Show unified diff for pending (including directories/metadata) or historical changes |
+| `log [path]` | Show VCS history for a tracked path, directory, or repository |
+| `show <path> <rev>` | Print historical content (or symlink target) and metadata at a revision |
+| `revert <path> <rev>` | Restore a file to a specific historical revision (supports `--dry-run`) |
 
 ---
 

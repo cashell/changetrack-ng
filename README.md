@@ -231,7 +231,8 @@ These flags apply to all subcommands. For full CLI reference, see [man/changetra
 | `--debug` | `-d` | Show all external commands run, effective config values (secrets redacted), per-file actions taken. Implies `--verbose`. |
 | `--trace` | `-t` | Show per-file disposition for every tracked path (O(N): fast-path skips, type classifications, ignore matches). Implies `--debug`. |
 | `--quiet` | `-q` | Suppress all INFO output. Intended for unattended/cron/hook invocations. |
-| `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications. |
+| `--dry-run` | `-n` | Detect changes without writing to VCS or dispatching notifications (or preview `revert`). |
+| `--lock-timeout <secs>` | | Override `lock_timeout` wait duration in seconds (non-negative integer). |
 
 All diagnostic output (`--verbose`, `--debug`, `--trace`) goes to **STDERR**. STDOUT remains clean and contains only subcommand data (diffs, status listings, log output), making it safe to pipe.
 
@@ -258,10 +259,10 @@ unit files. The template is installed by `make install-hooks`.
 | `run --dry-run` or `-n` | Detect and report changes statically without mutating VCS or sending notifications |
 | `init` | Initialize VCS repo explicitly |
 | `status` | List changed files (including content modifications and metadata-only changes like chmod/chown) without modifying the VCS mirror |
-| `diff [path]` | Show pending unified diff |
-| `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file from a revision (acquires the run lock; waits up to `lock_timeout` or refuses while a run holds the lock) |
-| `update-ignore` | Refresh VCS ignore file |
+| `diff [path] [rev1] [rev2]` | Show pending diff (including directories and metadata-only changes), `<rev1>` vs live, or `<rev1>` vs `<rev2>` |
+| `log [path]` | Show VCS history for a path, directory, or repository |
+| `show <path> <rev>` | Print historical content (or symlink target) and metadata at `<rev>` |
+| `revert <path> <rev>` | Restore file from a revision (acquires run lock; supports `--dry-run` preview) |
 
 ## Notification Channels
 

@@ -31,7 +31,8 @@ ChangeTrack::Runner - main orchestration for changetrack-ng
 Loads config and metadata, builds the file list (applying ignore patterns),
 processes each file (stat compare, VCS diff, Report accumulation), triggers
 all enabled notifiers, and commits the VCS.  Subcommand helpers (C<status>,
-C<diff_path>, C<log_path>, C<revert_path>) are also exposed for the CLI.
+C<diff_path>, C<log_path>, C<show_path>, C<revert_path>) are also exposed for
+the CLI.
 
 =head1 CLASS METHODS
 
@@ -40,7 +41,7 @@ C<diff_path>, C<log_path>, C<revert_path>) are also exposed for the CLI.
 =item ChangeTrack::Runner->new(%opts)
 
 Accepted options: C<config>, C<message>, C<no_auto_init>, C<quiet>,
-C<verbose>, C<debug>, C<trace>, C<force>.
+C<verbose>, C<debug>, C<trace>, C<dry_run>, C<force>, C<lock_timeout>.
 
 =back
 
@@ -63,20 +64,31 @@ Returns C<($vcs, $output_dir, $already_initialized)>.
 Return an arrayref of hashrefs for files that have changed since the last
 commit.  Each hashref has at least a C<path> key.
 
-=item $runner->diff_path($path)
+=item $runner->diff_path($path, [$rev1, $rev2])
 
 Return a hashref mapping file paths to arrayrefs of diff lines.  If
-I<$path> is undef, all pending diffs are returned.
+I<$path> is undef, all pending diffs are returned.  If I<$path> is a tracked
+directory (with no revisions), diffs for all matching tracked files under
+that directory are returned.  When I<$rev1> (and optionally I<$rev2>) is
+specified, returns historical or live-vs-historical diff lines for I<$path>.
 
-=item $runner->log_path($path)
+=item $runner->log_path([$path])
 
-Return a hashref mapping file paths to arrayrefs of log lines.
+Return a hashref mapping file paths (or C<'(repository)'> when I<$path> is
+undef) to arrayrefs of log lines.
+
+=item $runner->show_path($path, $rev)
+
+Retrieve historical content and recorded metadata for I<$path> at revision
+I<$rev> without mutating disk or mirror state.  Returns a formatted string.
 
 =item $runner->revert_path($path, $rev)
 
 Restore I<$path> to VCS revision I<$rev>.  Acquires the advisory run lock
 (honoring C<lock_timeout>, with C<force =E<gt> 0>) to prevent concurrent
-repository mutations; croaks if the lock cannot be acquired.
+repository mutations; croaks if the lock cannot be acquired.  When
+C<dry_run> is enabled, returns a preview hashref without acquiring the lock
+or modifying disk.
 
 =back
 
@@ -143,7 +155,7 @@ sub builtin_ignore_patterns {
 
 # new -- Construct a Runner.
 # Accepts: config, message, no_auto_init, quiet, verbose, debug, trace,
-#          dry_run, force, warn_special_files.
+#          dry_run, force, warn_special_files, lock_timeout.
 # Enforces the implication chain: trace -> debug -> verbose.
 sub new {
     my ($class, %args) = @_;
@@ -168,6 +180,7 @@ sub new {
         dry_run            => $args{dry_run}            // 0,
         force              => $args{force}              // 0,
         warn_special_files => $args{warn_special_files} // 1,
+        lock_timeout       => $args{lock_timeout},
     }, $class;
 }
 
@@ -199,7 +212,7 @@ sub run {
     $self->_warn_insecure_config_permissions($cfg, $self->{config_path}) unless ref($self->{config_path});
     my @notifiers  = $self->_build_notifiers($cfg);
     $self->_validate_notifiers(\@notifiers);
-    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs')        // 'git');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     $self->_verbose("VCS: $vcs_name, output_dir: $output_dir");
@@ -982,7 +995,7 @@ sub _build_file_list {
 sub _internal_exclude_paths {
     my ($cfg) = @_;
     my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
-    my $vcs_name   = lc($cfg->global('vcs') // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs') // 'git');
 
     my @exclude = (
         $output_dir,
@@ -1217,7 +1230,7 @@ sub _lock_for {
     _ensure_lock_parent_dir($lock_path);
     return ChangeTrack::Lock->new(
         path    => $lock_path,
-        timeout => $cfg->global('lock_timeout') // 0,
+        timeout => $self->{lock_timeout} // $cfg->global('lock_timeout') // 0,
         force   => $force ? 1 : 0,
     );
 }
@@ -1271,7 +1284,7 @@ sub _setup {
     my $cfg = (ref($self->{config_path}) && ref($self->{config_path})->isa('ChangeTrack::Config'))
         ? $self->{config_path}
         : ChangeTrack::Config->load($self->{config_path});
-    my $vcs_name   = lc($cfg->global('vcs')        // 'rcs');
+    my $vcs_name   = lc($cfg->global('vcs')        // 'git');
     my $output_dir = $cfg->global('output_dir')     // '/var/lib/changetrack-ng';
 
     ChangeTrack::Util::set_default_timeout($cfg->global('command_timeout') // 120);
@@ -1382,9 +1395,18 @@ sub status {
             }
             next;
         }
-        next if $self->_is_non_diffable($path, $md);
-        my $meta_changed = defined($md->record_for($path)) && $md->changed_since_load($path, undef, $self->{max_file_size});
-        next if defined $md->record_for($path)
+        my $has_rec      = defined $md->record_for($path);
+        my $meta_changed = $has_rec && $md->changed_since_load($path, undef, $self->{max_file_size});
+        if ($self->_is_non_diffable($path, $md)) {
+            if ($meta_changed) {
+                push @results, {
+                    path => $path,
+                    diff => ['(meta: ' . $md->diff_summary($path, undef, $self->{max_file_size}) . ')'],
+                };
+            }
+            next;
+        }
+        next if $has_rec
              && $md->can_skip_content_diff($path, undef, $self->{max_file_size})
              && !$meta_changed;
         my $diff = eval { $vcs->diff($path) };
@@ -1398,74 +1420,187 @@ sub status {
     return \@results;
 }
 
-# diff_path -- Return a hashref of path => diff_lines for tracked files with pending diffs.
-# If $path is defined, only that file is checked.
+# _pending_diff_for -- Compute pending diff lines (content or metadata-only)
+# for a single tracked path against the live filesystem.
+sub _pending_diff_for {
+    my ($self, $ep, $vcs, $md) = @_;
+    if (!-e $ep && !-l $ep) {
+        return defined($md->record_for($ep)) ? ['(deleted)'] : [];
+    }
+    my $has_rec      = defined $md->record_for($ep);
+    my $meta_changed = $has_rec && $md->changed_since_load($ep, undef, $self->{max_file_size});
+    if ($self->_is_non_diffable($ep, $md)) {
+        return $meta_changed
+            ? ['(metadata changed: ' . $md->diff_summary($ep, undef, $self->{max_file_size}) . ')']
+            : [];
+    }
+    return [] if $has_rec
+        && $md->can_skip_content_diff($ep, undef, $self->{max_file_size})
+        && !$meta_changed;
+
+    my $diff = eval { $vcs->diff($ep) };
+    croak "diff failed for $ep: $@" if $@;
+    $diff //= [];
+    if (!@$diff && $meta_changed) {
+        return ['(metadata changed: ' . $md->diff_summary($ep, undef, $self->{max_file_size}) . ')'];
+    }
+    return $diff;
+}
+
+# diff_path -- Return a hashref of path => diff_lines for tracked files.
+# When $rev1 (and optionally $rev2) is given, returns historical or
+# rev-vs-live diff for $path.  Otherwise computes pending diffs for $path
+# (expanding directory paths) or for all tracked paths when $path is undef.
 sub diff_path {
-    my ($self, $path) = @_;
+    my ($self, $path, $rev1, $rev2) = @_;
     my ($vcs, $cfg) = $self->_setup;
     $self->{max_file_size} = $cfg->global('max_file_size') // (10 * 1024 * 1024);
-    my $md          = $self->_load_metadata($cfg);
+
+    if (defined $rev1) {
+        croak 'diff: path required when revision is specified'
+            unless defined $path && length $path;
+        return { $path => $vcs->diff($path, $rev1, $rev2) };
+    }
+
+    my $md = $self->_load_metadata($cfg);
 
     if (defined $path) {
-        if (!-e $path && !-l $path) {
-            if (defined $md->record_for($path)) {
-                return { $path => ['(deleted)'] };
+        (my $dir_prefix = $path) =~ s{/+$}{};
+        $dir_prefix = '/' if $path =~ m{\A/+\z};
+        my $prefix_slash = $dir_prefix eq '/' ? '/' : "$dir_prefix/";
+        my $entries      = $self->_tracked_entries($cfg, $md);
+        my @matching     = grep {
+            $_->{path} eq $dir_prefix || index($_->{path}, $prefix_slash) == 0
+        } @$entries;
+
+        if ((-d $path && !-l $path) || @matching > 1) {
+            my %result;
+            for my $entry (@matching) {
+                my $ep   = $entry->{path};
+                my $diff = $self->_pending_diff_for($ep, $vcs, $md);
+                $result{$ep} = $diff if @$diff;
             }
-            return { $path => [] };
+            return \%result;
         }
-        if (defined $md->record_for($path)
-            && $md->can_skip_content_diff($path, undef, $self->{max_file_size})
-            && !$md->changed_since_load($path, undef, $self->{max_file_size})) {
-            return { $path => [] };
-        }
-        return { $path => $vcs->diff($path) };
+
+        return { $path => $self->_pending_diff_for($path, $vcs, $md) };
     }
 
     my $entries = $self->_tracked_entries($cfg, $md);
     my %result;
     for my $entry (@$entries) {
-        my $ep = $entry->{path};
-        if (!-e $ep && !-l $ep) {
-            if (defined $md->record_for($ep)) {
-                $result{$ep} = ['(deleted)'];
-            }
-            next;
-        }
-        next if $self->_is_non_diffable($ep, $md);
-        next if defined $md->record_for($ep)
-             && $md->can_skip_content_diff($ep, undef, $self->{max_file_size})
-             && !$md->changed_since_load($ep, undef, $self->{max_file_size});
-        my $diff = eval { $vcs->diff($ep) };
-        croak "diff failed for $ep: $@" if $@;
-        $diff //= [];
+        my $ep   = $entry->{path};
+        my $diff = $self->_pending_diff_for($ep, $vcs, $md);
         $result{$ep} = $diff if @$diff;
     }
     return \%result;
 }
 
 # log_path -- Return a hashref of path => log_lines for tracked files.
-# If $path is defined, only that file's history is returned.
+# When $path is undef, returns repo-wide history under '(repository)'.
+# When $path is a directory on per-file/non-dir backends (RCS/Fossil),
+# expands matching tracked, metadata-recorded, and archive paths under $path.
 sub log_path {
     my ($self, $path) = @_;
     my ($vcs, $cfg) = $self->_setup;
 
-    if (defined $path) {
-        return { $path => $vcs->log_history($path) };
+    if (!defined $path) {
+        return { '(repository)' => $vcs->log_history(undef) };
     }
 
-    my $entries = $self->_tracked_entries($cfg);
-    my %result;
-    for my $entry (@$entries) {
-        my $ep = $entry->{path};
-        next unless -e $ep || -l $ep;
-        next if $self->_is_non_diffable($ep);
-        next unless -e $vcs->output_path($ep);
-        my $log = eval { $vcs->log_history($ep) };
-        croak "log failed for $ep: $@" if $@;
-        $log //= [];
-        $result{$ep} = $log;
+    if (-d $path && !-l $path && ($vcs->isa('ChangeTrack::VCS::RCS') || $vcs->isa('ChangeTrack::VCS::Fossil'))) {
+        my $md = $self->_load_metadata($cfg);
+        (my $dir_prefix = $path) =~ s{/+$}{};
+        $dir_prefix = '/' if $path =~ m{\A/+\z};
+        my $prefix_slash = $dir_prefix eq '/' ? '/' : "$dir_prefix/";
+
+        my %seen;
+        my @paths;
+        my $entries = $self->_tracked_entries($cfg, $md);
+        for my $e (@$entries) {
+            my $p = $e->{path};
+            next unless index($p, $prefix_slash) == 0;
+            push @paths, $p unless $seen{$p}++;
+        }
+        if ($md && $md->{records}) {
+            for my $p (keys %{ $md->{records} }) {
+                next unless index($p, $prefix_slash) == 0;
+                push @paths, $p unless $seen{$p}++;
+            }
+        }
+        if ($vcs->isa('ChangeTrack::VCS::RCS')) {
+            my $output_dir = $cfg->global('output_dir') // '/var/lib/changetrack-ng';
+            my $rcs_dir    = "$output_dir/RCS";
+            if (-d $rcs_dir && opendir(my $dh, $rcs_dir)) {
+                my $enc_prefix = '';
+                if ($dir_prefix ne '/') {
+                    my $rel = $dir_prefix;
+                    $rel =~ s{\A/+}{};
+                    $rel =~ s/%/%25/g;
+                    $rel =~ s/:/%3A/g;
+                    $rel =~ s{/}{:}g;
+                    $enc_prefix = "$rel:";
+                }
+                while (my $arch = readdir($dh)) {
+                    next unless $arch =~ s/,v\z//;
+                    next if $arch eq '.changetrack-metadata';
+                    next unless $enc_prefix eq '' || index($arch, $enc_prefix) == 0;
+                    my $decoded = $arch;
+                    $decoded =~ s{:}{/}g;
+                    $decoded =~ s{%3A}{:}gi;
+                    $decoded =~ s{%25}{%}g;
+                    $decoded = "/$decoded";
+                    push @paths, $decoded unless $seen{$decoded}++;
+                }
+                closedir($dh);
+            }
+        }
+        @paths = sort @paths;
+        if (@paths) {
+            my %result;
+            for my $p (@paths) {
+                my $log = eval { $vcs->log_history($p) };
+                croak "log failed for $p: $@" if $@;
+                $result{$p} = $log // [];
+            }
+            return \%result;
+        }
     }
-    return \%result;
+
+    return { $path => $vcs->log_history($path) };
+}
+
+# show_path -- Retrieve historical content and metadata for $path at $rev.
+# Returns a formatted string suitable for printing to STDOUT.
+sub show_path {
+    my ($self, $path, $rev) = @_;
+    croak 'show: path and revision required'
+        unless defined $path && length $path && defined $rev && length $rev;
+
+    my ($vcs, $cfg) = $self->_setup;
+    my $show      = $vcs->show_at_revision($path, $rev);
+    my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+
+    my $out = "# Path: $path\n# Revision: $rev\n";
+    if (defined $hist_meta && ref($hist_meta) eq 'HASH' && keys %$hist_meta) {
+        my $type  = $hist_meta->{type} // ($show->{is_symlink} ? 'symlink' : 'file');
+        my $mode  = $hist_meta->{mode} // '-';
+        my $owner = (defined $hist_meta->{user} && defined $hist_meta->{group})
+            ? "$hist_meta->{user}:$hist_meta->{group}"
+            : (defined $hist_meta->{uid} && defined $hist_meta->{gid})
+                ? "$hist_meta->{uid}:$hist_meta->{gid}"
+                : '-';
+        $out .= "# Type: $type  Mode: $mode  Owner: $owner\n";
+    }
+    if ($show->{is_symlink}) {
+        $out .= "# Symlink-Target: $show->{target}\n";
+        $out .= "symlink -> $show->{target}\n";
+    } else {
+        my $content = $show->{content} // '';
+        $out .= $content;
+        $out .= "\n" if length($content) && $content !~ /\n\z/;
+    }
+    return $out;
 }
 
 # _load_metadata -- Load the metadata sidecar for the configured output_dir.
@@ -1501,11 +1636,50 @@ sub _is_non_diffable {
     return (-B $path) ? 1 : 0;     # binary
 }
 
+# validate_revert -- Verify config, initialized VCS, and that $path exists
+# at $rev before prompting for interactive confirmation.
+sub validate_revert {
+    my ($self, $path, $rev) = @_;
+    my ($vcs, $cfg) = $self->_setup;
+    $vcs->show_at_revision($path, $rev);
+    return 1;
+}
+
 # revert_path -- Revert $path to $rev via the VCS under the run lock,
 # restoring historical mode and ownership after the VCS restore.
+# When dry_run is enabled, returns a preview hashref without locking or mutating disk.
 sub revert_path {
     my ($self, $path, $rev) = @_;
     my ($vcs, $cfg) = $self->_setup;
+
+    if ($self->{dry_run}) {
+        my $show      = $vcs->show_at_revision($path, $rev);
+        my $hist_meta = eval { $vcs->metadata_at_revision($path, $rev) };
+        my $md        = $self->_load_metadata($cfg);
+        my $curr_meta = $md ? $md->record_for($path) : undef;
+        my $target_meta = (defined $hist_meta && keys %$hist_meta)
+            ? $hist_meta
+            : (defined $curr_meta && keys %$curr_meta)
+                ? $curr_meta
+                : undef;
+
+        my $diff;
+        if (-e $path || -l $path) {
+            $diff = eval { $vcs->diff($path, $rev) };
+            $diff //= [];
+        } else {
+            $diff = ['(file not currently on disk; would restore from revision)'];
+        }
+
+        return {
+            dry_run  => 1,
+            path     => $path,
+            revision => $rev,
+            metadata => $target_meta,
+            show     => $show,
+            diff     => $diff,
+        };
+    }
 
     # Never pass force => 1: CLI --force skips the revert prompt, not the run lock.
     my $lock = $self->_lock_for($cfg, 0);

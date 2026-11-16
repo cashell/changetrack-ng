@@ -43,25 +43,30 @@ without scanning.
 List files that have changed since the last commit.  Exits 0 if nothing
 has changed, 1 if changes were found.
 
-=item B<diff> [I<path>]
+=item B<diff> [I<path> [I<rev1> [I<rev2>]]]
 
-Show a unified diff of pending changes.  If I<path> is given, show the
-diff for that file only; otherwise show all pending diffs.
+Show a unified diff of pending or historical changes.  With no arguments,
+shows pending diffs for all tracked paths.  With I<path> only, shows pending
+diffs for that file or directory (including metadata-only changes).  With
+I<rev1> only, diffs historical I<rev1> against the live file on disk; with
+both I<rev1> and I<rev2>, diffs those two revisions in VCS history.
 
 =item B<log> [I<path>]
 
-Show VCS history.  If I<path> is given, show history for that file only.
+Show VCS history.  If I<path> is given, show history for that file or
+directory; otherwise show repository-wide history including deleted files.
+
+=item B<show> I<path> I<rev>
+
+Print recorded metadata and historical content (or symlink target) for
+I<path> at revision I<rev> to standard output without mutating disk state.
 
 =item B<revert> I<path> I<rev>
 
 Restore I<path> to revision I<rev> in the VCS.  Acquires the advisory run lock
 (honoring C<lock_timeout>) to prevent concurrent repository mutations.  Prompts
-for confirmation unless B<--force> is given.
-
-=item B<update-ignore>
-
-Write or refresh the VCS-native ignore file (e.g., C<.gitignore>) atomically
-using the built-in defaults plus any patterns in the config C<ignore> key.
+for confirmation unless B<--force> is given.  When B<--dry-run> is given,
+prints a preview without acquiring the lock or modifying disk.
 
 =back
 
@@ -97,7 +102,13 @@ if the repository is not already initialized.
 =item B<-n>, B<--dry-run>
 
 Detect and report pending changes without mutating VCS state, writing
-metadata, or sending notifications.
+metadata, or sending notifications.  When used with B<revert>, previews the
+restoration without modifying disk.
+
+=item B<--lock-timeout> I<seconds>
+
+Override the configured C<lock_timeout> wait duration (must be a non-negative
+integer).
 
 =item B<-f>, B<--force>
 

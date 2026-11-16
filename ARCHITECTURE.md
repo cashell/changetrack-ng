@@ -343,16 +343,16 @@ $SYSCONFDIR/changetrack-ng/          Config directory (0640)
 | `run` (default) | Full scan-commit-notify cycle |
 | `init` | Explicitly initialize VCS output directory |
 | `status` | Show files with pending changes (exit 1 if changes) |
-| `diff [path]` | Show unified diff for pending changes |
-| `log [path]` | Show VCS history |
-| `revert <path> <rev>` | Restore file to a specific revision (acquires advisory run lock) |
-| `update-ignore` | Sync VCS-native ignore file with configured patterns |
+| `diff [path] [rev1] [rev2]` | Show unified diff for pending (including directories/metadata) or historical changes |
+| `log [path]` | Show VCS history for a path, directory, or repository |
+| `show <path> <rev>` | Print historical content and metadata at a revision |
+| `revert <path> <rev>` | Restore file to a specific revision (acquires advisory run lock; supports `--dry-run`) |
 
 There is no `migrate-config` subcommand and no v1→v2 config migration tooling. (`Metadata::import_from_v1_statistics` exists only as a stub that `carp`s "not yet implemented".)
 
 ### 8.4 Global options and diagnostics
 
-CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `--system`, `--user`, `-m`/`--message`, `--no-auto-init`, `-n`/`--dry-run`, `-q`/`--quiet`, `-v`/`--verbose`, `-d`/`--debug`, `-t`/`--trace`, `-f`/`--force`, `-V`/`--version`, `-h`/`--help`.
+CLI options (`Getopt::Long`, parsed in `bin/changetrack-ng`): `-c`/`--config`, `--system`, `--user`, `-m`/`--message`, `--no-auto-init`, `-n`/`--dry-run`, `--lock-timeout`, `-q`/`--quiet`, `-v`/`--verbose`, `-d`/`--debug`, `-t`/`--trace`, `-f`/`--force`, `-V`/`--version`, `-h`/`--help`.
 
 - Config resolution order: `-c` > `$CHANGETRACK_CONFIG` > `--user`/`--system` > default `/etc/changetrack-ng/changetrack-ng.conf`.
 - Diagnostic tiers imply downward: `--trace` ⇒ `--debug` ⇒ `--verbose`. All diagnostics go to STDERR; STDOUT stays clean.

@@ -38,7 +38,7 @@ No build step required - Perl modules are used directly from `lib/`.
 
 ## Architecture Quick Reference
 
-**Entry point:** `bin/changetrack-ng` - dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `revert`, `update-ignore`). Default subcommand is `run`.
+**Entry point:** `bin/changetrack-ng` - dispatches subcommands (`run`, `init`, `status`, `diff`, `log`, `show`, `revert`). Default subcommand is `run`.
 
 **Core modules in `lib/ChangeTrack/`:**
 
@@ -156,7 +156,7 @@ The description line is mandatory and must start with the file/module name, then
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 #######################################################################
 # changetrack-ng - Main CLI entry point; parses options and dispatches
-#   to subcommands (run, init, status, diff, log, revert, update-ignore).
+#   to subcommands (run, init, status, diff, log, show, revert).
 #
 use strict;
 use warnings;
