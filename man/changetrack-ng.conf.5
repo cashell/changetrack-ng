@@ -23,16 +23,20 @@ C<headers> key).  Set file permissions to C<0640> or stricter.
 Scalar and array values support environment-variable expansion using
 C<${VAR_NAME}>.  An undefined variable causes a startup parse error.
 
-The C<HOSTNAME> token in values is replaced with the system's fully-qualified
-hostname at parse time.
+The C<HOSTNAME> (or C<${HOSTNAME}>) token in values is replaced with the
+system's fully-qualified hostname at parse time.
 
-The file has three section types:
+The file has four section types:
 
 =over 4
 
 =item B<[global]>
 
-Runtime settings: VCS backend, paths, sensitive-file behavior, etc.
+Runtime settings: VCS backend, paths, file size limit, sensitive-file behavior, etc.
+
+=item B<[ignore]>
+
+Glob and path patterns to exclude from tracking, one pattern per line.
 
 =item B<[notifier:I<type>:I<name>]>
 
@@ -50,31 +54,37 @@ The list of files and directories to monitor.
 
 =head2 Drop-in directories
 
-Three sibling directories adjacent to the main config file are scanned
+Four sibling directories adjacent to the main config file are scanned
 automatically for additional C<*.conf> files (sorted order):
 
 =over 4
 
-=item F<conf.d/> - C<[global]> sections only
+=item F<conf.d/> - C<[global]> sections only (may override scalar keys from the base config)
 
-=item F<track.d/> - C<[track]> sections only
+=item F<track.d/> - C<[track]> and C<[ignore]> sections
+
+=item F<ignore.d/> - C<[ignore]> sections only
 
 =item F<notifier.d/> - C<[notifier:*]> sections only
 
 =back
 
-Non-existent directories are silently skipped.
+Non-existent directories are silently skipped.  See
+F<packaging/etc/examples/track.d/etc-full.conf> for a ready-to-use F<track.d/>
+example monitoring C<DIRECTORY /etc> with curated C<[ignore]> rules.
 
 =head2 @include directives
 
   @include <path>
   @include-track <path>
+  @include-ignore <path>
   @include-notifier <path>
 
 I<path> may be a file or a directory (directories scan C<*.conf> in sorted
-order).  The C<-track> and C<-notifier> variants enforce section restrictions
-in the included path.  A visited-paths guard prevents infinite recursion.
-A missing path is a fatal parse error.
+order).  The C<-track>, C<-ignore>, and C<-notifier> variants enforce section
+restrictions in the included path (C<@include-track> permits both C<[track]>
+and C<[ignore]>).  A visited-paths guard prevents infinite recursion.  A
+missing path is a fatal parse error.
 
 =head1 GLOBAL SETTINGS
 
@@ -95,37 +105,22 @@ protect captured configuration data.  Default: C</var/lib/changetrack-ng>.
 
 =item B<push_remote> = I<remote ...>
 
-For whole-repo VCS backends: space-separated list of Git/SVN/etc. remotes to
-push to after each commit.  Leave empty to skip push.
+For supported whole-repo VCS backends (C<git>, C<fossil>, C<hg>): space-separated
+list of remotes to push to after each commit.  Leave empty to skip push.
+(SVN uses a local C<file://> repository and does not push to a remote.)
 
 =back
 
-=head2 Ignore patterns
+=head2 File size limits
 
 =over 4
 
-=item B<ignore> = I<pattern ...>
+=item B<max_file_size> = I<bytes>
 
-Additional glob patterns to skip during directory traversal, space-separated.
-Added to the built-in defaults, which already exclude:
-
-B<Editor temporaries:> C<*.swp> C<*~> C<#*#> C<.*.sw?> C<*.bak>
-
-B<Archives:> C<*.gz> C<*.bz2> C<*.bzip2> C<*.xz> C<*.zst> C<*.7z>
-C<*.zip> C<*.tar> C<*.tgz> C<*.tbz2> C<*.txz>
-
-B<Package manager artifacts:> C<*.dpkg-*> C<*.rpmnew> C<*.rpmsave>
-C<*.pacnew> C<*.pacorig>
-
-B<Compiled bytecode:> C<*.pyc> C<*.pyo> C<*.elc>
-
-B<System runtime:> C<mtab> C<ld.so.cache> C<prelink.cache> C<adjtime>
-C<udev/hwdb.bin> C<lvm/cache> C<lvm/archive>
-
-Foreign VCS control directories (C<.git>, C<.svn>, C<.hg>, C<RCS>, C<CVS>,
-C<_darcs>, C<.bzr>) and Fossil checkout state files (C<.fslckout>, C<_FOSSIL_>)
-are unconditionally pruned and skipped during traversal to preserve mirror
-isolation and prevent nested repository recursion.
+Maximum file size in bytes for content diffing and VCS storage.  Files
+exceeding this limit are classified as C<oversize> and tracked as metadata-only
+(with a one-time warning) without reading file content into memory.  C<0>
+means unlimited.  Default: C<10485760> (10 MB).
 
 =back
 
@@ -190,7 +185,9 @@ by SIGKILL.  C<0> disables the timeout (unbounded).  Default: C<120>.
 
 =item B<lock_path> = I<path>
 
-Lock file path.  Default: C</var/run/changetrack-ng.lock>.
+Lock file path.  Default for root: C</var/run/changetrack-ng.lock>.  For
+unprivileged runs, resolves C<$XDG_RUNTIME_DIR/changetrack-ng.lock>, then
+C<$XDG_CACHE_HOME/changetrack-ng.lock>, then F<~/.cache/changetrack-ng.lock>.
 
 =item B<lock_timeout> = I<seconds>
 
@@ -291,9 +288,10 @@ Space-separated C<key=value> pairs sent as HTTP headers (e.g. for bearer token
 authentication).  Treat this value as a secret; prefer injecting via
 C<OTEL_EXPORTER_OTLP_HEADERS> instead.
 
-=item B<compression> = C<gzip> | C<none>
+=item B<compression> = C<gzip> | C<''>
 
-Payload compression.  Default: C<gzip>.
+Payload compression.  Set to C<gzip> to enable gzip compression of the OTLP
+JSON body.  Default: C<''> (uncompressed).
 
 =item B<full_diff> = C<0> | C<1>
 
@@ -347,7 +345,8 @@ OTel severity for run-warning events.  Default: C<WARN> (numeric C<13>).
 
 =head2 File log notifier (type: file)
 
-Appends one JSON object per run to a local log file.
+Appends one OTel-shaped JSON record per event (one per changed file, one per
+heartbeat, one per warning) in NDJSON format to a local log file.
 
 =over 4
 
@@ -412,6 +411,64 @@ OTel severity for run-warning events.  Default: C<WARN>.
   enabled      = true
   path         = /var/log/changetrack-ng.jsonl
 
+=head1 IGNORE SECTION
+
+The C<[ignore]> section lists glob or path patterns to exclude from tracking,
+one pattern per line.  (Note: the legacy C<[global]> C<ignore = ...> key has
+been removed and is a fatal parse error.)
+
+Lines support inline comments, C<HOSTNAME>/C<${HOSTNAME}>, C<${VAR}>, and
+leading C<~> expansion.  C<[ignore]> sections may appear in the main config,
+F<conf.d/*.conf>, F<track.d/*.conf>, F<ignore.d/*.conf>, and C<@include> /
+C<@include-track> / C<@include-ignore> files.
+
+=head2 Pattern matching and precedence
+
+=over 4
+
+=item *
+
+Globs support C<*> (single path component), C<?> (single non-slash char),
+C<**> / C</**/> (across directory separators), and C<[...]> character classes
+(including C<[!...]> / C<[^...]> negation).
+
+=item *
+
+Patterns without C</> match the filename or any individual path segment.
+Patterns containing C</> match directory subtrees or relative/absolute paths.
+
+=item *
+
+Ignored directories are pruned early during C<File::Find> traversal, and a
+unified post-filter ensures C<[ignore]> always overrides C<[track]> (including
+explicit single-file entries).  Newly ignored paths are purged from
+C<.changetrack-metadata>.
+
+=back
+
+=head2 Built-in defaults
+
+User patterns are combined with built-in defaults, which exclude:
+
+B<Editor temporaries:> C<*.swp> C<*~> C<#*#> C<.*.sw?> C<*.bak>
+
+B<Archives:> C<*.gz> C<*.bz2> C<*.bzip2> C<*.xz> C<*.zst> C<*.7z>
+C<*.zip> C<*.tar> C<*.tgz> C<*.tbz2> C<*.txz>
+
+B<Package manager artifacts:> C<*.dpkg-*> C<*.dpkg-old> C<*.rpmnew>
+C<*.rpmsave> C<*.pacnew> C<*.pacorig> C<*.pacsave> C<*.apk-new>
+
+B<Compiled bytecode:> C<*.pyc> C<*.pyo> C<*.elc>
+
+B<System runtime:> C<mtab> C<mtab.fuselock> C<ld.so.cache> C<prelink.cache>
+C<adjtime> C<.pwd.lock> C<nologin> C<udev/hwdb.bin> C<lvm/cache>
+C<lvm/archive> C<network/run> C<init.d/.depend.*>
+
+Foreign VCS control directories (C<.git>, C<.hg>, C<.svn>, C<CVS>, C<.bzr>,
+C<_darcs>) and Fossil checkout state files (C<.fslckout>, C<_FOSSIL_>) are
+unconditionally pruned and skipped during traversal to preserve mirror isolation
+and prevent nested repository recursion.
+
 =head1 TRACK SECTION
 
 The C<[track]> section lists files and directories to monitor, one per line.
@@ -424,7 +481,8 @@ The C<[track]> section lists files and directories to monitor, one per line.
 
   DIRECTORY /path/to/dir [: email@example.com ...] [option=value ...]
 
-Directories are scanned recursively.
+Directories are scanned recursively.  If a directory is listed without the
+C<DIRECTORY> prefix, it is treated as a directory entry with a warning.
 
 =head2 Per-entry options
 
@@ -432,7 +490,8 @@ Directories are scanned recursively.
 
 =item B<sensitive=auto|yes|no>
 
-Override the global sensitive-file detection for this entry.
+Override the global sensitive-file detection for this entry (also accepts
+C<true>/C<false>/C<1>/C<0>).  Unknown option keys are a fatal parse error.
 
 =back
 
@@ -470,11 +529,7 @@ Recommended for bearer tokens and authentication credentials.
 
 =item F</etc/changetrack-ng/changetrack-ng.conf>
 
-Default config location.
-
-=item F</usr/local/etc/changetrack-ng/changetrack-ng.conf>
-
-Installed default config when built with C<PREFIX=/usr/local>.
+Default config location (installed via C<SYSCONFDIR=/etc>, even when C<PREFIX=/usr/local>).
 
 =back
 

@@ -7,19 +7,62 @@ All notable changes will be documented here.
 ## [Unreleased]
 ### Added
 
+- **Dedicated `[ignore]` config section & `ignore.d/` drop-ins (`CONF-3`):**
+ - Added a line-oriented `[ignore]` section to `ChangeTrack::Config` (accepted in the main config, `conf.d/*.conf`, `track.d/*.conf`, `ignore.d/*.conf`, and `@include` / `@include-track` / `@include-ignore`), returning deduplicated patterns via `$cfg->ignore()`.
+ - Added `packaging/etc/examples/track.d/etc-full.conf` as a ready-to-use drop-in for tracking `DIRECTORY /etc` with curated `[ignore]` rules.
+- **File size guard (`max_file_size`, `CONF-4`):**
+ - Added `[global] max_file_size` (default `10485760` bytes / 10 MB; `0` = unlimited). Files exceeding the limit are classified as `oversize` and tracked as metadata-only with a one-time warning without reading file content.
+- **Versioned `.changetrack-metadata` & full-fidelity historical `revert` (`FEAT-5`):**
+ - Staged and committed `.changetrack-metadata` in whole-repo VCS backends (`Git`, `Fossil`, `SVN`, `Mercurial`) before `commit()` (with rollback on commit failure), and embedded `[changetrack-meta: ...]` tags in `RCS::checkin()` (`ci -f -l`) so metadata-only changes create real VCS revisions and `revert <path> <rev>` restores historical `mode`, `uid`, and `gid` across all 5 backends.
+- **Non-destructive historical inspection (`FEAT-6`):**
+ - Added `changetrack-ng show <path> <rev>` (`Runner::show_path` and `VCS::*::show_at_revision`) to print recorded metadata and historical file content (or symlink target) without mutating disk or mirror state.
+ - Extended `changetrack-ng diff [path] [rev1] [rev2]` across all 5 VCS backends (`0` revs = live vs HEAD, `1` rev = `<rev1>` vs live, `2` revs = `<rev1>` vs `<rev2>`).
+ - Added `revert --dry-run` / `-n` to preview target metadata and unified diff without acquiring the run lock or modifying disk.
+- **VCS revision IDs in `Report` and all 4 notifiers (`NOTIFY-3`):**
+ - Captured commit/checkin revision identifiers across all 5 VCS backends in `ChangeTrack::Report` and emitted them in `Report::to_text()`, Email summaries, Webhook JSON payloads, and File/OTLP attributes (`vcs.revision` and `config_change.revision`).
+- **CLI `--lock-timeout` override & DNF5 `actions.d` support (`OPS-10`, `PKG-6`):**
+ - Added `--lock-timeout <seconds>` CLI option (passed into `run` and `revert`) and configured `--lock-timeout 30` across apt, DNF4/DNF5, and pacman package-manager hooks.
+ - Added `packaging/hooks/dnf/changetrack-ng.actions` for DNF5 (`libdnf5-plugin-actions`) alongside DNF4 Python `sitelib` plugin installation.
 - **Default self-configuration tracking:**
  - Added `DIRECTORY /etc/changetrack-ng` to default configuration templates so changes to changetrack-ng's own configuration and drop-ins are automatically tracked and versioned out of the box.
 - **Logrotate configuration and packaging:**
- - Added logrotate configuration for `/var/log/changetrack-ng.jsonl` with monthly rotation and retention, integrated into Debian packaging, RPM spec, and installation targets.
+ - Added logrotate configuration for `/var/log/changetrack-ng.jsonl` (and `/var/log/changetrack-ng-apt-debug.log`) with monthly rotation and retention, integrated into Debian packaging, RPM spec, and installation targets.
 
 ### Changed
 
+- **Two-stage ignore engine with directory pruning & glob enhancements (`CONF-3`, `DEBT-5`):**
+ - Updated `ChangeTrack::Runner` to prune ignored directories early during `File::Find` traversal (`$File::Find::prune = 1`), apply a unified post-filter so `[ignore]` unconditionally overrides `[track]`, purge newly ignored paths from `.changetrack-metadata`, and support `**`, `/**/`, and `[...]` character-class globs in `_glob_to_re()`.
+- **Strict `[track]` validation & `${HOSTNAME}` expansion (`CONF-4`, `DOC-5`):**
+ - Validated `[track]` option tokens (`sensitive=auto|yes|no|true|false|1|0`), added comma-separated per-track email recipient parsing, handled bare directories listed without `DIRECTORY` with a warning, and supported `${HOSTNAME}` alongside bare `HOSTNAME`.
+- **Metadata dirty tracking (`PERF-6`):**
+ - Added `is_dirty()` tracking to `ChangeTrack::Metadata` so `Runner::run()` skips rewriting `.changetrack-metadata` when no records changed.
+- **Strict CLI argument/flag validation & default VCS alignment (`CORR-15`, `PKG-7`):**
+ - Rejected unknown flags and unexpected positional arguments across all subcommands (`run`, `init`, `status`, `diff`, `log`, `show`, `revert`) with exit status `64`.
+ - Aligned unset `vcs` fallback in `ChangeTrack::Runner` to `git` (matching `init` and config templates).
+- **Packaging & installation defaults (`PKG-6`, `PKG-7`):**
+ - Changed `Makefile` defaults to `SYSCONFDIR ?= /etc` and `LOGROTATEDIR ?= /etc/logrotate.d`, rewrote the default config path in `_install_bin` when `SYSCONFDIR` is overridden, updated Pacman hooks to source `/etc/default/changetrack-ng`, and added `override_dh_fixperms` in `packaging/debian/rules` (`0640` config, `0700` `/var/lib/changetrack-ng`).
 - **Tracked path deduplication:**
  - Deduplicated tracked files during scan expansion in `ChangeTrack::Runner`, preventing redundant `stat()` calls, duplicate notifications, or multiple processing when individual files overlap with tracked directories or when paths are specified multiple times.
 - **Default file notifier enabled:**
  - Enabled the local JSONL file notifier (`[notifier:file:default]`) by default in standard configurations pointing to `/var/log/changetrack-ng.jsonl` with `full_diff = 0` (metadata and change summary without raw diff payload), providing an immediate local audit log out of the box.
-- **Documentation accentuating versioned backup and revert:**
- - Updated README, Product Overview, Quickstart guide, man pages, and distribution package descriptions to emphasize changetrack-ng's role as an automated, versioned configuration backup system preserving complete historical revisions (content, POSIX permissions, ownership, symlinks) with point-in-time recovery via `revert`.
+- **Documentation reconciliation (`DOC-5`):**
+ - Reconciled `README.md`, `PRODUCT.md`, `ARCHITECTURE.md`, `INSTALL.md`, `docs/COOKBOOK.md`, `docs/QUICKSTART.md`, `man/changetrack-ng.8`, `man/changetrack-ng.conf.5`, `AGENTS.md`, `lib/ChangeTrack/Util.pm`, and `packaging/debian/control` with `[ignore]`, `max_file_size`, `show`, historical `diff`, `revert --dry-run`, `--lock-timeout`, OTLP `compression` default, `push_remote` backends, `__CHANGETRACK_NG_SYMLINK_TARGET__` spelling, exit codes, and install paths.
+
+### Removed
+
+- **Legacy `[global] ignore =` configuration key (`CONF-3`):**
+ - Removed `ignore` from `[global]` (now a fatal parse error directing users to `[ignore]`).
+- **Obsolete `update-ignore` subcommand (`DEBT-15`):**
+ - Removed `update-ignore` from `bin/changetrack-ng`, tests, and documentation (obsoleted by Perl-side ignore filtering and mirror isolation flags).
+
+### Fixed
+
+- **`revert` permission bugs, missing parent directories & clean mirror state (`CORR-14`, `CORR-18`):**
+ - Fixed `0777` symlink-to-file permission corruption, `0600` deleted-file fallback permissions, spurious symlink warnings, missing parent directory creation in `Util::restore_mirror_path()`, dirty mirror index state after `revert` across all 5 backends, and `SVN` (`r2`) / `Mercurial` (`1:hash`) revision normalization.
+- **`diff`, `status`, and `log` edge cases (`CORR-16`, `CORR-18`):**
+ - Fixed `diff` crashing with `Is a directory` on directory paths, surfaced metadata-only diffs in `changetrack-ng diff`, fixed `status` skipping `file -> binary/unreadable/oversize` transitions, and implemented repo-wide `log` (including deleted files) and directory `log` expansion on `Fossil` and `RCS`.
+- **Non-trackable metadata reporting & notification consistency (`CORR-17`, `NOTIFY-4`):**
+ - Reported metadata changes (`chmod`/`chown`) on already-tracked `binary`, `unreadable`, `special`, and `oversize` files, unioned parent-directory email recipients on deleted files, deduplicated per-track recipients across multiple `[notifier:email:*]` instances, and propagated `push_remote` failures into `$report->warnings`.
 
 ## [0.7.5] - 2026-11-03
 ### Added

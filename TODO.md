@@ -1,13 +1,11 @@
 # changetrack-ng - TODO / Issues / Improvements
 
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 Items are prioritized by severity and grouped by category. See [docs/archive/reviews/2026-11-09-APPLICATION-REVIEW.md](docs/archive/reviews/2026-11-09-APPLICATION-REVIEW.md) and [docs/archive/plans/2026-11-09-IMPLEMENTATION-PLAN.md](docs/archive/plans/2026-11-09-IMPLEMENTATION-PLAN.md) for full analysis and phased execution specs.
 
 > **Branch Progress (`feat/phase-1-config-schema`):**
-> - **Phases 1-3 Completed:** `CONF-3`, `CONF-4`, `DEBT-5`, `CORR-14`, `CORR-17`, `FEAT-5`, `NOTIFY-3`, `NOTIFY-4`, `PERF-6`, and partial `CORR-18` (SVN/Mercurial `revert` revision normalization) / `DOC-5` (`${HOSTNAME}` parser support and example config updates).
-> - **Remaining in Phase 4:** `CORR-15`, `CORR-16`, `CORR-18` (`log` directory & repo-wide history), `FEAT-6`, `DEBT-15`, `OPS-10` (`--lock-timeout` CLI flag), `PKG-7` (Runner default VCS `git`).
-> - **Remaining in Phase 5:** `PKG-6`, `PKG-7` (`Makefile` `SYSCONFDIR`/`LOGROTATEDIR` & `.deb` `override_dh_fixperms`), `OPS-10` (hook `--lock-timeout 30`), `DOC-5` (manuals, docs, `CHANGELOG.md`).
+> - **Phases 1-5 Completed:** `CONF-3`, `CONF-4`, `DEBT-5`, `DEBT-15`, `CORR-14`, `CORR-15`, `CORR-16`, `CORR-17`, `CORR-18`, `FEAT-5`, `FEAT-6`, `NOTIFY-3`, `NOTIFY-4`, `PERF-6`, `OPS-10`, `PKG-6`, `PKG-7`, and `DOC-5`.
 
 ---
 
@@ -22,11 +20,11 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 4. **Spurious symlink warning:** Reverting any existing symlink emits `[WARN] revert metadata restore skipped (not a regular file)` (`lib/ChangeTrack/Runner.pm:1258-1260`).
 5. **Mirror index dirtiness:** `Git::revert()` (`lib/ChangeTrack/VCS/Git.pm:194`) runs `git checkout $rev -- $rel`, leaving the historical revision staged in the mirror index instead of keeping the VCS mirror clean at `HEAD` so the next `run` commits and notifies the rollback normally.
 
-### CORR-15: Reject unknown CLI flags and unexpected positional arguments after subcommands (High)
+### CORR-15: Reject unknown CLI flags and unexpected positional arguments after subcommands (High) [Completed in Phase 4]
 
 **Issue:** `bin/changetrack-ng:17, 99-111` configures `Getopt::Long` with `pass_through` and only checks if `$subcommand` starts with `-`. Any unknown flag or extra positional argument after the subcommand is left in `@ARGV` and silently ignored by `run`, `init`, `status`, and treated as a literal filename by `diff` and `log` (e.g. `changetrack-ng run --dryrun` executes a live mutating run; `changetrack-ng status /etc/hosts` scans all files; `changetrack-ng diff --help` treats `--help` as a file path).
 
-### CORR-16: Fix `diff` crash on directory paths, missing metadata-only diffs, and `status` non-diffable transition blindspot (High)
+### CORR-16: Fix `diff` crash on directory paths, missing metadata-only diffs, and `status` non-diffable transition blindspot (High) [Completed in Phase 4]
 
 **Issue:**
 1. `Runner::diff_path($path)` (`lib/ChangeTrack/Runner.pm:1125-1165`) passes a directory path directly to `$vcs->diff($path)`, causing `VCS::Base::_with_temp_mirror_sync()` (`lib/ChangeTrack/VCS/Base.pm:135`) to call `File::Copy::copy` on a directory and die with `Is a directory`. Single-path `diff_path($path)` also omits `_is_non_diffable($path)`.
@@ -55,20 +53,20 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 **Issue:** In `Runner::_process_file()` (`lib/ChangeTrack/Runner.pm:427-438`), `$md->update_from_stat` mutates the in-memory metadata record before `_handle_non_trackable()` (`580-600`) returns early without calling `$report->add_change`. Subsequent `chmod`/`chown`/size changes on already-tracked non-trackable files overwrite `.changetrack-metadata` with zero report or notification.
 
-### CORR-18: Normalize `SVN` and `Mercurial` revision strings in `revert` and fix `log` on directories and deleted files (Medium) [Part 1 Completed in Phase 3; Part 2 in Phase 4]
+### CORR-18: Normalize `SVN` and `Mercurial` revision strings in `revert` and fix `log` on directories and deleted files (Medium) [Completed in Phases 3-4]
 
 **Issue:**
 1. `SVN::revert()` (`lib/ChangeTrack/VCS/SVN.pm:175`) rejects the leading `r` in `r2` revisions printed by `SVN::log_history()`; `Mercurial::revert()` (`lib/ChangeTrack/VCS/Mercurial.pm:153`) rejects `1:8f3a9b2c1d4e` changeset strings printed by `Mercurial::log_history()`.
 2. `changetrack-ng log <dir>` fails on `Fossil` (`finfo` only accepts files) and `RCS`; no-arg `changetrack-ng log` (`lib/ChangeTrack/Runner.pm:1177-1188`) skips deleted files and spawns `O(N)` VCS subprocesses.
 
-### FEAT-6: Non-destructive historical inspection (`show <path> <rev>`, `diff [path] [rev1] [rev2]`, `revert --dry-run`) across all 5 backends (Medium)
+### FEAT-6: Non-destructive historical inspection (`show <path> <rev>`, `diff [path] [rev1] [rev2]`, `revert --dry-run`) across all 5 backends (Medium) [Completed in Phase 4]
 
 **Issue:** Operators cannot view a historical revision or compare two revisions without overwriting live files on disk, and `revert` ignores `--dry-run` (`bin/changetrack-ng:218-253`).
 - Extend `diff [path] [rev1] [rev2]` across all 5 VCS backends (`0` revs = live vs `HEAD`; `1` rev = `<rev>` vs live; `2` revs = `<rev1>` vs `<rev2>`).
 - Add `changetrack-ng show <path> <rev>` to print the historical content (or symlink target) and recorded metadata of `<path>` at `<rev>` to `STDOUT`.
 - Honor `--dry-run` / `-n` in `revert` to preview the restoration without modifying disk.
 
-### DEBT-15: Remove obsolete `update-ignore` subcommand (Medium)
+### DEBT-15: Remove obsolete `update-ignore` subcommand (Medium) [Completed in Phase 4]
 
 **Issue:** `cmd_update_ignore` (`bin/changetrack-ng:256-328`) only supports `git`, writes an untracked `.gitignore` into `$output_dir`, and is functionally obsolete because Perl filters ignores during discovery and `Git::add()` uses `git add -f --`. Remove `update-ignore` from `bin/changetrack-ng`, `man/changetrack-ng.8`, `README.md`, `PRODUCT.md`, `ARCHITECTURE.md`, `AGENTS.md`, and `t/16-subcommands.t`.
 
@@ -93,24 +91,24 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 ## Medium Priority - Packaging, Hooks & Operational Reliability
 
-### PKG-6: Fix DNF hook installation (DNF4 `pluginpath` + DNF5 `actions.d`) and Pacman defaults sourcing (Medium)
+### PKG-6: Fix DNF hook installation (DNF4 `pluginpath` + DNF5 `actions.d`) and Pacman defaults sourcing (Medium) [Completed in Phase 5]
 
 **Issue:**
 1. `Makefile:286-290` and `packaging/rpm/changetrack-ng.spec:63-66` install `changetrack_ng.py` into `/etc/dnf/plugins/` (`pluginconfpath`), where DNF4 ignores `.py` files (expecting Python `site-packages/dnf-plugins/`), and Fedora 41+ / RHEL 10 use DNF5 (`libdnf5`), which requires an actions configuration (`/etc/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions`).
 2. `packaging/hooks/pacman-pre.hook:11` and `pacman-post.hook:11` invoke `@BINDIR@/changetrack-ng` directly without sourcing `/etc/default/changetrack-ng` or `/etc/sysconfig/changetrack-ng`.
 
-### OPS-10: Add `--lock-timeout` CLI override and use it in package manager hooks (Medium)
+### OPS-10: Add `--lock-timeout` CLI override and use it in package manager hooks (Medium) [Completed in Phases 4-5]
 
 **Issue:** Default `lock_timeout` is `0` (`etc/changetrack-ng.conf:56`). If an hourly cron/systemd scan holds the lock when `apt`, `dnf`, or `pacman` runs, the hook immediately skips and drops the pre/post package snapshot. Add `--lock-timeout <seconds>` to `bin/changetrack-ng` and pass `--lock-timeout 30` in package manager hooks.
 
-### PKG-7: Fix `Makefile` `SYSCONFDIR`/`LOGROTATEDIR` defaults, `.deb` `dh_fixperms`, and `cmd_init` default VCS (Medium)
+### PKG-7: Fix `Makefile` `SYSCONFDIR`/`LOGROTATEDIR` defaults, `.deb` `dh_fixperms`, and `cmd_init` default VCS (Medium) [Completed in Phases 4-5]
 
 **Issue:**
 1. `Makefile:7-18` defaults `PREFIX = /usr/local`, placing config in `/usr/local/etc/changetrack-ng/` and logrotate in `/usr/local/etc/logrotate.d/`, while `bin/changetrack-ng:73` hardcodes `/etc/changetrack-ng/changetrack-ng.conf`. Default `SYSCONFDIR ?= /etc` and `LOGROTATEDIR ?= /etc/logrotate.d`, and rewrite the default config path in `_install_bin` when `SYSCONFDIR` is overridden.
 2. `packaging/debian/rules` lacks `override_dh_fixperms`, resetting `/etc/changetrack-ng/changetrack-ng.conf` to `0644` and `/var/lib/changetrack-ng` to `0755`.
 3. When `vcs` is unset in config, `Runner::_setup()` (`lib/ChangeTrack/Runner.pm:1021`) defaults to `rcs` while `cmd_init` (`bin/changetrack-ng:146`) prints `git`. Align both to default to `git`.
 
-### DOC-5: Fix broken `${HOSTNAME}` examples and reconcile documentation with codebase behavior (Medium)
+### DOC-5: Fix broken `${HOSTNAME}` examples and reconcile documentation with codebase behavior (Medium) [Completed in Phases 1 & 5]
 
 **Issue:**
 1. `README.md:159`, `man/changetrack-ng.conf.5:398`, and `docs/COOKBOOK.md:27, 66, 180` use `from = changetrack-ng@${HOSTNAME}`, which produces invalid addresses or croaks on startup in `Config.pm:352-356`. Support `${HOSTNAME}` alongside bare `HOSTNAME` in `Config.pm` and clean up docs.

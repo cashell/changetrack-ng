@@ -81,7 +81,7 @@ to STDERR for every command invoked.
 Copy I<$src> into the mirror path I<$dst>.  For regular files this is a
 plain file copy.  For symlinks this writes a deterministic text snapshot
 record containing the link target (identified by the
-C<__CHANGTRACK_NG_SYMLINK_TARGET__=> prefix).
+C<__CHANGETRACK_NG_SYMLINK_TARGET__=> prefix).
 
 =item restore_mirror_path($mirror, $dst)
 

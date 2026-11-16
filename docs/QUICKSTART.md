@@ -2,7 +2,7 @@
 
 **Homepage:** <https://github.com/cashell/changetrack-ng>
 
-This guide walks you through installing, configuring, and testing `changetrack-ng` in under five minutes. You will learn how to track configuration files, browse revision history (`status`, `diff`, `log`), and restore a prior revision with one command (`revert`).
+This guide walks you through installing, configuring, and testing `changetrack-ng` in under five minutes. You will learn how to track configuration files, browse revision history (`status`, `diff`, `log`, `show`), and restore a prior revision with one command (`revert`).
 
 ---
 
@@ -90,24 +90,27 @@ Run `changetrack-ng run` to capture the modifications into version control:
 sudo changetrack-ng run -m "manual edit: added test entry"
 ```
 
-Browse the historical revisions recorded for the file:
+Browse the historical revisions recorded for the file, or inspect a revision without changing disk:
 
 ```sh
 sudo changetrack-ng log /etc/hosts
+sudo changetrack-ng show /etc/hosts HEAD~1
+sudo changetrack-ng diff /etc/hosts HEAD~1
 ```
 
-The `log` subcommand displays the revision history, timestamps, and commit messages for any tracked file, letting you pinpoint changes across time.
+The `log` subcommand displays the revision history, timestamps, and commit messages for any tracked file or directory (or the whole repository when no path is given), while `show` and two-argument/three-argument `diff` let you inspect historical contents and compare revisions non-destructively.
 
 ---
 
 ## Step 7: Test Reversion (Restoring Configurations)
 
-`changetrack-ng` functions as a local, versioned configuration backup. If an edit breaks a service or a file is corrupted or accidentally deleted, you can roll back to any historical revision with a single command.
+`changetrack-ng` functions as a local, versioned configuration backup. If an edit breaks a service or a file is corrupted or accidentally deleted, you can preview or roll back to any historical revision with a single command.
 
-Restore `/etc/hosts` to its original revision:
+Preview and restore `/etc/hosts` to its original revision:
 
 ```sh
 # Copy the initial commit hash from the log output above
+sudo changetrack-ng revert --dry-run /etc/hosts HEAD~1
 sudo changetrack-ng revert /etc/hosts HEAD~1
 ```
 

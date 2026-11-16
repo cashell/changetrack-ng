@@ -63,10 +63,12 @@ I<path> at revision I<rev> to standard output without mutating disk state.
 
 =item B<revert> I<path> I<rev>
 
-Restore I<path> to revision I<rev> in the VCS.  Acquires the advisory run lock
-(honoring C<lock_timeout>) to prevent concurrent repository mutations.  Prompts
-for confirmation unless B<--force> is given.  When B<--dry-run> is given,
-prints a preview without acquiring the lock or modifying disk.
+Restore I<path> to revision I<rev> in the VCS, including historical permissions
+and ownership from versioned C<.changetrack-metadata> (or RCS revision metadata).
+Acquires the advisory run lock (honoring C<lock_timeout>) to prevent concurrent
+repository mutations.  Prompts for confirmation unless B<--force> is given.
+When B<--dry-run> is given, prints a preview without acquiring the lock or
+modifying disk.
 
 =back
 
@@ -108,12 +110,15 @@ restoration without modifying disk.
 =item B<--lock-timeout> I<seconds>
 
 Override the configured C<lock_timeout> wait duration (must be a non-negative
-integer).
+integer).  If the lock cannot be acquired before the deadline, B<run> exits
+with status 2 and B<revert> exits with status 1.
 
 =item B<-f>, B<--force>
 
-Bypass interactive confirmation prompts (e.g., for B<revert>).  Does not
-bypass or override the advisory run lock.
+On B<run>, blocks waiting to acquire the advisory run lock when another
+instance holds it instead of skipping or timing out.  On B<revert>, bypasses
+the interactive C<[y/N]> confirmation prompt (B<revert> never bypasses or
+forces the advisory run lock).
 
 =item B<-q>, B<--quiet>
 
@@ -150,19 +155,24 @@ Print a usage summary and exit.
 
 =item B<0>
 
-Success, or lock held / lock timeout exceeded (silent skip).
+Success, or B<run> silently skipped because another instance held the lock
+while C<lock_timeout> was C<0> (and B<--force> was not specified).
 
 =item B<1>
 
-Status subcommand: files changed.  Revert: aborted by user.
+B<status>: pending changes detected.  B<revert>: aborted by user, or
+operational failure (invalid path/revision, or lock timeout exceeded).
 
 =item B<2>
 
-Runtime error (VCS failure, unhandled exception).
+Runtime error in B<run>, B<status>, B<diff>, B<log>, or B<show> (VCS failure,
+lock timeout exceeded on B<run>, uninitialized repository, or unhandled
+exception).
 
 =item B<64>
 
-Usage error (bad arguments, config parse failure, unknown subcommand).
+Usage or configuration error (unknown option or subcommand, invalid
+arguments, negative B<--lock-timeout>, config parse failure).
 
 =back
 
