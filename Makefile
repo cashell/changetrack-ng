@@ -16,7 +16,7 @@ HOOKSDIR    ?= $(LIBDIR)/hooks
 CRONDIR     ?= /etc/cron.hourly
 DEFAULTSDIR ?= $(if $(shell command -v dnf 2>/dev/null),/etc/sysconfig,/etc/default)
 LOGROTATEDIR ?= /etc/logrotate.d
-DNF4_PLUGINDIR ?= $(shell python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))" 2>/dev/null || echo /usr/lib/python3/dist-packages)/dnf-plugins
+DNF4_PLUGINDIR ?= $(shell python3 -c "import sysconfig; s = 'deb_system' if 'deb_system' in sysconfig.get_scheme_names() else 'posix_prefix'; print(sysconfig.get_path('purelib', s, vars={'base': '/usr', 'platbase': '/usr'}))" 2>/dev/null || echo /usr/lib/python3/dist-packages)/dnf-plugins
 DNF5_ACTIONSDIR ?= /etc/dnf/libdnf5-plugins/actions.d
 DESTDIR     ?=
 BUILD_DIR   ?= $(HOME)/dev/build/$(NAME)

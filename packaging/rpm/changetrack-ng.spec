@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
-%{!?python3_sitelib: %global python3_sitelib %(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))" 2>/dev/null || echo /usr/lib/python3/dist-packages)}
+%{!?python3_sitelib: %global python3_sitelib %(python3 -c "import sysconfig; s = 'deb_system' if 'deb_system' in sysconfig.get_scheme_names() else 'posix_prefix'; print(sysconfig.get_path('purelib', s, vars={'base': '/usr', 'platbase': '/usr'}))" 2>/dev/null || echo /usr/lib/python3/dist-packages)}
 
 Name:           changetrack-ng
 Version:        0.7.5
