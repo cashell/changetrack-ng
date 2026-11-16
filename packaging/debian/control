@@ -5,7 +5,7 @@ Maintainer: Christopher Cashell <topher+github@zyp.org>
 Build-Depends: debhelper-compat (= 13), perl, make
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
-Homepage: https://github.com/changetrack-ng/changetrack-ng
+Homepage: https://github.com/cashell/changetrack-ng
 
 Package: changetrack-ng
 Architecture: all

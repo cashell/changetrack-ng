@@ -834,7 +834,15 @@ tags         = ["packaging", "hooks", "dnf"]
 
 [packaging."packaging/hooks/dnf/changetrack_ng.py"]
 description = "DNF plugin Python script: pre/post-transaction hooks for dnf operations"
-install_path = "/etc/dnf/plugins/changetrack_ng.py"
+install_path = "$(DNF4_PLUGINDIR)/changetrack_ng.py"
+permissions  = "0644"
+dist         = ["full", "deploy", "minimal", "rpm"]
+tags         = ["packaging", "hooks", "dnf"]
+notes        = "@BINDIR@ and @DEFAULTSDIR@ are substituted at install time by make install-hooks"
+
+[packaging."packaging/hooks/dnf/changetrack-ng.actions"]
+description = "DNF5 libdnf5-plugin-actions hook: pre/post-transaction hooks for dnf5 operations"
+install_path = "/etc/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions"
 permissions  = "0644"
 dist         = ["full", "deploy", "minimal", "rpm"]
 tags         = ["packaging", "hooks", "dnf"]

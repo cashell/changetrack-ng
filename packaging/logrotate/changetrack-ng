@@ -1,4 +1,4 @@
-/var/log/changetrack-ng.jsonl /var/log/changetrack-ng.log {
+/var/log/changetrack-ng.jsonl /var/log/changetrack-ng.log /var/log/changetrack-ng-apt-debug.log {
     monthly
     rotate 12
     compress

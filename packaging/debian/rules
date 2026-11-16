@@ -43,3 +43,8 @@ override_dh_installdocs:
 
 override_dh_installchangelogs:
 	dh_installchangelogs CHANGELOG.md
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod 0640 debian/changetrack-ng/etc/changetrack-ng/changetrack-ng.conf
+	chmod 0700 debian/changetrack-ng/var/lib/changetrack-ng

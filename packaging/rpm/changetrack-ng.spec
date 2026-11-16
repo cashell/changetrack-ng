@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Christopher Cashell <topher+github@zyp.org>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Keep Version: in sync with Makefile VERSION and lib/ChangeTrack/Version.pm
+%{!?python3_sitelib: %global python3_sitelib %(python3 -c "import sysconfig; print(sysconfig.get_path('purelib'))" 2>/dev/null || echo /usr/lib/python3/dist-packages)}
+
 Name:           changetrack-ng
 Version:        0.7.5
 Release:        1%{?dist}
@@ -60,10 +62,14 @@ install -d %{buildroot}%{_sysconfdir}/cron.hourly
 sed -e "s|@BINDIR@|%{_bindir}|g" -e "s|@DEFAULTSDIR@|%{_sysconfdir}/sysconfig|g" packaging/cron/%{name} > %{buildroot}%{_sysconfdir}/cron.hourly/%{name}
 chmod 755 %{buildroot}%{_sysconfdir}/cron.hourly/%{name}
 
+install -d %{buildroot}%{python3_sitelib}/dnf-plugins
+sed -e "s|@BINDIR@|%{_bindir}|g" -e "s|@DEFAULTSDIR@|%{_sysconfdir}/sysconfig|g" packaging/hooks/dnf/changetrack_ng.py > %{buildroot}%{python3_sitelib}/dnf-plugins/changetrack_ng.py
+chmod 644 %{buildroot}%{python3_sitelib}/dnf-plugins/changetrack_ng.py
 install -d %{buildroot}%{_sysconfdir}/dnf/plugins
-sed -e "s|@BINDIR@|%{_bindir}|g" -e "s|@DEFAULTSDIR@|%{_sysconfdir}/sysconfig|g" packaging/hooks/dnf/changetrack_ng.py > %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.py
-chmod 644 %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.py
 install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir}/dnf/plugins/changetrack_ng.conf
+install -d %{buildroot}%{_sysconfdir}/dnf/libdnf5-plugins/actions.d
+sed -e "s|@BINDIR@|%{_bindir}|g" -e "s|@DEFAULTSDIR@|%{_sysconfdir}/sysconfig|g" packaging/hooks/dnf/changetrack-ng.actions > %{buildroot}%{_sysconfdir}/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions
+chmod 644 %{buildroot}%{_sysconfdir}/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions
 
 
 %post
@@ -106,8 +112,9 @@ install -m 644 packaging/hooks/dnf/changetrack_ng.conf %{buildroot}%{_sysconfdir
 %{_unitdir}/%{name}.service
 %{_unitdir}/%{name}.timer
 %{_sysconfdir}/cron.hourly/%{name}
-%{_sysconfdir}/dnf/plugins/changetrack_ng.py
+%{python3_sitelib}/dnf-plugins/
 %config(noreplace) %{_sysconfdir}/dnf/plugins/changetrack_ng.conf
+%{_sysconfdir}/dnf/libdnf5-plugins/actions.d/changetrack-ng.actions
 
 %{_mandir}/man8/changetrack-ng.8*
 %{_mandir}/man5/changetrack-ng.conf.5*
