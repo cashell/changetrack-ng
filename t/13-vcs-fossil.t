@@ -434,5 +434,96 @@ like(join("\n", @$history), qr/Modification commit/, 'log_history: contains seco
     like($res->{warnings}[0], qr/fossil push.*failed/i, 'warning string details push failure');
 }
 
+########################################################################
+# Show_At_Revision, Historical Diff, and Repo-Wide Log_History (WP 4A)
+########################################################################
+{
+    my $hist_file = "$tracked_dir/hist_fossil.conf";
+    open(my $hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line one\n";
+    close($hfh);
+    $vcs->checkin($hist_file, 'Hist fossil v1');
+    my $c1 = $vcs->commit('Hist fossil commit v1');
+    my $hr1 = $c1->{revision};
+
+    open($hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line two longer\n";
+    close($hfh);
+    $vcs->checkin($hist_file, 'Hist fossil v2');
+    my $c2 = $vcs->commit('Hist fossil commit v2');
+    my $hr2 = $c2->{revision};
+
+    # Modify live file without committing
+    open($hfh, '>', $hist_file) or die $!;
+    print {$hfh} "fossil line live modified\n";
+    close($hfh);
+
+    # show_at_revision on regular file
+    my $s1 = $vcs->show_at_revision($hist_file, $hr1);
+    is($s1->{is_symlink}, 0, 'show_at_revision: regular file is_symlink is 0');
+    is($s1->{target}, undef, 'show_at_revision: regular file target is undef');
+    is($s1->{content}, "fossil line one\n", 'show_at_revision: retrieves v1 content');
+
+    my $s2 = $vcs->show_at_revision($hist_file, $hr2);
+    is($s2->{content}, "fossil line two longer\n", 'show_at_revision: retrieves v2 content');
+
+    # Checkout remains clean
+    my $ch = $vcs->_run('fossil', 'changes');
+    is($ch->{stdout}, '', 'show_at_revision: fossil checkout remains clean');
+
+    # Symlink show_at_revision
+    my $sym_path = "$tracked_dir/hist_fossil.link";
+    symlink('/etc/nsswitch.conf', $sym_path) or die "symlink failed: $!";
+    $vcs->checkin($sym_path, 'Fossil symlink v1');
+    my $sc1 = $vcs->commit('Fossil symlink commit v1');
+    my $sym_res = $vcs->show_at_revision($sym_path, $sc1->{revision});
+    is($sym_res->{is_symlink}, 1, 'show_at_revision: symlink is_symlink is 1');
+    is($sym_res->{target}, '/etc/nsswitch.conf', 'show_at_revision: symlink target extracted');
+
+    # Error cases for show_at_revision
+    eval { $vcs->show_at_revision($hist_file, 'deadbeefdeadbeef') };
+    ok($@, 'show_at_revision: croaks on invalid revision');
+    eval { $vcs->show_at_revision("$tracked_dir/missing.conf", $hr1) };
+    ok($@, 'show_at_revision: croaks on missing path in revision');
+    eval { $vcs->show_at_revision($hist_file, '-tip') };
+    like($@, qr/unsafe revision/, 'show_at_revision: rejects leading hyphen');
+
+    # 1-arg diff($path, $rev1): rev1 vs live file
+    my $d1 = $vcs->diff($hist_file, $hr1);
+    like(join("\n", @$d1), qr/-fossil line one/,           'diff(path, rev1): shows old rev1 line');
+    like(join("\n", @$d1), qr/\+fossil line live modified/, 'diff(path, rev1): shows live line');
+    $ch = $vcs->_run('fossil', 'changes');
+    is($ch->{stdout}, '', 'diff(path, rev1): checkout restored clean');
+
+    # 2-arg diff($path, $rev1, $rev2): rev1 vs rev2
+    my $d12 = $vcs->diff($hist_file, $hr1, $hr2);
+    like(join("\n", @$d12), qr/-fossil line one/,        'diff(path, rev1, rev2): shows rev1 line');
+    like(join("\n", @$d12), qr/\+fossil line two longer/, 'diff(path, rev1, rev2): shows rev2 line');
+    unlike(join("\n", @$d12), qr/fossil line live/,      'diff(path, rev1, rev2): ignores live file');
+
+    my $d_same = $vcs->diff($hist_file, $hr1, $hr1);
+    is_deeply($d_same, [], 'diff(path, rev1, rev1): empty diff for identical revisions');
+
+    eval { $vcs->diff($hist_file, undef, $hr2) };
+    ok($@, 'diff: croaks when rev2 provided without rev1');
+    eval { $vcs->diff($hist_file, '-tip') };
+    like($@, qr/unsafe revision/, 'diff: rejects leading hyphen');
+
+    # Remove hist_file and commit deletion; verify repo-wide log_history(undef) and dir fallback
+    $vcs->remove($hist_file);
+    $vcs->commit('Remove hist_fossil.conf');
+
+    my $del_show = $vcs->show_at_revision($hist_file, $hr1);
+    is($del_show->{content}, "fossil line one\n", 'show_at_revision: retrieves deleted file at older rev');
+
+    my $repo_log = $vcs->log_history(undef);
+    my $repo_log_str = join("\n", @$repo_log);
+    like($repo_log_str, qr/Initial commit/,          'log_history(undef): includes Initial commit');
+    like($repo_log_str, qr/Remove hist_fossil\.conf/, 'log_history(undef): includes deletion commit');
+
+    my $dir_log = $vcs->log_history($tracked_dir);
+    like(join("\n", @$dir_log), qr/Initial commit/, 'log_history(dir): falls back to timeline for directory');
+}
+
 DONE:
 done_testing();

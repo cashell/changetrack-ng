@@ -24,6 +24,29 @@ Fossil working directory.  Passes C<--force> during file additions to prevent
 interactive prompt blocking on ignore patterns.  Reverting restores the
 live file while keeping the Fossil checkout clean at tip.
 
+=head1 METHODS
+
+=over 4
+
+=item diff($real_path, [$rev1, $rev2])
+
+Return unified diff lines for I<$real_path>: pending diff against tip when
+no revisions are given, I<$rev1> against the live file when only I<$rev1> is
+given, or I<$rev1> against I<$rev2> in Fossil history when both are given.
+
+=item log_history([$real_path])
+
+Return C<fossil finfo -l> lines for I<$real_path>, or C<fossil timeline -n 0 -v>
+for repository-wide history (and as a directory fallback) when I<$real_path> is
+C<undef>, empty, or a directory.
+
+=item show_at_revision($real_path, $rev)
+
+Retrieve the content of I<$real_path> at revision I<$rev> via C<fossil cat>
+without mutating the live file or checkout working tree.
+
+=back
+
 =cut
 
 use parent 'ChangeTrack::VCS::Base';
@@ -281,13 +304,39 @@ sub commit {
 }
 
 # diff -- Return unified diff lines for $real_path.
-# Returns ['(new file)'] if the file is newly added; [] if unchanged.
+# With no revisions: live file vs tip (returns ['(new file)'] if untracked).
+# With $rev1 only: $rev1 vs live file on disk.
+# With $rev1 and $rev2: $rev1 vs $rev2 in Fossil history.
 sub diff {
-    my ($self, $real_path) = @_;
+    my ($self, $real_path, $rev1, $rev2) = @_;
+    $self->_validate_path($real_path, 'diff');
+    croak 'diff: rev1 required when rev2 is specified'
+        if defined $rev2 && !defined $rev1;
+    $self->_validate_rev($rev1, 'diff') if defined $rev1;
+    $self->_validate_rev($rev2, 'diff') if defined $rev2;
+
     my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+
+    if (defined $rev1 && defined $rev2) {
+        my $r = $self->_run('fossil', 'diff', '--unified', '--from', $rev1, '--to', $rev2, '--', $rel);
+        croak "fossil diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
+    if (defined $rev1) {
+        croak "diff: '$real_path' does not exist" unless -e $real_path || -l $real_path;
+        return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+            my $r = $self->_run('fossil', 'diff', '--unified', '--from', $rev1, '--', $rel);
+            croak "fossil diff failed: $r->{stderr}" unless $r->{success};
+            return [] unless $r->{stdout} =~ /\S/;
+            return [split /\n/, $r->{stdout}];
+        });
+    }
+
     return ['(new file)'] unless -e $mirror;
 
-    my $rel = $self->_rel_path($mirror);
     return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
         my $changes = $self->_run('fossil', 'changes', '--classify', '--hash', '--', $rel);
         return ['(new file)'] if $changes->{stdout} =~ /^(?:ADDED|EXTRA)\b/m;
@@ -300,14 +349,48 @@ sub diff {
     });
 }
 
-# log_history -- Return fossil finfo -l lines for $real_path.
+# log_history -- Return fossil finfo -l lines for $real_path, or repo-wide
+# fossil timeline output when $real_path is undef, empty, or a directory.
 sub log_history {
     my ($self, $real_path) = @_;
+    if (!defined $real_path || !length $real_path) {
+        my $r = $self->_run('fossil', 'timeline', '-n', '0', '-v');
+        return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
     my $mirror = $self->output_path($real_path);
     my $rel    = $self->_rel_path($mirror);
-    my $r = $self->_run('fossil', 'finfo', '-l', '--', $rel);
-    return ['(no history yet)'] unless $r->{stdout} =~ /\S/;
+    my $r      = $self->_run('fossil', 'finfo', '-l', '--', $rel);
+    if ((!$r->{success} || $r->{stdout} !~ /\S/) && (-d $real_path || -d $mirror)) {
+        $r = $self->_run('fossil', 'timeline', '-n', '0', '-v');
+    }
+    return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
+}
+
+# show_at_revision -- Retrieve historical content of $real_path at $rev
+# via fossil cat without mutating the live file or checkout working tree.
+sub show_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    $self->_validate_path($real_path, 'show_at_revision');
+    $self->_validate_rev($rev, 'show_at_revision');
+
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    my $r      = $self->_run('fossil', 'cat', $rel, '-r', $rev);
+    croak "fossil cat failed for '$real_path' at '$rev': $r->{stderr}"
+        if !$r->{success} || $r->{stderr} =~ /\S/;
+
+    # Older Fossil versions can exit 0 with empty stdout for missing paths;
+    # confirm empty results actually exist in the check-in manifest.
+    if (!length($r->{stdout})) {
+        my $ls = $self->_run('fossil', 'ls', '-r', $rev, $rel);
+        croak "fossil cat failed for '$real_path' at '$rev': file not found"
+            unless $ls->{success} && $ls->{stdout} =~ /\S/;
+    }
+
+    return $self->_format_show_result($r->{stdout});
 }
 
 # revert -- Restore $real_path to revision $rev via fossil cat,

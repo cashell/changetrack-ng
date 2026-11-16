@@ -25,6 +25,29 @@ metadata tags and passes C<-f> to ensure metadata-only updates record a
 new revision.  Reverting restores the live file while leaving the RCS working
 file clean at HEAD.
 
+=head1 METHODS
+
+=over 4
+
+=item diff($real_path, [$rev1, $rev2])
+
+Return unified diff lines for I<$real_path>: pending diff against HEAD when
+no revisions are given, I<$rev1> against the live file when only I<$rev1> is
+given, or I<$rev1> against I<$rev2> in RCS history when both are given.
+
+=item log_history([$real_path])
+
+Return C<rlog> output lines for I<$real_path>, or concatenated C<rlog> output
+across all tracked C<,v> archives under F<output_dir/RCS> when I<$real_path>
+is C<undef> or empty.
+
+=item show_at_revision($real_path, $rev)
+
+Retrieve the content of I<$real_path> at revision I<$rev> via C<co -q -p>
+without mutating the live file or RCS working file.
+
+=back
+
 =cut
 
 use parent 'ChangeTrack::VCS::Base';
@@ -131,13 +154,41 @@ sub remove {
     unlink($op) if -e $op || -l $op;
 }
 
-# diff -- Compare real file to RCS archive using temporary mirror sync.
-# Returns [] if unchanged, arrayref of unified-diff lines if changed.
-# Returns ['(new file)'] if no RCS history exists yet.
+# diff -- Return unified diff lines for $real_path.
+# With no revisions: live file vs latest RCS revision (or ['(new file)']).
+# With $rev1 only: $rev1 vs live file on disk.
+# With $rev1 and $rev2: $rev1 vs $rev2 in the RCS archive.
 sub diff {
-    my ($self, $real_path) = @_;
+    my ($self, $real_path, $rev1, $rev2) = @_;
+    $self->_validate_path($real_path, 'diff');
+    croak 'diff: rev1 required when rev2 is specified'
+        if defined $rev2 && !defined $rev1;
+    $self->_validate_rev($rev1, 'diff') if defined $rev1;
+    $self->_validate_rev($rev2, 'diff') if defined $rev2;
 
-    unless (-e $self->_rcs_file($real_path)) {
+    my $rcs_file = $self->_rcs_file($real_path);
+
+    if (defined $rev1 && defined $rev2) {
+        croak "No RCS history for $real_path" unless -f $rcs_file;
+        my $r = run_cmd(cmd => ['rcsdiff', '-u', "-r$rev1", "-r$rev2", $rcs_file]);
+        return [] if $r->{exit_code} == 0;
+        return [split /\n/, $r->{stdout}] if $r->{exit_code} == 1;
+        croak "rcsdiff error for $real_path ($rev1..$rev2): $r->{stderr}";
+    }
+
+    if (defined $rev1) {
+        croak "diff: '$real_path' does not exist" unless -e $real_path || -l $real_path;
+        croak "No RCS history for $real_path" unless -f $rcs_file;
+        my $op = $self->output_path($real_path);
+        return $self->_with_temp_mirror_sync($real_path, $op, sub {
+            my $r = run_cmd(cmd => ['rcsdiff', '-u', "-r$rev1", $op]);
+            return [] if $r->{exit_code} == 0;
+            return [split /\n/, $r->{stdout}] if $r->{exit_code} == 1;
+            croak "rcsdiff error for $op at '$rev1': $r->{stderr}";
+        });
+    }
+
+    unless (-e $rcs_file) {
         return ['(new file)'];
     }
 
@@ -162,13 +213,52 @@ sub is_dirty {
     });
 }
 
-# log_history -- Return rlog output lines for $real_path.
+# log_history -- Return rlog output lines for $real_path, or concatenated
+# rlog output for all ,v archives in output_dir/RCS when $real_path is undef.
 sub log_history {
     my ($self, $real_path) = @_;
+    if (!defined $real_path || !length $real_path) {
+        my $rcs_dir = "$self->{output_dir}/RCS";
+        return ['(no history yet)'] unless -d $rcs_dir;
+        opendir(my $dh, $rcs_dir) or croak "opendir '$rcs_dir' failed: $!";
+        my @archives = sort grep {
+            /,v\z/ && $_ ne '.changetrack-metadata,v' && -f "$rcs_dir/$_"
+        } readdir($dh);
+        closedir($dh);
+        return ['(no history yet)'] unless @archives;
+
+        my @lines;
+        for my $arch (@archives) {
+            my $r = run_cmd(cmd => ['rlog', "$rcs_dir/$arch"]);
+            if ($r->{success} && $r->{stdout} =~ /\S/) {
+                push @lines, split(/\n/, $r->{stdout});
+            }
+        }
+        return @lines ? \@lines : ['(no history yet)'];
+    }
+
     my $rcs_file = $self->_rcs_file($real_path);
     return ['(no history yet)'] unless -e $rcs_file;
     my $r = run_cmd(cmd => ['rlog', $rcs_file]);
+    return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
+}
+
+# show_at_revision -- Retrieve historical content of $real_path at $rev
+# via co -q -p without modifying the working file or live file.
+sub show_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    $self->_validate_path($real_path, 'show_at_revision');
+    $self->_validate_rev($rev, 'show_at_revision');
+
+    my $rcs_file = $self->_rcs_file($real_path);
+    croak "No RCS history for $real_path" unless -f $rcs_file;
+
+    my $r = run_cmd(cmd => ['co', '-q', "-p$rev", $rcs_file]);
+    croak "co failed for '$real_path' at '$rev': $r->{stderr}"
+        unless $r->{success};
+
+    return $self->_format_show_result($r->{stdout});
 }
 
 # revert -- Check out revision $rev of $real_path to a tempfile and restore

@@ -24,6 +24,29 @@ an svn working copy.  Passes C<--no-ignore> on file addition to preserve
 mirror isolation from in-tree ignore configurations.  Reverting restores the
 live file while keeping the Subversion mirror clean at HEAD.
 
+=head1 METHODS
+
+=over 4
+
+=item diff($real_path, [$rev1, $rev2])
+
+Return unified diff lines for I<$real_path>: pending diff against HEAD when
+no revisions are given, I<$rev1> against the live file when only I<$rev1> is
+given, or I<$rev1> against I<$rev2> in Subversion history when both are given.
+
+=item log_history([$real_path])
+
+Return C<svn log> output lines for I<$real_path> (supporting deleted paths via
+peg revision lookup), or repository-wide C<svn log -v> when I<$real_path> is
+C<undef> or empty.
+
+=item show_at_revision($real_path, $rev)
+
+Retrieve the content of I<$real_path> at revision I<$rev> via C<svn cat>
+without mutating the live file or mirror working copy.
+
+=back
+
 =cut
 
 use parent 'ChangeTrack::VCS::Base';
@@ -41,6 +64,12 @@ sub model { 'whole-repo' }
 sub _repo_path {
     my ($self) = @_;
     return $self->{options}{svn_repo} // "$self->{output_dir}-svnrepo";
+}
+
+# _repo_url -- Return the repository URL for svn remote operations.
+sub _repo_url {
+    my ($self) = @_;
+    return $self->{repo_url} // ('file://' . $self->_repo_path);
 }
 
 # _run -- Run an svn command with the given arguments.
@@ -83,7 +112,7 @@ sub add {
 sub remove {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $st     = $self->_run('svn', 'status', $mirror);
+    my $st     = $self->_run('svn', 'status', '-v', $mirror);
     if ($st->{stdout} =~ /^[ MA!]/m) {
         my $r = $self->_run('svn', 'rm', '--force', $mirror);
         croak "svn rm failed for '$mirror': $r->{stderr}" unless $r->{success};
@@ -94,7 +123,7 @@ sub remove {
 
 # _normalize_rev -- Strip leading 'r' before digits (e.g. 'r2' -> '2').
 sub _normalize_rev {
-    my ($rev) = @_;
+    my $rev = @_ > 1 ? $_[1] : $_[0];
     return undef unless defined $rev;
     $rev =~ s/^r(?=\d+$)//i;
     return $rev;
@@ -126,10 +155,48 @@ sub commit {
 # To use a remote SVN repo, point output_dir at a checkout of that URL.
 
 # diff -- Return unified diff lines for $real_path.
-# Returns ['(new file)'] for unversioned or newly-added files; [] if unchanged.
+# With no revisions: live file vs HEAD (returns ['(new file)'] if unversioned).
+# With $rev1 only: $rev1 vs live file on disk.
+# With $rev1 and $rev2: $rev1 vs $rev2 in Subversion history.
 sub diff {
-    my ($self, $real_path) = @_;
+    my ($self, $real_path, $rev1, $rev2) = @_;
+    $self->_validate_path($real_path, 'diff');
+    croak 'diff: rev1 required when rev2 is specified'
+        if defined $rev2 && !defined $rev1;
+
+    if (defined $rev1) {
+        $self->_validate_rev($rev1, 'diff');
+        $rev1 = _normalize_rev($rev1);
+        $self->_validate_rev($rev1, 'diff');
+    }
+    if (defined $rev2) {
+        $self->_validate_rev($rev2, 'diff');
+        $rev2 = _normalize_rev($rev2);
+        $self->_validate_rev($rev2, 'diff');
+    }
+
     my $mirror = $self->output_path($real_path);
+
+    if (defined $rev1 && defined $rev2) {
+        my $rel = $self->_rel_path($mirror);
+        my $url = $self->_repo_url . '/' . $rel;
+        my $r   = $self->_run('svn', 'diff', '-r', "$rev1:$rev2", "$url\@$rev2");
+        $r      = $self->_run('svn', 'diff', '-r', "$rev1:$rev2", "$url\@$rev1") unless $r->{success};
+        croak "svn diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
+    if (defined $rev1) {
+        croak "diff: '$real_path' does not exist" unless -e $real_path || -l $real_path;
+        return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+            my $r = $self->_run('svn', 'diff', '-r', $rev1, $mirror);
+            croak "svn diff failed: $r->{stderr}" unless $r->{success};
+            return [] unless $r->{stdout} =~ /\S/;
+            return [split /\n/, $r->{stdout}];
+        });
+    }
+
     return ['(new file)'] unless -e $mirror;
 
     my $st = $self->_run('svn', 'status', $mirror);
@@ -143,19 +210,27 @@ sub diff {
     });
 }
 
-# log_history -- Return svn log lines for the mirror path of $real_path.
+# log_history -- Return svn log lines for $real_path, or repo-wide svn log -v
+# when $real_path is undef or empty.
 sub log_history {
     my ($self, $real_path) = @_;
+    my $repo_url = $self->_repo_url;
+    if (!defined $real_path || !length $real_path) {
+        my $r = $self->_run('svn', 'log', '-v', $repo_url);
+        return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
     my $mirror = $self->output_path($real_path);
     my $rel    = $self->_rel_path($mirror);
-    my $url    = 'file://' . $self->_repo_path . "/$rel";
+    my $url    = "$repo_url/$rel";
     my $r      = $self->_run('svn', 'log', "$url\@HEAD");
     $r         = $self->_run('svn', 'log', $mirror) unless $r->{success};
 
     # If the file was deleted, $url@HEAD and $mirror fail. Find the latest
     # revision where the file existed from repository history.
     if (!$r->{success}) {
-        my $repo_log = $self->_run('svn', 'log', '-v', '-q', 'file://' . $self->_repo_path);
+        my $repo_log = $self->_run('svn', 'log', '-v', '-q', $repo_url);
         if ($repo_log->{success}) {
             my ($curr_rev, $peg_rev);
             for my $line (split /\n/, $repo_log->{stdout}) {
@@ -179,6 +254,26 @@ sub log_history {
 
     return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
+}
+
+# show_at_revision -- Retrieve historical content of $real_path at $rev
+# via svn cat without mutating the live file or working copy.
+sub show_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    $self->_validate_path($real_path, 'show_at_revision');
+    $self->_validate_rev($rev, 'show_at_revision');
+    $rev = _normalize_rev($rev);
+    $self->_validate_rev($rev, 'show_at_revision');
+
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    my $url    = $self->_repo_url . '/' . $rel;
+    my $r      = $self->_run('svn', 'cat', '-r', $rev, "$url\@$rev");
+    $r         = $self->_run('svn', 'cat', '-r', $rev, "$mirror\@$rev") unless $r->{success};
+    croak "svn cat failed for '$real_path' at '$rev': $r->{stderr}"
+        unless $r->{success};
+
+    return $self->_format_show_result($r->{stdout});
 }
 
 # revert -- Restore $real_path to revision $rev using svn cat,

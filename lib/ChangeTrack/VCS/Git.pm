@@ -25,6 +25,29 @@ neutralization) and ignore rules (via C<git add -f>) do not suppress tracking.
 Supports optional push to one or more remotes after each commit.
 Reverting restores the live file while keeping the Git mirror and index clean at HEAD.
 
+=head1 METHODS
+
+=over 4
+
+=item diff($real_path, [$rev1, $rev2])
+
+Return unified diff lines for I<$real_path>: pending diff against HEAD when
+no revisions are given, I<$rev1> against the live file when only I<$rev1> is
+given, or I<$rev1> against I<$rev2> in Git history when both are given.
+
+=item log_history([$real_path])
+
+Return C<git log> output lines for I<$real_path>, or repository-wide
+C<git log --stat> (excluding F<.changetrack-metadata>) when I<$real_path> is
+C<undef> or empty.
+
+=item show_at_revision($real_path, $rev)
+
+Retrieve the content of I<$real_path> at revision I<$rev> via C<git show>
+without mutating the live file or mirror working tree.
+
+=back
+
 =cut
 
 use parent 'ChangeTrack::VCS::Base';
@@ -170,15 +193,61 @@ sub _has_head {
     return 0;
 }
 
-# diff -- Return unified diff lines for $real_path vs HEAD.
-# Returns ['(new file)'] if the file has no prior commit; [] if unchanged.
+# diff -- Return unified diff lines for $real_path.
+# With no revisions: live file vs HEAD (returns ['(new file)'] if untracked).
+# With $rev1 only: $rev1 vs live file on disk.
+# With $rev1 and $rev2: $rev1 vs $rev2 in Git history.
 sub diff {
-    my ($self, $real_path) = @_;
+    my ($self, $real_path, $rev1, $rev2) = @_;
+    $self->_validate_path($real_path, 'diff');
+    croak 'diff: rev1 required when rev2 is specified'
+        if defined $rev2 && !defined $rev1;
+    $self->_validate_rev($rev1, 'diff') if defined $rev1;
+    $self->_validate_rev($rev2, 'diff') if defined $rev2;
+
     my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+
+    if (defined $rev1 && defined $rev2) {
+        my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--no-color', $rev1, $rev2, '--', $rel]);
+        croak "git diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
+    if (defined $rev1) {
+        croak "diff: '$real_path' does not exist" unless -e $real_path || -l $real_path;
+        my $chk = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'rev-parse', '--verify', "$rev1^{commit}"]);
+        croak "git diff failed: invalid revision '$rev1': $chk->{stderr}" unless $chk->{success};
+
+        my $in_head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'cat-file', '-e', "HEAD:$rel"]);
+        return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+            if ($in_head->{success}) {
+                my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'diff', '--no-color', $rev1, '--', $rel]);
+                croak "git diff failed: $r->{stderr}" unless $r->{success};
+                return [] unless $r->{stdout} =~ /\S/;
+                return [split /\n/, $r->{stdout}];
+            }
+
+            my $old_r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'show', "$rev1:$rel"]);
+            croak "git diff failed for '$real_path' at '$rev1': $old_r->{stderr}"
+                unless $old_r->{success};
+            my ($tmp_fh, $tmp_file) = File::Temp::tempfile(CLEANUP => 1);
+            binmode($tmp_fh);
+            print {$tmp_fh} $old_r->{stdout};
+            close($tmp_fh);
+
+            my $r = run_cmd(cmd => ['git', 'diff', '--no-index', '--no-color', '--', $tmp_file, $mirror]);
+            croak "git diff failed: $r->{stderr}"
+                unless $r->{exit_code} == 0 || $r->{exit_code} == 1;
+            return [] unless $r->{stdout} =~ /\S/;
+            return [split /\n/, $r->{stdout}];
+        });
+    }
+
     return ['(new file)'] unless -e $mirror;
     return ['(new file)'] unless $self->_has_head;
 
-    my $rel     = $self->_rel_path($mirror);
     my $in_head = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'cat-file', '-e', "HEAD:$rel"]);
     return ['(new file)'] unless $in_head->{success};
 
@@ -190,13 +259,39 @@ sub diff {
     });
 }
 
-# log_history -- Return git log lines for the mirror path of $real_path.
+# log_history -- Return git log lines for $real_path, or repo-wide log --stat
+# when $real_path is undef or empty.
 sub log_history {
     my ($self, $real_path) = @_;
-    my $mirror = $self->output_path($real_path);
-    my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'log', '--no-color', '--', $mirror]);
-    return ['(no history yet)'] unless $r->{stdout} =~ /\S/;
+    my $r;
+    if (!defined $real_path || !length $real_path) {
+        $r = run_cmd(cmd => [
+            'git', '-C', $self->{output_dir}, 'log', '--no-color', '--stat',
+            '--', '.', ':(exclude).changetrack-metadata',
+        ]);
+    }
+    else {
+        my $mirror = $self->output_path($real_path);
+        $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'log', '--no-color', '--', $mirror]);
+    }
+    return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
+}
+
+# show_at_revision -- Retrieve historical content of $real_path at $rev
+# via git show without mutating the live file or mirror working tree.
+sub show_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    $self->_validate_path($real_path, 'show_at_revision');
+    $self->_validate_rev($rev, 'show_at_revision');
+
+    my $mirror = $self->output_path($real_path);
+    my $rel    = $self->_rel_path($mirror);
+    my $r = run_cmd(cmd => ['git', '-C', $self->{output_dir}, 'show', "$rev:$rel"]);
+    croak "git show failed for '$real_path' at '$rev': $r->{stderr}"
+        unless $r->{success};
+
+    return $self->_format_show_result($r->{stdout});
 }
 
 # revert -- Restore $real_path to revision $rev via git show,

@@ -24,6 +24,28 @@ an hg repository.  Passes C<-A> during status checks to preserve mirror
 isolation against in-tree F<.hgignore> files.  Reverting restores the
 live file while keeping the Mercurial mirror clean at tip.
 
+=head1 METHODS
+
+=over 4
+
+=item diff($real_path, [$rev1, $rev2])
+
+Return unified diff lines for I<$real_path>: pending diff against tip when
+no revisions are given, I<$rev1> against the live file when only I<$rev1> is
+given, or I<$rev1> against I<$rev2> in Mercurial history when both are given.
+
+=item log_history([$real_path])
+
+Return C<hg log> output lines for I<$real_path>, or repository-wide
+C<hg log -v> when I<$real_path> is C<undef> or empty.
+
+=item show_at_revision($real_path, $rev)
+
+Retrieve the content of I<$real_path> at revision I<$rev> via C<hg cat>
+without mutating the live file or working tree.
+
+=back
+
 =cut
 
 use parent 'ChangeTrack::VCS::Base';
@@ -83,7 +105,7 @@ sub add {
 sub remove {
     my ($self, $real_path) = @_;
     my $mirror = $self->output_path($real_path);
-    my $st     = $self->_hg('status', $mirror);
+    my $st     = $self->_hg('status', '-A', $mirror);
     if ($st->{stdout} =~ /^[ MARC!]/m) {
         my $r = $self->_hg('rm', '--force', $mirror);
         croak "hg rm failed for '$mirror': $r->{stderr}" unless $r->{success};
@@ -94,7 +116,7 @@ sub remove {
 
 # _normalize_rev -- Normalize rev:node strings (e.g. '1:8f3a9b2c1d4e' -> '8f3a9b2c1d4e').
 sub _normalize_rev {
-    my ($rev) = @_;
+    my $rev = @_ > 1 ? $_[1] : $_[0];
     return undef unless defined $rev;
     $rev =~ s/^\d+:([0-9a-f]+)$/$1/i;
     return $rev;
@@ -141,10 +163,45 @@ sub commit {
 }
 
 # diff -- Return unified diff lines for $real_path.
-# Returns ['(new file)'] for untracked or newly-added files; [] if unchanged.
+# With no revisions: live file vs tip (returns ['(new file)'] if untracked).
+# With $rev1 only: $rev1 vs live file on disk.
+# With $rev1 and $rev2: $rev1 vs $rev2 in Mercurial history.
 sub diff {
-    my ($self, $real_path) = @_;
+    my ($self, $real_path, $rev1, $rev2) = @_;
+    $self->_validate_path($real_path, 'diff');
+    croak 'diff: rev1 required when rev2 is specified'
+        if defined $rev2 && !defined $rev1;
+
+    if (defined $rev1) {
+        $self->_validate_rev($rev1, 'diff');
+        $rev1 = _normalize_rev($rev1);
+        $self->_validate_rev($rev1, 'diff');
+    }
+    if (defined $rev2) {
+        $self->_validate_rev($rev2, 'diff');
+        $rev2 = _normalize_rev($rev2);
+        $self->_validate_rev($rev2, 'diff');
+    }
+
     my $mirror = $self->output_path($real_path);
+
+    if (defined $rev1 && defined $rev2) {
+        my $r = $self->_hg('diff', '-r', $rev1, '-r', $rev2, $mirror);
+        croak "hg diff failed: $r->{stderr}" unless $r->{success};
+        return [] unless $r->{stdout} =~ /\S/;
+        return [split /\n/, $r->{stdout}];
+    }
+
+    if (defined $rev1) {
+        croak "diff: '$real_path' does not exist" unless -e $real_path || -l $real_path;
+        return $self->_with_temp_mirror_sync($real_path, $mirror, sub {
+            my $r = $self->_hg('diff', '-r', $rev1, $mirror);
+            croak "hg diff failed: $r->{stderr}" unless $r->{success};
+            return [] unless $r->{stdout} =~ /\S/;
+            return [split /\n/, $r->{stdout}];
+        });
+    }
+
     return ['(new file)'] unless -e $mirror;
 
     my $st = $self->_hg('status', '-A', '--', $mirror);
@@ -159,13 +216,37 @@ sub diff {
     });
 }
 
-# log_history -- Return hg log lines for the mirror path of $real_path.
+# log_history -- Return hg log lines for $real_path, or repo-wide hg log -v
+# when $real_path is undef or empty.
 sub log_history {
     my ($self, $real_path) = @_;
-    my $mirror = $self->output_path($real_path);
-    my $r = $self->_hg('log', $mirror);
+    my $r;
+    if (!defined $real_path || !length $real_path) {
+        $r = $self->_hg('log', '-v');
+    }
+    else {
+        my $mirror = $self->output_path($real_path);
+        $r = $self->_hg('log', $mirror);
+    }
     return ['(no history yet)'] unless $r->{success} && $r->{stdout} =~ /\S/;
     return [split /\n/, $r->{stdout}];
+}
+
+# show_at_revision -- Retrieve historical content of $real_path at $rev
+# via hg cat without mutating the live file or working tree.
+sub show_at_revision {
+    my ($self, $real_path, $rev) = @_;
+    $self->_validate_path($real_path, 'show_at_revision');
+    $self->_validate_rev($rev, 'show_at_revision');
+    $rev = _normalize_rev($rev);
+    $self->_validate_rev($rev, 'show_at_revision');
+
+    my $mirror = $self->output_path($real_path);
+    my $r      = $self->_hg('cat', '-r', $rev, $mirror);
+    croak "hg cat failed for '$real_path' at '$rev': $r->{stderr}"
+        unless $r->{success};
+
+    return $self->_format_show_result($r->{stdout});
 }
 
 # revert -- Restore $real_path to revision $rev via hg cat,
