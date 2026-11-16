@@ -1,14 +1,19 @@
 # changetrack-ng - TODO / Issues / Improvements
 
-Last updated: 2026-11-09
+Last updated: 2026-11-15
 
 Items are prioritized by severity and grouped by category. See [docs/archive/reviews/2026-11-09-APPLICATION-REVIEW.md](docs/archive/reviews/2026-11-09-APPLICATION-REVIEW.md) and [docs/archive/plans/2026-11-09-IMPLEMENTATION-PLAN.md](docs/archive/plans/2026-11-09-IMPLEMENTATION-PLAN.md) for full analysis and phased execution specs.
+
+> **Branch Progress (`feat/phase-1-config-schema`):**
+> - **Phases 1-3 Completed:** `CONF-3`, `CONF-4`, `DEBT-5`, `CORR-14`, `CORR-17`, `FEAT-5`, `NOTIFY-3`, `NOTIFY-4`, `PERF-6`, and partial `CORR-18` (SVN/Mercurial `revert` revision normalization) / `DOC-5` (`${HOSTNAME}` parser support and example config updates).
+> - **Remaining in Phase 4:** `CORR-15`, `CORR-16`, `CORR-18` (`log` directory & repo-wide history), `FEAT-6`, `DEBT-15`, `OPS-10` (`--lock-timeout` CLI flag), `PKG-7` (Runner default VCS `git`).
+> - **Remaining in Phase 5:** `PKG-6`, `PKG-7` (`Makefile` `SYSCONFDIR`/`LOGROTATEDIR` & `.deb` `override_dh_fixperms`), `OPS-10` (hook `--lock-timeout 30`), `DOC-5` (manuals, docs, `CHANGELOG.md`).
 
 ---
 
 ## High Priority - Correctness & Core Architecture
 
-### CORR-14: Fix `revert` permission bugs, missing parent directory crash, and mirror index state (High)
+### CORR-14: Fix `revert` permission bugs, missing parent directory crash, and mirror index state (High) [Completed in Phase 3]
 
 **Issue:**
 1. **Symlink-to-file `0777` bug:** When live `$path` is currently a symlink, `Runner::_snapshot_existing_file()` (`lib/ChangeTrack/Runner.pm:1231-1244`) captures `lstat` mode `0777`. If `revert` restores a revision where `$path` was a regular file, `_restore_file_metadata()` (`1252-1270`) checks only whether the post-revert path is a regular file (`!-l _ && -f _`), ignores `$pre->{is_symlink}`, and runs `chmod(0777, $path)`.
@@ -28,13 +33,13 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 2. When a file has only a metadata change (`chmod`/`chown`), `changetrack-ng status` reports it and exits `1`, while `changetrack-ng diff` and `changetrack-ng diff <path>` output nothing.
 3. `Runner::status()` (`lib/ChangeTrack/Runner.pm:1107`) skips `_is_non_diffable($ep)` before checking `$meta_changed`, hiding transitions where a tracked text file is replaced by a binary or unreadable file.
 
-### FEAT-5: Version `.changetrack-metadata` in VCS and restore historical permissions/ownership on `revert` across all 5 backends (High)
+### FEAT-5: Version `.changetrack-metadata` in VCS and restore historical permissions/ownership on `revert` across all 5 backends (High) [Completed in Phase 3]
 
 **Issue:** `.changetrack-metadata` is currently excluded from VCS commits (`lib/ChangeTrack/Runner.pm:812`) and written only after `$vcs->commit()` (`319-333`). As a result, metadata-only changes (`chmod`/`chown`) produce no VCS commit on any backend (invisible in `changetrack-ng log`), and `revert <path> <rev>` cannot restore the historical `mode`, `uid`, and `gid` recorded at `<rev>`.
 - **Whole-repo backends (`Git`, `Fossil`, `SVN`, `Mercurial`):** Stage and commit `.changetrack-metadata` inside the VCS repository before `$vcs->commit()` (rolling back on commit failure), and extract `<rev>`'s `.changetrack-metadata` entry during `revert <path> <rev>` to restore historical `mode`, `uid`, and `gid` while keeping the VCS mirror at `HEAD`.
 - **RCS (`per-file`):** Pass `-f` to `ci -l` in `RCS::checkin()` (`lib/ChangeTrack/VCS/RCS.pm:89`) when metadata changed so a revision is always created, and store/read per-revision metadata (`[meta: mode=... uid=... gid=...]`) so `RCS::revert()` restores historical permissions and ownership with full 5-backend parity.
 
-### CONF-3: Replace `[global] ignore =` with `[ignore]` section, fix directory/subtree ignore pruning, and ship whole-`/etc` example (High)
+### CONF-3: Replace `[global] ignore =` with `[ignore]` section, fix directory/subtree ignore pruning, and ship whole-`/etc` example (High) [Completed in Phases 1-2]
 
 **Issue:**
 1. Legacy `[global] ignore =` syntax is awkward for multi-line exclusions and cannot be bundled inside `track.d/*.conf` drop-ins (`lib/ChangeTrack/Config.pm:315`).
@@ -46,11 +51,11 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 ## Medium Priority - Features, CLI, Config & Notifications
 
-### CORR-17: Report metadata changes on already-tracked `binary`, `unreadable`, and `special` files (Medium)
+### CORR-17: Report metadata changes on already-tracked `binary`, `unreadable`, and `special` files (Medium) [Completed in Phase 2]
 
 **Issue:** In `Runner::_process_file()` (`lib/ChangeTrack/Runner.pm:427-438`), `$md->update_from_stat` mutates the in-memory metadata record before `_handle_non_trackable()` (`580-600`) returns early without calling `$report->add_change`. Subsequent `chmod`/`chown`/size changes on already-tracked non-trackable files overwrite `.changetrack-metadata` with zero report or notification.
 
-### CORR-18: Normalize `SVN` and `Mercurial` revision strings in `revert` and fix `log` on directories and deleted files (Medium)
+### CORR-18: Normalize `SVN` and `Mercurial` revision strings in `revert` and fix `log` on directories and deleted files (Medium) [Part 1 Completed in Phase 3; Part 2 in Phase 4]
 
 **Issue:**
 1. `SVN::revert()` (`lib/ChangeTrack/VCS/SVN.pm:175`) rejects the leading `r` in `r2` revisions printed by `SVN::log_history()`; `Mercurial::revert()` (`lib/ChangeTrack/VCS/Mercurial.pm:153`) rejects `1:8f3a9b2c1d4e` changeset strings printed by `Mercurial::log_history()`.
@@ -67,18 +72,18 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 **Issue:** `cmd_update_ignore` (`bin/changetrack-ng:256-328`) only supports `git`, writes an untracked `.gitignore` into `$output_dir`, and is functionally obsolete because Perl filters ignores during discovery and `Git::add()` uses `git add -f --`. Remove `update-ignore` from `bin/changetrack-ng`, `man/changetrack-ng.8`, `README.md`, `PRODUCT.md`, `ARCHITECTURE.md`, `AGENTS.md`, and `t/16-subcommands.t`.
 
-### NOTIFY-3: Capture VCS revision IDs in `ChangeTrack::Report` and surface in all notification channels (Medium)
+### NOTIFY-3: Capture VCS revision IDs in `ChangeTrack::Report` and surface in all notification channels (Medium) [Completed in Phase 3]
 
 **Issue:** `VCS::*::commit()`, `RCS::checkin()`, and `ChangeTrack::Report` do not record committed revision identifiers, so Email, Webhook, OTLP, and File notifications omit the revision ID needed for `diff` or `revert`. Capture the commit/revision ID across all 5 backends and emit it in `Report::to_text()`, Email, Webhook JSON, and `File`/`OTLP` attributes (`vcs.revision` / `config_change.revision`).
 
-### NOTIFY-4: Fix per-track email recipient consistency on deleted files, multi-instance email deduplication, and `push_remote` warning propagation (Medium)
+### NOTIFY-4: Fix per-track email recipient consistency on deleted files, multi-instance email deduplication, and `push_remote` warning propagation (Medium) [Completed in Phases 2-3]
 
 **Issue:**
 1. Deleted files in tracked directories (`lib/ChangeTrack/Runner.pm:775-793`) match only the single longest directory prefix (`last` at line 788), dropping parent-directory recipients that receive creation/modification alerts (`632-637`).
 2. Multiple enabled `[notifier:email:*]` sections (`lib/ChangeTrack/Notify/Email.pm:73-74`) each send to `@track_recips`, duplicating per-track emails.
 3. `push_remote` failures in `Git.pm:142`, `Fossil.pm:255`, and `Mercurial.pm:115` only `carp` to `STDERR` instead of adding a warning to `$report`, omitting `changetrack.run.warning` events and allowing false heartbeats.
 
-### CONF-4: Add `max_file_size` guard and stricter `[track]` entry validation (Medium)
+### CONF-4: Add `max_file_size` guard and stricter `[track]` entry validation (Medium) [Completed in Phases 1-2]
 
 **Issue:**
 1. Large text/data files whose first 4 KB pass Perl's `-B` check (`lib/ChangeTrack/Metadata.pm:156-168`) are copied in full into `$output_dir` and `/tmp`, with their full unified diff buffered in memory. Add `[global]` `max_file_size` (default `10485760` / 10 MB, `0` = unlimited) to track oversized files as metadata-only with a one-time warning.
@@ -115,7 +120,7 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 ## Low Priority - Performance & Technical Debt
 
-### PERF-6: Skip rewriting `.changetrack-metadata` when state is unchanged (Low)
+### PERF-6: Skip rewriting `.changetrack-metadata` when state is unchanged (Low) [Completed in Phase 2]
 
 **Issue:** `Runner::run()` (`lib/ChangeTrack/Runner.pm:330-333`) rewrites `.changetrack-metadata` on every non-dry-run execution even when zero files or metadata records changed.
 
@@ -231,7 +236,7 @@ Items are prioritized by severity and grouped by category. See [docs/archive/rev
 
 ## Code Quality / Technical Debt
 
-### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low)
+### DEBT-5: `_glob_to_re()` doesn't handle character classes `[...]` (Low) [Completed in Phase 2]
 
 **Issue:** The glob-to-regex converter in Runner handles `*`, `?`, and `.` but doesn't support `[abc]` character classes in ignore patterns. These are valid in shell globs. (Scheduled for resolution under `CONF-3` above.)
 

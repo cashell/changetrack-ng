@@ -11,8 +11,8 @@
 
 This plan is structured for an **Orchestrator + Subagent** workflow:
 
-- **Orchestrator (Lead Model):** Manages branch/worktree lifecycles, spawns subagents with isolated git worktrees (`Workspace: "branch"` or `"share"`), reviews subagent diffs against repository guardrails, resolves cross-worktree integration, runs phase-gate test suites (`make dev-check && make test`), and prepares PRs.
-- **Worker Subagents (Gemini 3.8 Flash / Claude Sonnet 5.5):** Execute bounded, self-contained **Work-Packages (WPs)** with explicit file ownership, concrete method contracts, and targeted test suites.
+- **Orchestrator (Lead Model):** Manages branch/worktree lifecycles, spawns subagents with isolated git worktrees (`Workspace: "branch"` or `"share"`, or `"inherit"` when owned file sets are strictly disjoint), reviews subagent diffs against repository guardrails, resolves cross-worktree integration, runs phase-gate test suites (`make dev-check && make test`), and prepares PRs.
+- **Worker Subagents (Hydrogen / Claude Sonnet 5.5):** Execute bounded, self-contained **Work-Packages (WPs)** with explicit file ownership, concrete method contracts, and targeted test suites. (Note: Hydrogen replaces Gemini 3.8 Flash as the fast worker subagent model.)
 - **Collision Prevention:** Within each phase, parallel work-packages touch **disjoint file sets** wherever possible. Where two work-packages in the same phase touch a shared file (such as `lib/ChangeTrack/Runner.pm`), the dependency order (`Sequential after WP ...`) is explicitly marked so the orchestrator runs or merges them in sequence.
 - **Feature Branch & Checkpoint Commits:** Work is executed on a feature branch off `origin/main` and committed after each appropriate checkpoint (work-package and phase), overriding the default `AGENTS.md` VCS restriction once confirmed by the user.
 - **Pre-Flight Branch Note:** Before spawning Phase 1 subagents, ensure a clean feature branch is checked out from the latest `origin/main` (carrying over `TODO.md`, `MANIFEST.toml`, `docs/archive/reviews/2026-11-09-APPLICATION-REVIEW.md`, and this plan file, then committing the baseline planning docs so subagent worktrees branched from `HEAD` inherit them).
@@ -39,6 +39,31 @@ Every subagent invocation must include these constraints:
 | **Phase 3** | WP 3A, WP 3B, WP 3C | `FEAT-5`, `CORR-14`, `CORR-18` (partial), `NOTIFY-3`, `NOTIFY-4` (partial) | Completed | Versioned `.changetrack-metadata` in VCS across all 5 backends, full-fidelity historical `revert` (`mode`/`uid`/`gid`, parent dirs, clean `HEAD` mirror, `0777`/`0600` fixes), revision IDs in `Report` and all notifiers, `push_remote` report warnings |
 | **Phase 4** | WP 4A, WP 4B | `CORR-15`, `CORR-16`, `CORR-18`, `FEAT-6`, `DEBT-15`, `OPS-10` (CLI), `PKG-7` (VCS default) | Pending | CLI hardening & historical inspection: reject unknown post-subcommand flags/args, add `show <path> <rev>`, extend `diff [path] [rev1] [rev2]`, add `revert --dry-run`, add `--lock-timeout`, fix `diff`/`log` on directories and deleted files, remove `update-ignore` |
 | **Phase 5** | WP 5A, WP 5B | `PKG-6`, `PKG-7`, `OPS-10` (hooks), `DOC-5` | Pending | Packaging, hooks, and documentation sweep: DNF4 `pluginpath` + DNF5 `actions.d`, Pacman defaults sourcing, hook `--lock-timeout 30`, `Makefile` `SYSCONFDIR=/etc`, `.deb` `override_dh_fixperms`, full documentation reconciliation, `CHANGELOG.md` |
+
+### 2.1 Session Handoff Status (Post-Phase 3 -> Ready for Phase 4)
+
+- **Active Feature Branch:** `feat/phase-1-config-schema` (branched from `origin/main` at `0fb803a`).
+- **Working Tree & Test Gate:** Clean working tree; `make dev-check` and `make test` pass completely (39 test files, 1,613 assertions).
+- **Workflow Preferences Confirmed by User:**
+  - `/ponytail:ponytail full` mode active.
+  - Provide concise play-by-play updates during execution.
+  - Delegate work-package execution to worker subagents (using the new **Hydrogen** model, replacing Gemini 3.8 Flash).
+  - Commit checkpoints on `feat/phase-1-config-schema` after each work-package / phase (explicitly overriding the default no-VCS rule in `AGENTS.md`).
+  - Pause with a brief status summary after each phase; open a single PR once all 5 phases are completed.
+- **Completed Checkpoint Commits on `feat/phase-1-config-schema`:**
+  1. `2c02ca7` - `docs: add 2026-11-09 application review, implementation plan, and TODO items`
+  2. `464e6c8` - `feat(config): replace [global] ignore with [ignore], add max_file_size and [track] validation (WP 1A)`
+  3. `1e3ca92` - `feat(config): update default/example configs and add track.d/etc-full.conf (WP 1B)`
+  4. `83b071a` - `feat(metadata,email): add oversize classification, dirty tracking, and email use_track_recipients (WP 2A)`
+  5. `85e229c` - `feat(runner): add directory ignore pruning, max_file_size, and non-trackable metadata reporting (WP 2B)`
+  6. `12b6462` - `feat(vcs,util): add metadata_at_revision, commit revision IDs, clean-HEAD revert, and parent dir creation (WP 3A)`
+  7. `4f661a2` - `feat(report,notify): surface VCS revision IDs across Report, Email, Webhook, File, and OTLP (WP 3B)`
+  8. `52bf9ff` - `feat(runner): version .changetrack-metadata in VCS and restore historical metadata on revert (WP 3C)`
+- **Next Immediate Action on Resume:**
+  - Begin **Phase 4**:
+    - Spawn **WP 4A** (VCS backends `show_at_revision`, 1-arg and 2-arg historical `diff`, and repo-wide `log_history(undef)` across `Base.pm`, `Git.pm`, `RCS.pm`, `Fossil.pm`, `SVN.pm`, `Mercurial.pm`, and `t/05*`, `t/06*`, `t/13*`, `t/14*`, `t/15*`).
+    - Commit WP 4A checkpoint, then spawn **WP 4B** (`bin/changetrack-ng`, `lib/ChangeTrack/Runner.pm`, and all 7 doc-lint subcommand sync targets: add `show <path> <rev>`, extend `diff [path] [rev1] [rev2]`, add `revert --dry-run`, add `--lock-timeout`, fix `diff`/`log` on directories and metadata-only changes, fix `status` non-diffable transition blindspot, align default VCS to `git`, reject unknown post-subcommand flags/args, and remove `update-ignore`).
+    - Commit WP 4B checkpoint, update Phase 4 status to `Completed`, and pause for Phase 5 confirmation.
 
 ---
 
