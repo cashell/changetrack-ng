@@ -5,6 +5,8 @@ All notable changes will be documented here.
 **Project homepage:** <https://github.com/cashell/changetrack-ng>
 
 ## [Unreleased]
+
+## [0.7.6] - 2026-11-17
 ### Added
 
 - **Dedicated `[ignore]` config section & `ignore.d/` drop-ins (`CONF-3`):**

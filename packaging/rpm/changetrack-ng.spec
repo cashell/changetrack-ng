@@ -4,7 +4,7 @@
 %{!?python3_sitelib: %global python3_sitelib %(python3 -c "import sysconfig; s = 'deb_system' if 'deb_system' in sysconfig.get_scheme_names() else 'posix_prefix'; print(sysconfig.get_path('purelib', s, vars={'base': '/usr', 'platbase': '/usr'}))" 2>/dev/null || echo /usr/lib/python3/dist-packages)}
 
 Name:           changetrack-ng
-Version:        0.7.5
+Version:        0.7.6
 Release:        1%{?dist}
 Summary:        System file change tracker with pluggable VCS and notification support
 
@@ -121,6 +121,20 @@ chmod 644 %{buildroot}%{_sysconfdir}/dnf/libdnf5-plugins/actions.d/changetrack-n
 
 
 %changelog
+* Tue Nov 17 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.6-1
+- Replace [global] ignore with [ignore] section and ignore.d/ drop-ins;
+  add two-stage ignore pruning, ** and [...] globs, and track.d/etc-full.conf
+- Add [global] max_file_size guard (default 10 MB) and strict [track] validation
+- Version .changetrack-metadata in VCS and restore historical permissions and
+  ownership on revert across all 5 backends
+- Add show <path> <rev>, historical diff [path] [rev1] [rev2], and
+  revert --dry-run preview mode; remove obsolete update-ignore subcommand
+- Surface VCS revision IDs across Report, Email, Webhook, File, and OTLP notifiers
+- Add --lock-timeout CLI option (30s in package hooks), DNF4 sitelib + DNF5
+  actions.d support, and logrotate configuration
+- Enable local JSONL file notifier and self-config tracking by default;
+  deduplicate tracked paths during scan expansion
+
 * Tue Nov 03 2026 Christopher Cashell <topher+github@zyp.org> - 0.7.5-1
 - New upstream release 0.7.5
 

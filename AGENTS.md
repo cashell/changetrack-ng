@@ -326,4 +326,4 @@ Files that cannot carry inline SPDX tags (markdown, LICENSE, packaging/debian/) 
 ## Implementation Status
 
 All roadmap implementation phases have been pre-completed and validated against `TODO.md`.
-Tests in `t/` (1,258 tests across 39 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
+Tests in `t/` (1,786 tests across 39 files) cover all implemented modules with a stable architecture (`--dry-run` modes, fully exception-safe chdir patterns, and `DEB_BUILD_OPTIONS` mapping). See `TODO.md` for remaining isolated operational, test-gap, or refactoring optimizations.
